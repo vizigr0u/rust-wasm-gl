@@ -1,5 +1,4 @@
 use std::rc::Rc;
-use std::sync::Mutex;
 
 use gloo::events::EventListener;
 use glow::{HasContext, WebTextureKey};

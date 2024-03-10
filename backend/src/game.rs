@@ -4,6 +4,7 @@ use glam::vec3;
 use glam::Mat4;
 use glam::Vec3;
 use glow::HasContext;
+use glow::WebTextureKey;
 use glow::WebVertexArrayKey;
 use rand::Rng;
 use wasm_bindgen::JsValue;
@@ -32,28 +33,29 @@ impl Game {
 
     pub fn update(&mut self, time: f64) -> Result<(), String> {
         self.scene.update(time)?;
-        self.texture_loader.tick()?;
         Ok(())
     }
 
     pub unsafe fn init(&mut self, gl: &glow::Context) -> Result<(), String> {
-        self.scene.init(gl)?;
+        let grass_key = self
+            .texture_loader
+            .load(gl, "data/textures/blocks/grass_block_side.png")?;
+        self.scene.init(gl, grass_key)?;
 
         // let _ = load_texture(gl, "data/textures/blocks/dirt.png")?;
 
-        self.texture_loader.load("data/textures/blocks/sand.png")?;
-
-        self.texture_loader
-            .load("data/textures/blocks/grass_block_side.png")?;
+        // self.texture_loader.load("data/textures/blocks/sand.png")?;
 
         Ok(())
     }
 
-    pub unsafe fn render(&self, gl: &glow::Context) {
+    pub unsafe fn render(&mut self, gl: &glow::Context) -> Result<(), String> {
+        self.texture_loader.tick(&gl)?;
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
         gl.clear(glow::COLOR_BUFFER_BIT);
 
         self.scene.render(gl);
+        Ok(())
     }
 }
 
@@ -79,10 +81,10 @@ impl TriangleScene {
 
     pub fn update(&mut self, _time: f64) -> Result<(), String> {
         let mut rng = rand::thread_rng();
-        for quad in self.quads.iter_mut() {
+        for (index, quad) in self.quads.iter_mut().enumerate() {
             quad.position = vec3(
-                f64::sin(_time / 1000.0) as f32,
-                f64::cos(_time / 200.0) as f32,
+                f64::sin(2.0 * index as f64 + _time / 1000.0) as f32,
+                f64::cos(2.0 * index as f64 + _time / 200.0) as f32,
                 0.0,
             );
             // quad.color = vec3(rng.gen(), rng.gen(), rng.gen());
@@ -91,7 +93,11 @@ impl TriangleScene {
         Ok(())
     }
 
-    pub unsafe fn init(&mut self, gl: &glow::Context) -> Result<(), String> {
+    pub unsafe fn init(
+        &mut self,
+        gl: &glow::Context,
+        grass_key: WebTextureKey,
+    ) -> Result<(), String> {
         let vert_color_def: ShaderDef = shader_def!(
             "vertColor.vert",
             "vertColor.frag",
@@ -101,6 +107,12 @@ impl TriangleScene {
 
         let quad_shader =
             shader_def!("colorTrans.vert", "colorTrans.frag", vec!("position")).compile(gl)?;
+        let quad_shader = shader_def!(
+            "textureTransform.vert",
+            "textureTransform.frag",
+            vec!("position", "uv")
+        )
+        .compile(gl)?;
         let quad_shader_ref = Rc::new(quad_shader);
         let quad_mat = Rc::new(Material::from_shader(&quad_shader_ref));
 
@@ -131,7 +143,10 @@ impl TriangleScene {
             0.3,
         )?);
 
-        self.quads.push(Quad::new(&quad_mat));
+        let grass_key = Rc::new(grass_key);
+        for _ in 0..50 {
+            self.quads.push(Quad::new(&quad_mat, grass_key.clone()));
+        }
 
         for quad in self.quads.iter_mut() {
             quad.init(gl)?;
