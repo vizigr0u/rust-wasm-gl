@@ -30,8 +30,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
       - name: Set up Node
         uses: actions/setup-node@v3
         with:
@@ -39,6 +37,8 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm install
+      - name: Setup Wasm-pack
+        run: npm install -g wasm-pack
       - name: Build Wasm
         run: npm run wasm
       - name: Build Html
