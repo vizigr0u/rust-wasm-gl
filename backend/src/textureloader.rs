@@ -24,6 +24,8 @@ pub struct TextureLoader {
     pool: Rc<RefCell<Vec<LoadingTexture>>>,
 }
 
+const EMPTY_TEXTURE: [u8; 4] = [255, 0, 255, 255];
+
 impl TextureLoader {
     pub fn new(pool_size: usize) -> Result<Self, JsValue> {
         let document = get_document()?;
@@ -80,7 +82,20 @@ impl TextureLoader {
                 let start_time: f64 = get_performance()?.now(); // TODO
                 loading_tex.status = TextureStatus::Busy(start_time, rc_closure);
                 unsafe {
-                    loading_tex.key = Some(gl.create_texture().expect("Can't create texture"));
+                    let key = Some(gl.create_texture().expect("Can't create texture"));
+                    gl.bind_texture(glow::TEXTURE_2D, key);
+                    gl.tex_image_2d(
+                        glow::TEXTURE_2D,
+                        0,
+                        glow::RGBA as _,
+                        1,
+                        1,
+                        0,
+                        glow::RGBA,
+                        glow::UNSIGNED_BYTE,
+                        Some(&EMPTY_TEXTURE),
+                    );
+                    loading_tex.key = key;
                 }
 
                 Ok(loading_tex.key.expect("Shouldn't be none"))
