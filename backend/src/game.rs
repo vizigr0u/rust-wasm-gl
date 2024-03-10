@@ -9,78 +9,40 @@ use crate::shader_def;
 use crate::shaders::ShaderDef;
 
 pub struct Game {
-    tri: Tri,
+    tris: Vec<Tri>,
     context: Rc<RefCell<WebGl2RenderingContext>>,
 }
 
 impl Game {
     pub fn new(context: Rc<RefCell<WebGl2RenderingContext>>) -> Self {
-        Game {
-            tri: Tri::new(
-                Vec3 {
-                    x: -0.7,
-                    y: -0.7,
-                    z: 0.0,
-                },
-                0.7,
-            ),
-            context,
-        }
+        let mut tris = Vec::<Tri>::new();
+        tris.push(Tri::new(
+            Vec3 {
+                x: -0.7,
+                y: -0.7,
+                z: 0.0,
+            },
+            1.4,
+        ));
+        tris.push(Tri::new(
+            Vec3 {
+                x: -0.7,
+                y: 0.0,
+                z: 0.0,
+            },
+            0.3,
+        ));
+        Game { tris, context }
     }
 
     pub fn init(&self) -> Result<(), String> {
         let shader_def = shader_def!("white.vert", "white.frag");
+        let context = self.context.borrow();
         let program = shader_def.compile(&self.context.borrow())?;
         self.context.borrow().use_program(Some(&program));
 
-        self.tri.init(&self.context.borrow(), &program)?;
-
-        Ok(())
-    }
-
-    pub fn draw(&self, _time: f64) {
-        self.context.borrow().clear_color(0.0, 0.0, 0.0, 1.0);
-        self.context
-            .borrow()
-            .clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
-
-        self.tri.draw(&self.context.borrow());
-    }
-}
-
-pub struct Tri {
-    pub pos: Vec3,
-    pub size: f32,
-
-    buffer: [f32; 18],
-}
-
-impl Tri {
-    pub fn new(pos: Vec3, size: f32) -> Self {
-        Tri {
-            pos,
-            size,
-            buffer: [
-                // Vertex 1
-                -0.7, -0.7, 0.0, // Position
-                1.0, 0.0, 0.0, // Color (Red)
-                // Vertex 2
-                0.7, -0.7, 0.0, // Position
-                0.0, 1.0, 0.0, // Color (Green)
-                // Vertex 3
-                0.0, 0.7, 0.0, // Position
-                0.0, 0.0, 1.0, // Color (Blue)
-            ],
-        }
-    }
-
-    pub fn init(
-        &self,
-        context: &WebGl2RenderingContext,
-        program: &web_sys::WebGlProgram,
-    ) -> Result<(), String> {
-        let position_attribute_location = context.get_attrib_location(program, "position");
-        let color_attribute_location = context.get_attrib_location(program, "vertexColor");
+        let position_attribute_location = context.get_attrib_location(&program, "position");
+        let color_attribute_location = context.get_attrib_location(&program, "vertexColor");
         let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
         context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
 
@@ -109,9 +71,58 @@ impl Tri {
         );
         context.enable_vertex_attrib_array(color_attribute_location as u32);
 
-        context.bind_vertex_array(Some(&vao));
-
         Ok(())
+    }
+
+    pub fn draw(&self, _time: f64) {
+        self.context.borrow().clear_color(0.0, 0.0, 0.0, 1.0);
+        self.context
+            .borrow()
+            .clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
+
+        // self.tri.draw(&self.context.borrow());
+        for tri in &self.tris {
+            tri.draw(&self.context.borrow());
+        }
+    }
+}
+
+pub struct Tri {
+    pub pos: Vec3,
+    pub size: f32,
+
+    buffer: [f32; 18],
+}
+
+impl Tri {
+    pub fn new(pos: Vec3, size: f32) -> Self {
+        Tri {
+            pos,
+            size,
+            buffer: [
+                // Vertex 1
+                pos.x,
+                pos.y,
+                0.0, // Position
+                1.0,
+                0.0,
+                0.0, // Color (Red)
+                // Vertex 2
+                pos.x + size,
+                pos.y,
+                0.0, // Position
+                0.0,
+                1.0,
+                0.0, // Color (Green)
+                // Vertex 3
+                pos.x + size * 0.5,
+                pos.y + size,
+                0.0, // Position
+                0.0,
+                0.0,
+                1.0, // Color (Blue)
+            ],
+        }
     }
 
     pub fn draw(&self, context: &WebGl2RenderingContext) {
