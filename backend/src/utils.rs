@@ -36,12 +36,17 @@ pub fn get_performance() -> Result<Performance, String> {
         .ok_or("Can't get document".into())
 }
 
-pub fn get_web_sys_context() -> Result<WebGl2RenderingContext, JsValue> {
+pub fn get_canvas() -> Result<web_sys::HtmlCanvasElement, JsValue> {
     let document = get_document()?;
-    let canvas = document.get_element_by_id("canvas").unwrap();
-    let canvas: web_sys::HtmlCanvasElement = canvas.dyn_into::<web_sys::HtmlCanvasElement>()?;
+    document
+        .get_element_by_id("canvas")
+        .ok_or("cannot find canvas")?
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .map_err(|_| "canvas isnt a Canvas Element".into())
+}
 
-    let context = canvas
+pub fn get_web_sys_context() -> Result<WebGl2RenderingContext, JsValue> {
+    let context = get_canvas()?
         .get_context("webgl2")?
         .expect("Unable to get WebGl2 context from canvas.")
         .dyn_into::<WebGl2RenderingContext>()?;

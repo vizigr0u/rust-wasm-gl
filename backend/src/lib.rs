@@ -8,6 +8,7 @@ mod camera;
 mod cube;
 mod game;
 mod gameobject;
+mod inputsystem;
 mod material;
 mod mesh;
 mod meshrenderer;
@@ -47,9 +48,10 @@ fn start() -> Result<(), JsValue> {
 
     let gl = get_webgl2_context()?;
 
-    let mut game = Game::new()?;
+    let game = Game::new()?;
+
     unsafe {
-        game.init(&gl)?;
+        game.borrow_mut().load(&gl)?;
     }
 
     main_loop(game, gl)?;
@@ -57,8 +59,7 @@ fn start() -> Result<(), JsValue> {
     Ok(())
 }
 
-fn main_loop(game: Game, gl: glow::Context) -> Result<(), JsValue> {
-    let game = Rc::new(RefCell::new(game));
+fn main_loop(game: Rc<RefCell<Game>>, gl: glow::Context) -> Result<(), JsValue> {
     let context = Rc::new(RefCell::new(gl));
     let update: Rc<RefCell<Option<Closure<dyn FnMut(f64) -> Result<(), JsValue>>>>> =
         Rc::new(RefCell::new(None));

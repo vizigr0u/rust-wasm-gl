@@ -58,6 +58,7 @@ features = [
     'RequestMode',
     'Response',
     'Performance',
+    'MouseEvent',
 ]
 
 [profile.release]

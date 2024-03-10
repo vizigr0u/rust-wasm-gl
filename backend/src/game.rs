@@ -1,19 +1,21 @@
-use std::path;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use glam::{vec3, Mat4, Quat, Vec3};
 use glow::HasContext;
+use log::{info, warn};
 use wasm_bindgen::JsValue;
 
 use crate::camera::Camera;
 use crate::gameobject::GameObject;
+use crate::inputsystem::{self, InputEventType, InputReactive, InputSystem};
 use crate::material::{TextureDef, TextureType};
 use crate::mesh::{Mesh, VertexAttrType};
 use crate::meshrenderer::MeshRenderer;
-use crate::shader_def;
-use crate::shaders::{CompiledShader, ShaderDef, UniformTypes};
+use crate::shaders::{ShaderDef, UniformTypes};
 use crate::textureloader::TextureLoader;
 use crate::trianglescene::TriangleScene;
+use crate::{shader_def, utils};
 
 const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
 const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";
@@ -27,12 +29,15 @@ pub struct Game {
     cube: Option<GameObject>,
     camera: Camera,
 
+    input_system: InputSystem,
     loaded_textures: Vec<Rc<TextureDef>>,
 }
 
 impl Game {
-    pub fn new() -> Result<Self, JsValue> {
-        Ok(Game {
+    pub fn new() -> Result<Rc<RefCell<Self>>, JsValue> {
+        let input_system = inputsystem::InputSystem::new(&utils::get_canvas()?)?;
+
+        let game = Game {
             scene: TriangleScene::new(),
             texture_loader: TextureLoader::new(10)?,
             quads: Vec::new(),
@@ -57,10 +62,17 @@ impl Game {
                 projection: Mat4::IDENTITY,
                 look_at: Mat4::IDENTITY,
             },
-        })
+            input_system,
+        };
+
+        let game = Rc::new(RefCell::new(game));
+
+        game.borrow_mut().input_system.subscribe(game.clone());
+
+        Ok(game)
     }
 
-    pub unsafe fn init(&mut self, gl: &glow::Context) -> Result<(), String> {
+    pub unsafe fn load(&mut self, gl: &glow::Context) -> Result<(), String> {
         for path in [
             GRASS_TEXTURE_PATH,
             SAND_TEXTURE_PATH,
@@ -189,5 +201,29 @@ impl Game {
         }
 
         Ok(())
+    }
+}
+
+const DEBUG_INPUTS: bool = false;
+
+impl InputReactive for Game {
+    fn handle_input(&mut self, ev: &InputEventType) {
+        match ev {
+            InputEventType::MouseDown(e) => {
+                if DEBUG_INPUTS {
+                    warn!("MOUSE DOWN {}, {}", e.offset_x(), e.offset_y())
+                }
+            }
+            InputEventType::MouseUp(e) => {
+                if DEBUG_INPUTS {
+                    warn!("MOUSE UP {}, {}", e.offset_x(), e.offset_y())
+                }
+            }
+            InputEventType::MouseMove(e) => {
+                if DEBUG_INPUTS {
+                    info!("MOUSE MOVE {}, {}", e.offset_x(), e.offset_y())
+                }
+            }
+        }
     }
 }
