@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
 
 #[macro_export]
@@ -9,21 +10,77 @@ macro_rules! include_shader {
 
 #[macro_export]
 macro_rules! shader_def {
-    ($vert_name: expr, $frag_name:expr) => {
-        ShaderDef {
-            vertex: include_shader!($vert_name),
-            fragment: include_shader!($frag_name),
-        }
+    ($vert_name: expr, $frag_name: expr, $attributes: expr) => {
+        ShaderDef::new(
+            $vert_name,
+            $frag_name,
+            include_shader!($vert_name),
+            include_shader!($frag_name),
+            $attributes,
+        )
     };
 }
 
 pub struct ShaderDef {
-    pub vertex: &'static str,
-    pub fragment: &'static str,
+    vertex_filename: &'static str,
+    fragment_filename: &'static str,
+    vertex: &'static str,
+    fragment: &'static str,
+    attributes: Vec<&'static str>,
+}
+
+pub struct CompiledShader {
+    program: WebGlProgram,
+    attribute_locations: HashMap<&'static str, u32>,
+}
+
+impl CompiledShader {
+    pub fn get_attr_location(&self, attr: &'static str) -> Option<&u32> {
+        self.attribute_locations.get(attr)
+    }
+
+    pub fn get_program(&self) -> &WebGlProgram {
+        &self.program
+    }
 }
 
 impl ShaderDef {
-    pub fn compile(&self, context: &WebGl2RenderingContext) -> Result<WebGlProgram, String> {
+    pub fn new(
+        vertex_filename: &'static str,
+        fragment_filename: &'static str,
+        vertex: &'static str,
+        fragment: &'static str,
+        attributes: Vec<&'static str>,
+    ) -> Self {
+        ShaderDef {
+            vertex_filename,
+            fragment_filename,
+            vertex,
+            fragment,
+            attributes,
+        }
+    }
+
+    // pub fn get_compiled(
+    //     &mut self,
+    //     context: &WebGl2RenderingContext,
+    // ) -> Result<&CompiledShader, &String> {
+    //     if self.compiled.is_none() {
+    //         let res = self.compile(context);
+    //         self.compiled = Some(res);
+    //     }
+    //     match &self.compiled {
+    //         Some(Ok(compiled_shader)) => Ok(compiled_shader),
+    //         Some(Err(e)) => Err(e),
+    //         None => unreachable!("Just set above;"),
+    //     }
+    // }
+
+    // pub fn is_compiled(&self) -> bool {
+    //     self.compiled.is_some()
+    // }
+
+    pub fn compile(&self, context: &WebGl2RenderingContext) -> Result<CompiledShader, String> {
         let vert = compile_shader(context, WebGl2RenderingContext::VERTEX_SHADER, self.vertex)?;
         let frag = compile_shader(
             context,
@@ -31,7 +88,35 @@ impl ShaderDef {
             self.fragment,
         )?;
 
-        link_program(context, &vert, &frag)
+        let program = link_program(context, &vert, &frag)?;
+
+        let mut attribute_locations = HashMap::new();
+        for attr in &self.attributes {
+            let location = get_attrib_location(&program, context, attr).map_err(|s| {
+                format!(
+                    "{} ({}, {})",
+                    s, self.vertex_filename, self.fragment_filename
+                )
+            })?;
+            attribute_locations.insert(*attr, location);
+        }
+        Ok(CompiledShader {
+            attribute_locations,
+            program,
+        })
+    }
+}
+
+fn get_attrib_location(
+    program: &WebGlProgram,
+    context: &WebGl2RenderingContext,
+    attr: &str,
+) -> Result<u32, String> {
+    match context.get_attrib_location(&program, attr) {
+        -1 => Err(String::from(format!(
+            "Unable to get attribute {attr} in shader"
+        ))),
+        n => Ok(n as u32),
     }
 }
 

@@ -1,8 +1,12 @@
+use glam::Mat4;
 use glam::Vec3;
 use web_sys::WebGl2RenderingContext;
+use web_sys::WebGlUniformLocation;
+use web_sys::WebGlVertexArrayObject;
 
 use crate::include_shader;
 use crate::shader_def;
+use crate::shaders::CompiledShader;
 use crate::shaders::ShaderDef;
 
 pub struct Game {
@@ -21,7 +25,7 @@ impl Game {
         Ok(())
     }
 
-    pub fn init(&self, context: &WebGl2RenderingContext) -> Result<(), String> {
+    pub fn init(&mut self, context: &WebGl2RenderingContext) -> Result<(), String> {
         self.scene.init(context)?;
 
         Ok(())
@@ -37,137 +41,171 @@ impl Game {
 
 struct TriangleScene {
     tris: Vec<Tri>,
+    vao: Option<WebGlVertexArrayObject>,
+    transform_location: Option<WebGlUniformLocation>,
+    shader: Option<CompiledShader>,
 }
 
 impl TriangleScene {
     pub fn new() -> Self {
-        let mut tris = Vec::<Tri>::new();
-        tris.push(Tri::new(
+        let tris = Vec::<Tri>::new();
+        TriangleScene {
+            tris,
+            vao: None,
+            transform_location: None,
+            shader: None,
+        }
+    }
+
+    pub fn update(&mut self, _time: f64) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn init(&mut self, context: &WebGl2RenderingContext) -> Result<(), String> {
+        let vert_color_def: ShaderDef = shader_def!(
+            "vertColor.vert",
+            "vertColor.frag",
+            vec!("position", "vertexColor")
+        );
+        let shader = vert_color_def.compile(context)?;
+
+        // self.transform_location = context.get_uniform_location(&program, "transform");
+
+        self.tris.push(Tri::new(
             Vec3 {
                 x: -0.7,
                 y: -0.7,
                 z: 0.0,
             },
             1.4,
-        ));
-        tris.push(Tri::new(
+        )?);
+        self.tris.push(Tri::new(
             Vec3 {
                 x: -0.7,
                 y: 0.0,
                 z: 0.0,
             },
             0.3,
-        ));
-        TriangleScene { tris }
-    }
-
-    pub fn update(&mut self, time: f64) -> Result<(), String> {
-        Ok(())
-    }
-
-    pub fn init(&self, context: &WebGl2RenderingContext) -> Result<(), String> {
-        let shader_def = shader_def!("white.vert", "white.frag");
-        let program = shader_def.compile(context)?;
-        context.use_program(Some(&program));
-
-        let position_attribute_location = context.get_attrib_location(&program, "position");
-        let color_attribute_location = context.get_attrib_location(&program, "vertexColor");
-        let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
-        context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
+        )?);
+        self.tris.push(Tri::new(
+            Vec3 {
+                x: 0.7,
+                y: 0.0,
+                z: 0.0,
+            },
+            0.3,
+        )?);
 
         let vao = context
             .create_vertex_array()
             .ok_or("Could not create vertex array object")?;
-        context.bind_vertex_array(Some(&vao));
+        self.vao = Some(vao);
+        context.bind_vertex_array(self.vao.as_ref());
+        let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
+        context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
 
+        unsafe {
+            let mut data = Vec::with_capacity(TRI_BUFFER_SIZE * self.tris.len());
+
+            for tri in &self.tris {
+                data.extend_from_slice(&tri.buffer);
+            }
+
+            // need to make sure we don't allow between view and buffer_data
+            let positions = js_sys::Float32Array::view(data.as_slice());
+
+            context.buffer_data_with_array_buffer_view(
+                WebGl2RenderingContext::ARRAY_BUFFER,
+                &positions,
+                WebGl2RenderingContext::STATIC_DRAW,
+            );
+        };
+
+        let position_location = *shader
+            .get_attr_location("position")
+            .ok_or("can't get position")?;
         context.vertex_attrib_pointer_with_i32(
-            position_attribute_location as u32,
+            position_location,
             3,
             WebGl2RenderingContext::FLOAT,
             false,
             6 * 4,
             0,
         );
-        context.enable_vertex_attrib_array(position_attribute_location as u32);
+        context.enable_vertex_attrib_array(position_location);
 
+        let color_location = *shader
+            .get_attr_location("vertexColor")
+            .ok_or("can't get color")?;
         context.vertex_attrib_pointer_with_i32(
-            color_attribute_location as u32,
+            color_location,
             3,
             WebGl2RenderingContext::FLOAT,
             false,
             6 * 4,
             3 * 4,
         );
-        context.enable_vertex_attrib_array(color_attribute_location as u32);
+        context.enable_vertex_attrib_array(color_location);
+
+        self.shader = Some(shader);
 
         Ok(())
     }
 
     pub fn render(&self, context: &WebGl2RenderingContext) {
-        for tri in &self.tris {
-            tri.render(context);
-        }
+        let shader = match &self.shader {
+            Some(s) => s,
+            None => return,
+        };
+        context.use_program(Some(shader.get_program()));
+        context.bind_vertex_array(self.vao.as_ref());
+
+        let mat = Mat4::IDENTITY;
+
+        context.uniform_matrix4fv_with_f32_array(
+            self.transform_location.as_ref(),
+            false,
+            &mat.to_cols_array().as_slice(),
+        );
+
+        let vert_count = self.tris.len() as i32 * 3;
+        context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vert_count);
     }
 }
+
+const TRI_BUFFER_SIZE: usize = 18;
 
 pub struct Tri {
     pub pos: Vec3,
     pub size: f32,
-
-    buffer: [f32; 18],
+    pub buffer: [f32; TRI_BUFFER_SIZE],
 }
 
 impl Tri {
-    pub fn new(pos: Vec3, size: f32) -> Self {
-        Tri {
-            pos,
-            size,
-            buffer: [
-                // Vertex 1
-                pos.x,
-                pos.y,
-                0.0, // Position
-                1.0,
-                0.0,
-                0.0, // Color (Red)
-                // Vertex 2
-                pos.x + size,
-                pos.y,
-                0.0, // Position
-                0.0,
-                1.0,
-                0.0, // Color (Green)
-                // Vertex 3
-                pos.x + size * 0.5,
-                pos.y + size,
-                0.0, // Position
-                0.0,
-                0.0,
-                1.0, // Color (Blue)
-            ],
-        }
-    }
-
-    fn render(&self, context: &WebGl2RenderingContext) {
-        // Note that `Float32Array::view` is somewhat dangerous (hence the
-        // `unsafe`!). This is creating a raw view into our module's
-        // `WebAssembly.Memory` buffer, but if we allocate more pages for ourself
-        // (aka do a memory allocation in Rust) it'll cause the buffer to change,
-        // causing the `Float32Array` to be invalid.
-        //
-        // As a result, after `Float32Array::view` we have to be very careful not to
-        // do any memory allocations before it's dropped.
-        unsafe {
-            let positions_array_buf_view = js_sys::Float32Array::view(&self.buffer);
-
-            context.buffer_data_with_array_buffer_view(
-                WebGl2RenderingContext::ARRAY_BUFFER,
-                &positions_array_buf_view,
-                WebGl2RenderingContext::STATIC_DRAW,
-            );
-        }
-
-        let vert_count = (self.buffer.len() / 6) as i32;
-        context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vert_count);
+    pub fn new(pos: Vec3, size: f32) -> Result<Self, String> {
+        let buffer = [
+            // Vertex 1
+            pos.x,
+            pos.y,
+            0.0, // Position
+            1.0,
+            0.0,
+            0.0, // Color (Red)
+            // Vertex 2
+            pos.x + size,
+            pos.y,
+            0.0, // Position
+            0.0,
+            1.0,
+            0.0, // Color (Green)
+            // Vertex 3
+            pos.x + size * 0.5,
+            pos.y + size,
+            0.0, // Position
+            0.0,
+            0.0,
+            1.0, // Color (Blue)
+        ];
+        Ok(Tri { pos, size, buffer })
     }
 }

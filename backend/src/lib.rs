@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 use web_sys::WebGl2RenderingContext;
 
 mod game;
+mod material;
 mod shaders;
 mod utils;
 
@@ -27,7 +28,7 @@ fn start() -> Result<(), JsValue> {
         .expect("Unable to get WebGl2 context from canvas.")
         .dyn_into::<WebGl2RenderingContext>()?;
 
-    let game = Game::new();
+    let mut game = Game::new();
     game.init(&context)?;
 
     main_loop(game, context)?;
