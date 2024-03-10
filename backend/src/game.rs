@@ -6,10 +6,40 @@ use crate::shader_def;
 use crate::shaders::ShaderDef;
 
 pub struct Game {
-    tris: Vec<Tri>,
+    scene: TriangleScene,
 }
 
 impl Game {
+    pub fn new() -> Self {
+        Game {
+            scene: TriangleScene::new(),
+        }
+    }
+
+    pub fn update(&mut self, time: f64) -> Result<(), String> {
+        self.scene.update(time)?;
+        Ok(())
+    }
+
+    pub fn init(&self, context: &WebGl2RenderingContext) -> Result<(), String> {
+        self.scene.init(context)?;
+
+        Ok(())
+    }
+
+    pub fn render(&self, context: &WebGl2RenderingContext) {
+        context.clear_color(0.0, 0.0, 0.0, 1.0);
+        context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
+
+        self.scene.render(context);
+    }
+}
+
+struct TriangleScene {
+    tris: Vec<Tri>,
+}
+
+impl TriangleScene {
     pub fn new() -> Self {
         let mut tris = Vec::<Tri>::new();
         tris.push(Tri::new(
@@ -28,7 +58,7 @@ impl Game {
             },
             0.3,
         ));
-        Game { tris }
+        TriangleScene { tris }
     }
 
     pub fn update(&mut self, time: f64) -> Result<(), String> {
@@ -74,9 +104,6 @@ impl Game {
     }
 
     pub fn render(&self, context: &WebGl2RenderingContext) {
-        context.clear_color(0.0, 0.0, 0.0, 1.0);
-        context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
-
         for tri in &self.tris {
             tri.render(context);
         }
