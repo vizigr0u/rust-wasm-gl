@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use glam::Vec3;
 use web_sys::WebGl2RenderingContext;
 
@@ -10,11 +7,10 @@ use crate::shaders::ShaderDef;
 
 pub struct Game {
     tris: Vec<Tri>,
-    context: Rc<RefCell<WebGl2RenderingContext>>,
 }
 
 impl Game {
-    pub fn new(context: Rc<RefCell<WebGl2RenderingContext>>) -> Self {
+    pub fn new() -> Self {
         let mut tris = Vec::<Tri>::new();
         tris.push(Tri::new(
             Vec3 {
@@ -32,14 +28,17 @@ impl Game {
             },
             0.3,
         ));
-        Game { tris, context }
+        Game { tris }
     }
 
-    pub fn init(&self) -> Result<(), String> {
+    pub fn update(&mut self, time: f64) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn init(&self, context: &WebGl2RenderingContext) -> Result<(), String> {
         let shader_def = shader_def!("white.vert", "white.frag");
-        let context = self.context.borrow();
-        let program = shader_def.compile(&self.context.borrow())?;
-        self.context.borrow().use_program(Some(&program));
+        let program = shader_def.compile(context)?;
+        context.use_program(Some(&program));
 
         let position_attribute_location = context.get_attrib_location(&program, "position");
         let color_attribute_location = context.get_attrib_location(&program, "vertexColor");
@@ -74,15 +73,12 @@ impl Game {
         Ok(())
     }
 
-    pub fn draw(&self, _time: f64) {
-        self.context.borrow().clear_color(0.0, 0.0, 0.0, 1.0);
-        self.context
-            .borrow()
-            .clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
+    pub fn render(&self, context: &WebGl2RenderingContext) {
+        context.clear_color(0.0, 0.0, 0.0, 1.0);
+        context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
 
-        // self.tri.draw(&self.context.borrow());
         for tri in &self.tris {
-            tri.draw(&self.context.borrow());
+            tri.render(context);
         }
     }
 }
@@ -125,7 +121,7 @@ impl Tri {
         }
     }
 
-    pub fn draw(&self, context: &WebGl2RenderingContext) {
+    fn render(&self, context: &WebGl2RenderingContext) {
         // Note that `Float32Array::view` is somewhat dangerous (hence the
         // `unsafe`!). This is creating a raw view into our module's
         // `WebAssembly.Memory` buffer, but if we allocate more pages for ourself
@@ -148,7 +144,3 @@ impl Tri {
         context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vert_count);
     }
 }
-
-// pub struct Cube {
-//     pub pos: Vec3,
-// }
