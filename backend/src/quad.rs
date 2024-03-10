@@ -1,10 +1,9 @@
 use std::rc::Rc;
 
-use glam::vec4;
+use glam::vec3;
 use glam::Mat4;
 use glam::Quat;
 use glam::Vec3;
-use glam::Vec4;
 use web_sys::WebGl2RenderingContext;
 use web_sys::WebGlUniformLocation;
 use web_sys::WebGlVertexArrayObject;
@@ -15,12 +14,13 @@ pub struct Quad {
     pub position: Vec3,
     pub rotation: Quat,
     pub scale: Vec3,
-    pub color: Vec4,
+    pub color: Vec3,
     pub buffer: [f32; 12],
 
     vao: Option<WebGlVertexArrayObject>,
     material: Rc<Material>,
     transform_location: Option<WebGlUniformLocation>,
+    color_location: Option<WebGlUniformLocation>,
 }
 
 impl Quad {
@@ -32,10 +32,11 @@ impl Quad {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE * 0.5,
-            color: vec4(1.0, 1.0, 1.0, 1.0),
+            color: vec3(1.0, 1.0, 1.0),
             vao: None,
             material: material.clone(),
             transform_location: None,
+            color_location: None,
         }
     }
     pub fn init(&mut self, context: &WebGl2RenderingContext) -> Result<(), String> {
@@ -78,6 +79,12 @@ impl Quad {
             return Err("Can't get transform uniform".to_string());
         }
 
+        self.color_location = context.get_uniform_location(shader.get_program(), "color");
+
+        if self.color_location.is_none() {
+            return Err("Can't get color uniform".to_string());
+        }
+
         Ok(())
     }
 
@@ -95,6 +102,10 @@ impl Quad {
             false,
             &mat.to_cols_array().as_slice(),
         );
+
+        let [r, g, b] = self.color.to_array();
+        gl.uniform3f(self.color_location.as_ref(), r, g, b);
+
         gl.draw_arrays(WebGl2RenderingContext::TRIANGLE_STRIP, 0, 4);
     }
 }

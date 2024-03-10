@@ -1,7 +1,10 @@
 use std::rc::Rc;
 
+use glam::vec3;
 use glam::Mat4;
 use glam::Vec3;
+use js_sys::Math::sin;
+use rand::Rng;
 use web_sys::WebGl2RenderingContext;
 use web_sys::WebGlUniformLocation;
 use web_sys::WebGlVertexArrayObject;
@@ -64,6 +67,12 @@ impl TriangleScene {
     }
 
     pub fn update(&mut self, _time: f64) -> Result<(), String> {
+        let mut rng = rand::thread_rng();
+        for quad in self.quads.iter_mut() {
+            quad.position = vec3(sin(_time / 1000.0) as f32, 0.0, 0.0);
+            quad.color = vec3(rng.gen(), rng.gen(), rng.gen());
+        }
+
         Ok(())
     }
 
