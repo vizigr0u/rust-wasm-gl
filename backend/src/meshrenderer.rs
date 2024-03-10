@@ -1,26 +1,28 @@
 use std::rc::Rc;
 
-use glam::Mat4;
 use glow::{HasContext, WebVertexArrayKey};
 use log::warn;
 
-use crate::material::{Material, TextureType};
 use crate::mesh::{Mesh, MeshDisplayType};
-use crate::shaders::UniformTypes;
+use crate::shaders::CompiledShader;
 
 pub struct MeshRenderer {
-    material: Rc<Material>,
+    program: Rc<CompiledShader>,
     vao: Option<WebVertexArrayKey>,
     display_type: MeshDisplayType,
     vertex_count: i32,
 }
 
 impl MeshRenderer {
+    pub fn get_program(&self) -> &CompiledShader {
+        &self.program
+    }
+
     pub unsafe fn load(
         gl: &glow::Context,
-        material: Rc<Material>,
+        program: &Rc<CompiledShader>,
         mesh: Rc<Mesh>,
-    ) -> Result<MeshRenderer, String> {
+    ) -> Result<Self, String> {
         let vao = Some(gl.create_vertex_array()?);
         gl.bind_vertex_array(vao);
         let buffer = gl.create_buffer()?;
@@ -31,8 +33,6 @@ impl MeshRenderer {
             mesh.get_data().align_to::<u8>().1,
             glow::STATIC_DRAW,
         );
-
-        let shader = material.get_shader();
 
         let layout_size: usize = mesh.layout.iter().map(|(_type, size)| size).sum();
 
@@ -48,7 +48,7 @@ impl MeshRenderer {
 
         let mut offset: i32 = 0;
         for &(data_type, size) in mesh.layout.iter() {
-            match shader.get_attr_location(data_type) {
+            match program.get_attr_location(data_type) {
                 Some(&location) => {
                     let location = location as u32;
                     gl.vertex_attrib_pointer_f32(
@@ -66,36 +66,15 @@ impl MeshRenderer {
             offset += 4 * size as i32;
         }
 
-        gl.use_program(Some(shader.get_program()));
-
-        shader.set_matrix(gl, UniformTypes::ModelMatrix, &Mat4::IDENTITY);
-        shader.set_matrix(gl, UniformTypes::ViewMatrix, &Mat4::IDENTITY);
-        shader.set_matrix(gl, UniformTypes::ProjMatrix, &Mat4::IDENTITY);
-
-        if let Some((tex_type, key)) = &material.texture {
-            let texture = Some(*key);
-            match tex_type {
-                TextureType::Texture2D => gl.bind_texture(glow::TEXTURE_2D, texture),
-                TextureType::Texture2DArray => todo!(),
-            };
-        }
-
         Ok(MeshRenderer {
-            material: material.clone(),
             vao,
             display_type: mesh.display_type,
             vertex_count: mesh.get_data().len() as i32 / layout_size as i32,
+            program: program.clone(),
         })
     }
 
-    pub unsafe fn draw(&self, gl: &glow::Context, transform: &Mat4) {
-        let material = &self.material;
-        gl.use_program(Some(material.get_shader().get_program()));
-
-        let shader = material.get_shader();
-
-        shader.set_matrix(gl, UniformTypes::ModelMatrix, transform);
-
+    pub unsafe fn draw(&self, gl: &glow::Context) {
         gl.bind_vertex_array(self.vao);
 
         gl.draw_arrays(self.display_type as _, 0, self.vertex_count);

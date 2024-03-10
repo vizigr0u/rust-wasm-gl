@@ -38,7 +38,7 @@ pub struct ShaderDef {
 }
 
 pub struct CompiledShader {
-    program: WebProgramKey,
+    program_key: WebProgramKey,
     attribute_locations: HashMap<VertexAttrType, u32>,
     uniform_locations: HashMap<UniformTypes, WebGlUniformLocation>,
 }
@@ -53,12 +53,16 @@ impl CompiledShader {
     }
 
     pub fn get_program(&self) -> WebProgramKey {
-        self.program
+        self.program_key
     }
 
     pub unsafe fn set_matrix(&self, gl: &glow::Context, matrix_type: UniformTypes, value: &Mat4) {
         let location = self.get_uniform_location(matrix_type);
         gl.uniform_matrix_4_f32_slice(location, false, &value.to_cols_array().as_slice());
+    }
+
+    pub unsafe fn gl_use(&self, gl: &glow::Context) {
+        gl.use_program(Some(self.program_key));
     }
 }
 
@@ -107,7 +111,7 @@ impl ShaderDef {
         Ok(CompiledShader {
             attribute_locations,
             uniform_locations,
-            program,
+            program_key: program,
         })
     }
 }

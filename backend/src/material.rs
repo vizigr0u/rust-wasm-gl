@@ -11,10 +11,12 @@ pub enum TextureType {
     Texture2DArray,
 }
 
+pub type TextureDef = (TextureType, WebTextureKey);
+
 #[derive(Clone)]
 pub struct Material {
     pub color: Vec3,
-    pub texture: Option<(TextureType, WebTextureKey)>,
+    pub texture: Option<TextureDef>,
     shader: Rc<CompiledShader>,
 }
 

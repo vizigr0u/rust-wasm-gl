@@ -22,4 +22,16 @@ impl Mesh {
     pub fn get_data(&self) -> &Vec<f32> {
         &self.data
     }
+    pub fn make_quad() -> Mesh {
+        Mesh {
+            data: vec![
+                -1.0, -1.0, 0.0, 0.0, 1.0, //
+                1.0, -1.0, 0.0, 1.0, 1.0, //
+                -1.0, 1.0, 0.0, 0.0, 0.0, //
+                1.0, 1.0, 0.0, 1.0, 0.0, //
+            ],
+            layout: vec![(VertexAttrType::Position, 3), (VertexAttrType::UVs, 2)],
+            display_type: MeshDisplayType::TriangleStrip,
+        }
+    }
 }

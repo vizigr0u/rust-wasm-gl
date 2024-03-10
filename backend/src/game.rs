@@ -1,11 +1,11 @@
 use std::rc::Rc;
 
-use glam::{vec3, Mat4};
+use glam::{vec3, Mat4, Quat};
 use glow::HasContext;
 use wasm_bindgen::JsValue;
 
-use crate::material::{Material, TextureType};
-use crate::mesh::VertexAttrType;
+use crate::material::TextureType;
+use crate::mesh::{Mesh, VertexAttrType};
 use crate::meshrenderer::MeshRenderer;
 use crate::quad::Quad;
 use crate::shader_def;
@@ -20,7 +20,6 @@ pub struct Game {
     scene: TriangleScene,
     texture_loader: TextureLoader,
     quads: Vec<Quad>,
-    quad_renderer: Option<MeshRenderer>,
 }
 
 impl Game {
@@ -29,17 +28,18 @@ impl Game {
             scene: TriangleScene::new(),
             texture_loader: TextureLoader::new(10)?,
             quads: Vec::new(),
-            quad_renderer: None,
         })
     }
 
     pub fn update(&mut self, time: f64) -> Result<(), String> {
         for (index, quad) in self.quads.iter_mut().enumerate() {
-            quad.position = vec3(
+            quad.set_position(vec3(
                 f64::sin(2.0 * index as f64 + time / 1000.0) as f32,
                 f64::cos(2.0 * index as f64 + time / 200.0) as f32,
                 0.0,
-            );
+            ));
+            quad.set_scale(vec3(0.2, f64::sin(time / 1000.0) as f32 * 0.2, 0.5));
+            quad.update();
         }
 
         self.scene.update(time)?;
@@ -58,7 +58,7 @@ impl Game {
         let grass_key = self.texture_loader.load(gl, GRASS_TEXTURE_PATH)?;
         let dirt_key = self.texture_loader.load(gl, SAND_TEXTURE_PATH)?;
 
-        let quad_shader = shader_def!(
+        let quad_program = shader_def!(
             "textureTransform.vert",
             "textureTransform.frag",
             vec!(
@@ -72,18 +72,15 @@ impl Game {
             )
         )
         .compile(gl)?;
-        let quad_shader_ref = Rc::new(quad_shader);
-        let mut mat = Material::from_shader(&quad_shader_ref);
-        mat.texture = Some((TextureType::Texture2D, grass_key));
-        let mut mat2 = mat.clone();
-        mat2.texture = Some((TextureType::Texture2D, dirt_key));
-        let mat1 = Rc::new(mat);
-        let mat2 = Rc::new(mat2);
+        let quad_program = Rc::new(quad_program);
+        let quad_tex1 = Rc::new((TextureType::Texture2D, grass_key));
+        let quad_tex2 = Rc::new((TextureType::Texture2D, dirt_key));
 
-        let quad_mesh = Rc::new(Quad::make_mesh());
-        self.quad_renderer = Some(MeshRenderer::load(gl, mat1, quad_mesh)?);
+        let quad_mesh = Rc::new(Mesh::make_quad());
+        let quad_renderer = Rc::new(MeshRenderer::load(gl, &quad_program, quad_mesh)?);
         for i in 0..50 {
-            let quad: Quad = Quad::new();
+            let tex = if i % 2 == 0 { &quad_tex1 } else { &quad_tex2 };
+            let quad: Quad = Quad::new(tex, &quad_renderer);
             self.quads.push(quad);
         }
 
@@ -95,14 +92,8 @@ impl Game {
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
         gl.clear(glow::COLOR_BUFFER_BIT);
 
-        if let Some(quad_renderer) = &self.quad_renderer {
-            for quad in &self.quads {
-                let (position, rotation, scale) = (quad.position, quad.rotation, quad.scale);
-                quad_renderer.draw(
-                    gl,
-                    &Mat4::from_scale_rotation_translation(scale, rotation, position),
-                );
-            }
+        for quad in &self.quads {
+            quad.render(gl);
         }
 
         self.scene.render(gl);
