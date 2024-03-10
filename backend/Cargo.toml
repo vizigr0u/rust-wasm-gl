@@ -28,6 +28,10 @@ console_error_panic_hook = { version = "0.1.6", optional = true }
 # Unfortunately, `wee_alloc` requires nightly Rust when targeting wasm for now.
 wee_alloc = { version = "0.4.5", optional = true }
 glow = "0.13.1"
+wasm-bindgen-futures = "0.4.41"
+gloo = { version = "0.11.0", features = ['gloo-events'] }
+log = "0.4.20"
+console_log = { version = "1.0.0", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.13"
@@ -46,6 +50,13 @@ features = [
     'WebGlProgram',
     'WebGlShader',
     'Window',
+    'ImageBitmap',
+    'HtmlImageElement',
+    'Headers',
+    'Request',
+    'RequestInit',
+    'RequestMode',
+    'Response',
 ]
 
 [profile.release]
@@ -53,5 +64,4 @@ features = [
 opt-level = "s"
 
 [features]
-# default = ["console_error_panic_hook" ,"wee_alloc"]
-default = ["console_error_panic_hook"]
+default = ["console_error_panic_hook", "console_log", "wee_alloc"]

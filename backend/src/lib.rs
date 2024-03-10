@@ -1,14 +1,25 @@
 use std::{cell::RefCell, rc::Rc};
 
+use cfg_if::cfg_if;
 use game::Game;
 use wasm_bindgen::prelude::*;
-use web_sys::WebGl2RenderingContext;
 
 mod game;
 mod material;
 mod quad;
 mod shaders;
 mod utils;
+
+cfg_if! {
+    if #[cfg(feature = "console_log")] {
+        fn init_log() {
+            use log::Level;
+            console_log::init_with_level(Level::Trace).expect("error initializing log");
+        }
+    } else {
+        fn init_log() {}
+    }
+}
 
 fn request_animation_frame(f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>) {
     web_sys::window()
@@ -23,17 +34,12 @@ compile_error!("This project is for wasm only");
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 fn start() -> Result<(), JsValue> {
+    use utils::get_webgl2_context;
+
     utils::set_panic_hook();
-    let document = web_sys::window().unwrap().document().unwrap();
-    let canvas = document.get_element_by_id("canvas").unwrap();
-    let canvas: web_sys::HtmlCanvasElement = canvas.dyn_into::<web_sys::HtmlCanvasElement>()?;
+    init_log();
 
-    let context = canvas
-        .get_context("webgl2")?
-        .expect("Unable to get WebGl2 context from canvas.")
-        .dyn_into::<WebGl2RenderingContext>()?;
-
-    let gl = glow::Context::from_webgl2_context(context);
+    let gl = get_webgl2_context()?;
 
     let mut game = Game::new();
     unsafe {

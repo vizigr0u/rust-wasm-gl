@@ -15,6 +15,7 @@ use crate::quad::Quad;
 use crate::shader_def;
 use crate::shaders::CompiledShader;
 use crate::shaders::ShaderDef;
+use crate::utils::load_texture;
 
 pub struct Game {
     scene: TriangleScene,
@@ -35,6 +36,8 @@ impl Game {
     pub unsafe fn init(&mut self, gl: &glow::Context) -> Result<(), String> {
         self.scene.init(gl)?;
 
+        let _ = load_texture(gl, "data/textures/blocks/dirt.png")?;
+
         Ok(())
     }
 
@@ -42,7 +45,7 @@ impl Game {
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
         gl.clear(glow::COLOR_BUFFER_BIT);
 
-        self.scene.render(gl);
+        // self.scene.render(gl);
     }
 }
 
