@@ -10,6 +10,7 @@ use crate::mesh::VertexAttrType;
 use crate::shader_def;
 use crate::shaders::CompiledShader;
 use crate::shaders::ShaderDef;
+use crate::time::Time;
 
 pub struct TriangleScene {
     tris: Vec<Tri>,
@@ -29,7 +30,7 @@ impl TriangleScene {
         }
     }
 
-    pub fn update(&mut self, _time: f64) -> Result<(), String> {
+    pub fn update(&mut self, _time: &Time) -> Result<(), String> {
         Ok(())
     }
 

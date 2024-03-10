@@ -14,6 +14,7 @@ mod mesh;
 mod meshrenderer;
 mod shaders;
 mod textureloader;
+mod time;
 mod trianglescene;
 mod utils;
 
@@ -48,10 +49,10 @@ fn start() -> Result<(), JsValue> {
 
     let gl = get_webgl2_context()?;
 
-    let game = Game::new()?;
+    let mut game = Game::new()?;
 
     unsafe {
-        game.borrow_mut().load(&gl)?;
+        game.load(&gl)?;
     }
 
     main_loop(game, gl)?;
@@ -59,12 +60,13 @@ fn start() -> Result<(), JsValue> {
     Ok(())
 }
 
-fn main_loop(game: Rc<RefCell<Game>>, gl: glow::Context) -> Result<(), JsValue> {
+fn main_loop(game: Game, gl: glow::Context) -> Result<(), JsValue> {
     let context = Rc::new(RefCell::new(gl));
     let update: Rc<RefCell<Option<Closure<dyn FnMut(f64) -> Result<(), JsValue>>>>> =
         Rc::new(RefCell::new(None));
     /* Reference to closure requests for first frame and then it's dropped */
     let request_update = update.clone();
+    let game = Rc::new(RefCell::new(game));
 
     *request_update.borrow_mut() = Some(Closure::new(move |time| {
         game.borrow_mut().update(time)?;

@@ -1,19 +1,19 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use glam::{vec3, Mat4, Quat, Vec3};
+use glam::{vec3, Quat, Vec3};
 use glow::HasContext;
-use log::{info, warn};
 use wasm_bindgen::JsValue;
 
 use crate::camera::Camera;
 use crate::gameobject::GameObject;
-use crate::inputsystem::{self, InputEventType, InputReactive, InputSystem};
+use crate::inputsystem::{self, InputEventType, InputSubscription, InputSystem};
 use crate::material::{TextureDef, TextureType};
 use crate::mesh::{Mesh, VertexAttrType};
 use crate::meshrenderer::MeshRenderer;
 use crate::shaders::{ShaderDef, UniformTypes};
 use crate::textureloader::TextureLoader;
+use crate::time::Time;
 use crate::trianglescene::TriangleScene;
 use crate::{shader_def, utils};
 
@@ -27,17 +27,17 @@ pub struct Game {
     texture_loader: TextureLoader,
     quads: Vec<GameObject>,
     cube: Option<GameObject>,
-    camera: Camera,
+    camera: Rc<RefCell<Camera>>,
 
     input_system: InputSystem,
     loaded_textures: Vec<Rc<TextureDef>>,
-    previous_time: Option<f64>,
-    delta_time: f64,
-    camera_velocity: Vec3,
+    time: Time,
+
+    camera_input_sub: Option<InputSubscription>,
 }
 
 impl Game {
-    pub fn new() -> Result<Rc<RefCell<Self>>, JsValue> {
+    pub fn new() -> Result<Self, JsValue> {
         let input_system = inputsystem::InputSystem::new(&utils::get_canvas()?)?;
 
         let game = Game {
@@ -46,34 +46,27 @@ impl Game {
             quads: Vec::new(),
             cube: None,
             loaded_textures: Vec::new(),
-            camera: Camera {
-                position: Vec3 {
+            camera: Rc::new(RefCell::new(Camera::new(
+                Vec3 {
                     x: 0.0,
                     y: 0.0,
                     z: -10.0,
                 },
-                direction: Vec3 {
+                Vec3 {
                     x: 0.0,
                     y: 0.0,
-                    z: 0.0,
+                    z: 1.0,
                 },
-                up: Vec3 {
+                Vec3 {
                     x: 0.0,
                     y: 1.0,
                     z: 0.0,
                 },
-                projection: Mat4::IDENTITY,
-                look_at: Mat4::IDENTITY,
-            },
+            ))),
             input_system,
-            previous_time: None,
-            delta_time: 0.0,
-            camera_velocity: Vec3::ZERO,
+            time: Time::new(),
+            camera_input_sub: None,
         };
-
-        let game = Rc::new(RefCell::new(game));
-
-        game.borrow_mut().input_system.subscribe(game.clone());
 
         Ok(game)
     }
@@ -91,10 +84,14 @@ impl Game {
         }
 
         gl.enable(glow::CULL_FACE);
-        self.camera.projection =
-            Mat4::perspective_rh_gl(f32::to_degrees(45.0), 800.0 / 600.0, 0.1, 100.0);
 
         self.scene.init(gl)?;
+        let camera: Rc<RefCell<Camera>> = self.camera.clone();
+        let callback = Box::new(move |e: &InputEventType| {
+            camera.borrow_mut().handle_input(e);
+        });
+        self.camera_input_sub = Some(self.input_system.subscribe(callback));
+        // self.camera.borrow_mut().register_inputs(self.input_system);
 
         self.init_quads(gl)?;
         self.init_cube(gl)?;
@@ -103,10 +100,7 @@ impl Game {
     }
 
     pub fn update(&mut self, time: f64) -> Result<(), String> {
-        if let Some(previous_time) = self.previous_time {
-            self.delta_time = previous_time - time;
-        }
-        self.previous_time = Some(time);
+        self.time.update(time);
         for (index, quad) in self.quads.iter_mut().enumerate() {
             quad.set_position(vec3(
                 f64::sin(2.0 * index as f64 + time / 1000.0) as f32,
@@ -127,11 +121,9 @@ impl Game {
             cube.update();
         }
 
-        self.scene.update(time)?;
+        self.scene.update(&self.time)?;
 
-        self.camera.position += self.camera_velocity * (self.delta_time as f32 / 5.0);
-        self.camera.look_at =
-            Mat4::look_at_rh(self.camera.position, self.camera.direction, self.camera.up);
+        self.camera.borrow_mut().update(&self.time);
 
         Ok(())
     }
@@ -145,10 +137,10 @@ impl Game {
         //     quad.render(gl);
         // }
 
-        // self.scene.render(gl);
+        self.scene.render(gl);
 
         if let Some(cube) = &self.cube {
-            cube.render(gl, &self.camera);
+            cube.render(gl, &self.camera.borrow());
         }
 
         Ok(())
@@ -211,47 +203,5 @@ impl Game {
         }
 
         Ok(())
-    }
-}
-
-const DEBUG_INPUTS: bool = false;
-
-impl InputReactive for Game {
-    fn handle_input(&mut self, ev: &InputEventType) {
-        match ev {
-            InputEventType::MouseDown(e) => {
-                if DEBUG_INPUTS {
-                    warn!("MOUSE DOWN {}, {}", e.offset_x(), e.offset_y())
-                }
-            }
-            InputEventType::MouseUp(e) => {
-                if DEBUG_INPUTS {
-                    warn!("MOUSE UP {}, {}", e.offset_x(), e.offset_y())
-                }
-            }
-            InputEventType::MouseMove(e) => {
-                if DEBUG_INPUTS {
-                    info!("MOUSE MOVE {}, {}", e.offset_x(), e.offset_y())
-                }
-            }
-            InputEventType::KeyDown(e) => {
-                if DEBUG_INPUTS {
-                    warn!("KEY DOWN: {}", e.code())
-                }
-                match e.code().as_str() {
-                    "KeyW" => self.camera_velocity = Vec3::NEG_Z,
-                    _ => {}
-                }
-            }
-            InputEventType::KeyUp(e) => {
-                if DEBUG_INPUTS {
-                    warn!("KEY UP: {}", e.code())
-                }
-                match e.code().as_str() {
-                    "KeyW" => self.camera_velocity = Vec3::ZERO,
-                    _ => {}
-                }
-            }
-        }
     }
 }

@@ -1,11 +1,13 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
+use log::info;
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use web_sys::{EventTarget, HtmlCanvasElement};
 
-pub trait InputReactive {
-    fn handle_input(&mut self, ev: &InputEventType);
-}
+type InputCallback = Box<dyn FnMut(&InputEventType) + 'static>;
 
 pub enum InputEventType {
     MouseDown(Rc<web_sys::MouseEvent>),
@@ -15,17 +17,49 @@ pub enum InputEventType {
     KeyUp(Rc<web_sys::KeyboardEvent>),
 }
 
+pub type SubscriberId = usize;
+type SubscriberType = (SubscriberId, InputCallback);
+
+pub struct InputSubscription {
+    id: SubscriberId,
+    subscribers: Arc<Mutex<Vec<SubscriberType>>>,
+}
+
+impl Drop for InputSubscription {
+    fn drop(&mut self) {
+        info!("InputSystem auto-unsubscribe: #{}", self.id);
+        self.unsubscribe();
+    }
+}
+
+impl InputSubscription {
+    pub fn new(id: SubscriberId, subscribers: Arc<Mutex<Vec<SubscriberType>>>) -> Self {
+        Self { id, subscribers }
+    }
+
+    fn unsubscribe(&mut self) {
+        info!("InputSystem unsubscribe: #{}", self.id);
+        let mut subs = self.subscribers.lock().unwrap();
+        if subs.is_empty() {
+            return;
+        }
+        subs.retain(|(id, _)| *id != self.id);
+    }
+}
+
 pub struct InputSystem {
-    subscribers: Rc<RefCell<Vec<Rc<RefCell<dyn InputReactive>>>>>,
-    closures: Vec<Rc<RefCell<Closure<dyn FnMut(JsValue)>>>>,
+    subscribers: Arc<Mutex<Vec<SubscriberType>>>,
+    closures: Vec<Arc<Mutex<Closure<dyn FnMut(JsValue)>>>>,
+    next_id: SubscriberId,
 }
 
 impl InputSystem {
     pub fn new(canvas: &HtmlCanvasElement) -> Result<Self, JsValue> {
-        let subscribers = Rc::new(RefCell::new(Vec::<Rc<RefCell<dyn InputReactive>>>::new()));
+        let subscribers = Arc::new(Mutex::new(Vec::<SubscriberType>::new()));
         let mut system = Self {
             subscribers,
             closures: Vec::new(),
+            next_id: 1,
         };
 
         system.add_event_listener(
@@ -73,8 +107,13 @@ impl InputSystem {
         Ok(system)
     }
 
-    pub fn subscribe(&mut self, subscriber: Rc<RefCell<dyn InputReactive>>) {
-        self.subscribers.borrow_mut().push(subscriber);
+    pub fn subscribe(&mut self, subscriber: InputCallback) -> InputSubscription {
+        let mut subs = self.subscribers.lock().unwrap();
+        let id = self.next_id;
+        self.next_id += 1;
+        subs.push((id, subscriber));
+        info!("InputSystem subscription #{id}");
+        InputSubscription::new(id, self.subscribers.clone())
     }
 
     fn add_event_listener<F>(
@@ -89,15 +128,14 @@ impl InputSystem {
         let subscribers = self.subscribers.clone();
         let closure = Closure::wrap(Box::new(move |event: JsValue| {
             let event_type = convert(event);
-            for subscriber in subscribers.borrow_mut().iter_mut() {
-                subscriber.borrow_mut().handle_input(&event_type);
+            for (_, subscriber) in subscribers.lock().unwrap().iter_mut() {
+                subscriber(&event_type);
             }
         }) as Box<dyn FnMut(JsValue)>);
-        let rc_closure = Rc::new(RefCell::new(closure));
-
+        let rc_closure = Arc::new(Mutex::new(closure));
         target.add_event_listener_with_callback(
             event_type,
-            rc_closure.borrow().as_ref().unchecked_ref(),
+            rc_closure.lock().unwrap().as_ref().unchecked_ref(),
         )?;
 
         // closure.forget();
