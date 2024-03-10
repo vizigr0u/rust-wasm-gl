@@ -6,10 +6,10 @@ use wasm_bindgen::prelude::*;
 
 mod cube;
 mod game;
+mod gameobject;
 mod material;
 mod mesh;
 mod meshrenderer;
-mod quad;
 mod shaders;
 mod textureloader;
 mod trianglescene;

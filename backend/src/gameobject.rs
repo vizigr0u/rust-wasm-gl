@@ -10,7 +10,7 @@ use crate::material::TextureType;
 use crate::meshrenderer::MeshRenderer;
 use crate::shaders::UniformTypes;
 
-pub struct Quad {
+pub struct GameObject {
     position: Vec3,
     rotation: Quat,
     scale: Vec3,
@@ -21,9 +21,9 @@ pub struct Quad {
     texture: Rc<TextureDef>,
 }
 
-impl Quad {
+impl GameObject {
     pub unsafe fn new(texture: &Rc<TextureDef>, renderer: &Rc<MeshRenderer>) -> Self {
-        Quad {
+        GameObject {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE * 0.5,
@@ -73,6 +73,6 @@ impl Quad {
 
         program.set_matrix(gl, UniformTypes::ModelMatrix, &self.transform);
 
-        self.renderer.draw(gl);
+        self.renderer.render(gl);
     }
 }

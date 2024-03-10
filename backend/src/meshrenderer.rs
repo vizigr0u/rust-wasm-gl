@@ -18,7 +18,7 @@ impl MeshRenderer {
         &self.program
     }
 
-    pub unsafe fn load(
+    pub unsafe fn new(
         gl: &glow::Context,
         program: &Rc<CompiledShader>,
         mesh: Rc<Mesh>,
@@ -74,7 +74,7 @@ impl MeshRenderer {
         })
     }
 
-    pub unsafe fn draw(&self, gl: &glow::Context) {
+    pub unsafe fn render(&self, gl: &glow::Context) {
         gl.bind_vertex_array(self.vao);
 
         gl.draw_arrays(self.display_type as _, 0, self.vertex_count);
