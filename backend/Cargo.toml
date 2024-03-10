@@ -59,6 +59,7 @@ features = [
     'Response',
     'Performance',
     'MouseEvent',
+    'KeyboardEvent',
 ]
 
 [profile.release]

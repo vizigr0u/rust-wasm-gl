@@ -11,6 +11,8 @@ pub enum InputEventType {
     MouseDown(Rc<web_sys::MouseEvent>),
     MouseUp(Rc<web_sys::MouseEvent>),
     MouseMove(Rc<web_sys::MouseEvent>),
+    KeyDown(Rc<web_sys::KeyboardEvent>),
+    KeyUp(Rc<web_sys::KeyboardEvent>),
 }
 
 pub struct InputSystem {
@@ -48,6 +50,24 @@ impl InputSystem {
             Box::new(|event: JsValue| {
                 let event: web_sys::MouseEvent = event.dyn_into().unwrap();
                 InputEventType::MouseMove(Rc::new(event))
+            }),
+        )?;
+
+        system.add_event_listener(
+            canvas,
+            "keydown",
+            Box::new(|event: JsValue| {
+                let event: web_sys::KeyboardEvent = event.dyn_into().unwrap();
+                InputEventType::KeyDown(Rc::new(event))
+            }),
+        )?;
+
+        system.add_event_listener(
+            canvas,
+            "keyup",
+            Box::new(|event: JsValue| {
+                let event: web_sys::KeyboardEvent = event.dyn_into().unwrap();
+                InputEventType::KeyUp(Rc::new(event))
             }),
         )?;
         Ok(system)

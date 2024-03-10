@@ -31,6 +31,9 @@ pub struct Game {
 
     input_system: InputSystem,
     loaded_textures: Vec<Rc<TextureDef>>,
+    previous_time: Option<f64>,
+    delta_time: f64,
+    camera_velocity: Vec3,
 }
 
 impl Game {
@@ -63,6 +66,9 @@ impl Game {
                 look_at: Mat4::IDENTITY,
             },
             input_system,
+            previous_time: None,
+            delta_time: 0.0,
+            camera_velocity: Vec3::ZERO,
         };
 
         let game = Rc::new(RefCell::new(game));
@@ -97,6 +103,10 @@ impl Game {
     }
 
     pub fn update(&mut self, time: f64) -> Result<(), String> {
+        if let Some(previous_time) = self.previous_time {
+            self.delta_time = previous_time - time;
+        }
+        self.previous_time = Some(time);
         for (index, quad) in self.quads.iter_mut().enumerate() {
             quad.set_position(vec3(
                 f64::sin(2.0 * index as f64 + time / 1000.0) as f32,
@@ -119,7 +129,7 @@ impl Game {
 
         self.scene.update(time)?;
 
-        self.camera.position = vec3(0.0, 0.0, -5.0 - (f64::cos(time / 1000.0) as f32 * 4.0));
+        self.camera.position += self.camera_velocity * (self.delta_time as f32 / 5.0);
         self.camera.look_at =
             Mat4::look_at_rh(self.camera.position, self.camera.direction, self.camera.up);
 
@@ -222,6 +232,24 @@ impl InputReactive for Game {
             InputEventType::MouseMove(e) => {
                 if DEBUG_INPUTS {
                     info!("MOUSE MOVE {}, {}", e.offset_x(), e.offset_y())
+                }
+            }
+            InputEventType::KeyDown(e) => {
+                if DEBUG_INPUTS {
+                    warn!("KEY DOWN: {}", e.code())
+                }
+                match e.code().as_str() {
+                    "KeyW" => self.camera_velocity = Vec3::NEG_Z,
+                    _ => {}
+                }
+            }
+            InputEventType::KeyUp(e) => {
+                if DEBUG_INPUTS {
+                    warn!("KEY UP: {}", e.code())
+                }
+                match e.code().as_str() {
+                    "KeyW" => self.camera_velocity = Vec3::ZERO,
+                    _ => {}
                 }
             }
         }
