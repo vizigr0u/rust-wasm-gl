@@ -9,6 +9,7 @@ use glow::WebVertexArrayKey;
 use web_sys::WebGlUniformLocation;
 
 use crate::material::Material;
+use crate::mesh::VertexAttrType;
 
 pub struct Quad {
     pub position: Vec3,
@@ -42,7 +43,7 @@ impl Quad {
             texture_location: None,
         }
     }
-    pub unsafe fn init(&mut self, gl: &glow::Context) -> Result<(), String> {
+    pub unsafe fn init_render(&mut self, gl: &glow::Context) -> Result<(), String> {
         let vao = gl.create_vertex_array()?;
         self.vao = Some(vao);
         gl.bind_vertex_array(self.vao);
@@ -57,15 +58,17 @@ impl Quad {
 
         let shader = self.material.get_shader();
         let position_location = *shader
-            .get_attr_location("position")
+            .get_attr_location(VertexAttrType::Position)
             .ok_or("can't get position")?;
-        let uv_location = *shader.get_attr_location("uv").ok_or("can't get uv")?;
+        let uv_location = *shader
+            .get_attr_location(VertexAttrType::UVs)
+            .ok_or("can't get uv")?;
         gl.vertex_attrib_pointer_f32(position_location, 3, glow::FLOAT, false, 5 * 4, 0);
         gl.enable_vertex_attrib_array(position_location);
         gl.vertex_attrib_pointer_f32(uv_location, 2, glow::FLOAT, false, 5 * 4, 3 * 4);
         gl.enable_vertex_attrib_array(uv_location);
 
-        self.transform_location = gl.get_uniform_location(shader.get_program(), "transform");
+        self.transform_location = gl.get_uniform_location(shader.get_program(), "model");
 
         if self.transform_location.is_none() {
             return Err("Can't get transform uniform".to_string());
@@ -85,11 +88,11 @@ impl Quad {
         gl.use_program(Some(self.material.get_shader().get_program()));
         gl.bind_vertex_array(self.vao);
 
-        gl.bind_texture(glow::TEXTURE_2D, self.material.texture);
+        if let Some((tex_type, key)) = self.material.texture {
+            gl.bind_texture(tex_type as _, Some(key));
+        }
 
-        let mat = Mat4::from_scale(self.scale)
-            * Mat4::from_quat(self.rotation)
-            * Mat4::from_translation(self.position);
+        let mat = Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position);
 
         gl.uniform_matrix_4_f32_slice(
             self.transform_location.as_ref(),

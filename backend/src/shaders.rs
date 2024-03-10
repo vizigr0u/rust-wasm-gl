@@ -1,25 +1,31 @@
 use std::collections::HashMap;
 
+use glam::Mat4;
 use glow::{HasContext, WebProgramKey, WebShaderKey};
+use web_sys::WebGlUniformLocation;
 
-#[macro_export]
-macro_rules! include_shader {
-    ($name:expr) => {
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/shaders/", $name))
-    };
-}
+use crate::mesh::VertexAttrType;
 
 #[macro_export]
 macro_rules! shader_def {
-    ($vert_name: expr, $frag_name: expr, $attributes: expr) => {
+    ($vert_name: expr, $frag_name: expr, $attributes: expr, $uniforms: expr) => {
         ShaderDef::new(
             $vert_name,
             $frag_name,
-            include_shader!($vert_name),
-            include_shader!($frag_name),
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/shaders/", $vert_name)),
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/shaders/", $frag_name)),
             $attributes,
+            $uniforms,
         )
     };
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum UniformTypes {
+    Texture,
+    ModelMatrix,
+    ViewMatrix,
+    ProjMatrix,
 }
 
 pub struct ShaderDef {
@@ -27,21 +33,32 @@ pub struct ShaderDef {
     fragment_filename: &'static str,
     vertex: &'static str,
     fragment: &'static str,
-    attributes: Vec<&'static str>,
+    attributes: Vec<(VertexAttrType, &'static str)>,
+    uniforms: Vec<(UniformTypes, &'static str)>,
 }
 
 pub struct CompiledShader {
     program: WebProgramKey,
-    attribute_locations: HashMap<&'static str, u32>,
+    attribute_locations: HashMap<VertexAttrType, u32>,
+    uniform_locations: HashMap<UniformTypes, WebGlUniformLocation>,
 }
 
 impl CompiledShader {
-    pub fn get_attr_location(&self, attr: &'static str) -> Option<&u32> {
-        self.attribute_locations.get(attr)
+    pub fn get_attr_location(&self, attr: VertexAttrType) -> Option<&u32> {
+        self.attribute_locations.get(&attr)
+    }
+
+    pub fn get_uniform_location(&self, uniform: UniformTypes) -> Option<&WebGlUniformLocation> {
+        self.uniform_locations.get(&uniform)
     }
 
     pub fn get_program(&self) -> WebProgramKey {
         self.program
+    }
+
+    pub unsafe fn set_matrix(&self, gl: &glow::Context, matrix_type: UniformTypes, value: &Mat4) {
+        let location = self.get_uniform_location(matrix_type);
+        gl.uniform_matrix_4_f32_slice(location, false, &value.to_cols_array().as_slice());
     }
 }
 
@@ -51,7 +68,8 @@ impl ShaderDef {
         fragment_filename: &'static str,
         vertex: &'static str,
         fragment: &'static str,
-        attributes: Vec<&'static str>,
+        attributes: Vec<(VertexAttrType, &'static str)>,
+        uniforms: Vec<(UniformTypes, &'static str)>,
     ) -> Self {
         ShaderDef {
             vertex_filename,
@@ -59,6 +77,7 @@ impl ShaderDef {
             vertex,
             fragment,
             attributes,
+            uniforms,
         }
     }
 
@@ -69,15 +88,25 @@ impl ShaderDef {
         let program = link_program(gl, vert, frag)?;
 
         let mut attribute_locations = HashMap::new();
-        for attr in &self.attributes {
-            let location = gl.get_attrib_location(program, attr).ok_or(format!(
-                "Error getting location attribute in ({}, {})",
-                self.vertex_filename, self.fragment_filename
+        for (attr_type, attr_name) in self.attributes.iter() {
+            let location = gl.get_attrib_location(program, *attr_name).ok_or(format!(
+                "Error getting attribute '{}' in ({}, {})",
+                attr_name, self.vertex_filename, self.fragment_filename
             ))?;
-            attribute_locations.insert(*attr, location);
+            attribute_locations.insert(*attr_type, location);
+        }
+
+        let mut uniform_locations = HashMap::new();
+        for (u_type, u_name) in self.uniforms.iter() {
+            let location = gl.get_uniform_location(program, *u_name).ok_or(format!(
+                "Error getting uniform '{}' in ({}, {})",
+                u_name, self.vertex_filename, self.fragment_filename
+            ))?;
+            uniform_locations.insert(*u_type, location);
         }
         Ok(CompiledShader {
             attribute_locations,
+            uniform_locations,
             program,
         })
     }

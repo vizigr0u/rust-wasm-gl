@@ -4,11 +4,15 @@ use cfg_if::cfg_if;
 use game::Game;
 use wasm_bindgen::prelude::*;
 
+mod cube;
 mod game;
 mod material;
+mod mesh;
+mod meshrenderer;
 mod quad;
 mod shaders;
 mod textureloader;
+mod trianglescene;
 mod utils;
 
 cfg_if! {
