@@ -1,5 +1,6 @@
 use std::collections::HashMap;
-use web_sys::{WebGl2RenderingContext, WebGlProgram, WebGlShader};
+
+use glow::{HasContext, WebProgramKey, WebShaderKey};
 
 #[macro_export]
 macro_rules! include_shader {
@@ -30,7 +31,7 @@ pub struct ShaderDef {
 }
 
 pub struct CompiledShader {
-    program: WebGlProgram,
+    program: WebProgramKey,
     attribute_locations: HashMap<&'static str, u32>,
 }
 
@@ -39,8 +40,8 @@ impl CompiledShader {
         self.attribute_locations.get(attr)
     }
 
-    pub fn get_program(&self) -> &WebGlProgram {
-        &self.program
+    pub fn get_program(&self) -> WebProgramKey {
+        self.program
     }
 }
 
@@ -61,43 +62,18 @@ impl ShaderDef {
         }
     }
 
-    // pub fn get_compiled(
-    //     &mut self,
-    //     context: &WebGl2RenderingContext,
-    // ) -> Result<&CompiledShader, &String> {
-    //     if self.compiled.is_none() {
-    //         let res = self.compile(context);
-    //         self.compiled = Some(res);
-    //     }
-    //     match &self.compiled {
-    //         Some(Ok(compiled_shader)) => Ok(compiled_shader),
-    //         Some(Err(e)) => Err(e),
-    //         None => unreachable!("Just set above;"),
-    //     }
-    // }
+    pub unsafe fn compile(&self, gl: &glow::Context) -> Result<CompiledShader, String> {
+        let vert = compile_shader(gl, glow::VERTEX_SHADER, self.vertex)?;
+        let frag = compile_shader(gl, glow::FRAGMENT_SHADER, self.fragment)?;
 
-    // pub fn is_compiled(&self) -> bool {
-    //     self.compiled.is_some()
-    // }
-
-    pub fn compile(&self, context: &WebGl2RenderingContext) -> Result<CompiledShader, String> {
-        let vert = compile_shader(context, WebGl2RenderingContext::VERTEX_SHADER, self.vertex)?;
-        let frag = compile_shader(
-            context,
-            WebGl2RenderingContext::FRAGMENT_SHADER,
-            self.fragment,
-        )?;
-
-        let program = link_program(context, &vert, &frag)?;
+        let program = link_program(gl, vert, frag)?;
 
         let mut attribute_locations = HashMap::new();
         for attr in &self.attributes {
-            let location = get_attrib_location(&program, context, attr).map_err(|s| {
-                format!(
-                    "{} ({}, {})",
-                    s, self.vertex_filename, self.fragment_filename
-                )
-            })?;
+            let location = gl.get_attrib_location(program, attr).ok_or(format!(
+                "Error getting location attribute in ({}, {})",
+                self.vertex_filename, self.fragment_filename
+            ))?;
             attribute_locations.insert(*attr, location);
         }
         Ok(CompiledShader {
@@ -107,65 +83,34 @@ impl ShaderDef {
     }
 }
 
-fn get_attrib_location(
-    program: &WebGlProgram,
-    context: &WebGl2RenderingContext,
-    attr: &str,
-) -> Result<u32, String> {
-    match context.get_attrib_location(&program, attr) {
-        -1 => Err(String::from(format!(
-            "Unable to get attribute {attr} in shader"
-        ))),
-        n => Ok(n as u32),
-    }
-}
-
-fn compile_shader(
-    context: &WebGl2RenderingContext,
+unsafe fn compile_shader(
+    gl: &glow::Context,
     shader_type: u32,
     source: &str,
-) -> Result<WebGlShader, String> {
-    let shader = context
-        .create_shader(shader_type)
-        .ok_or_else(|| String::from("Unable to create shader object"))?;
-    context.shader_source(&shader, source);
-    context.compile_shader(&shader);
+) -> Result<WebShaderKey, String> {
+    let shader = gl.create_shader(shader_type)?;
+    gl.shader_source(shader, source);
+    gl.compile_shader(shader);
 
-    if context
-        .get_shader_parameter(&shader, WebGl2RenderingContext::COMPILE_STATUS)
-        .as_bool()
-        .unwrap_or(false)
-    {
-        Ok(shader)
-    } else {
-        Err(context
-            .get_shader_info_log(&shader)
-            .unwrap_or_else(|| String::from("Unknown error creating shader")))
+    match gl.get_shader_compile_status(shader) {
+        true => Ok(shader),
+        false => Err(gl.get_shader_info_log(shader)),
     }
 }
 
-fn link_program(
-    context: &WebGl2RenderingContext,
-    vert_shader: &WebGlShader,
-    frag_shader: &WebGlShader,
-) -> Result<WebGlProgram, String> {
-    let program = context
-        .create_program()
-        .ok_or_else(|| String::from("Unable to create shader object"))?;
+unsafe fn link_program(
+    gl: &glow::Context,
+    vert_shader: WebShaderKey,
+    frag_shader: WebShaderKey,
+) -> Result<WebProgramKey, String> {
+    let program = gl.create_program()?;
 
-    context.attach_shader(&program, vert_shader);
-    context.attach_shader(&program, frag_shader);
-    context.link_program(&program);
+    gl.attach_shader(program, vert_shader);
+    gl.attach_shader(program, frag_shader);
+    gl.link_program(program);
 
-    if context
-        .get_program_parameter(&program, WebGl2RenderingContext::LINK_STATUS)
-        .as_bool()
-        .unwrap_or(false)
-    {
-        Ok(program)
-    } else {
-        Err(context
-            .get_program_info_log(&program)
-            .unwrap_or_else(|| String::from("Unknown error creating program object")))
+    match gl.get_program_link_status(program) {
+        true => Ok(program),
+        false => Err(gl.get_program_info_log(program)),
     }
 }

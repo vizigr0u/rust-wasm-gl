@@ -17,6 +17,10 @@ fn request_animation_frame(f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>) {
         .unwrap();
 }
 
+#[cfg(not(any(target_arch = "wasm32")))]
+compile_error!("This project is for wasm only");
+
+#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 fn start() -> Result<(), JsValue> {
     utils::set_panic_hook();
@@ -29,17 +33,21 @@ fn start() -> Result<(), JsValue> {
         .expect("Unable to get WebGl2 context from canvas.")
         .dyn_into::<WebGl2RenderingContext>()?;
 
-    let mut game = Game::new();
-    game.init(&context)?;
+    let gl = glow::Context::from_webgl2_context(context);
 
-    main_loop(game, context)?;
+    let mut game = Game::new();
+    unsafe {
+        game.init(&gl)?;
+    }
+
+    main_loop(game, gl)?;
 
     Ok(())
 }
 
-fn main_loop(game: Game, context: WebGl2RenderingContext) -> Result<(), JsValue> {
+fn main_loop(game: Game, gl: glow::Context) -> Result<(), JsValue> {
     let game = Rc::new(RefCell::new(game));
-    let context = Rc::new(RefCell::new(context));
+    let context = Rc::new(RefCell::new(gl));
     let update: Rc<RefCell<Option<Closure<dyn FnMut(f64) -> Result<(), JsValue>>>>> =
         Rc::new(RefCell::new(None));
     /* Reference to closure requests for first frame and then it's dropped */
@@ -47,7 +55,9 @@ fn main_loop(game: Game, context: WebGl2RenderingContext) -> Result<(), JsValue>
 
     *request_update.borrow_mut() = Some(Closure::new(move |time| {
         game.borrow_mut().update(time)?;
-        game.borrow().render(context.borrow().as_ref()); // borrow the game for drawing.
+        unsafe {
+            game.borrow().render(&context.borrow()); // borrow the game for drawing.
+        }
 
         // Request the next animation frame.
         request_animation_frame(update.borrow().as_ref().unwrap());

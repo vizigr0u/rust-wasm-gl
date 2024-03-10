@@ -3,11 +3,11 @@ use std::rc::Rc;
 use glam::vec3;
 use glam::Mat4;
 use glam::Vec3;
+use glow::HasContext;
+use glow::WebVertexArrayKey;
 use js_sys::Math::sin;
 use rand::Rng;
-use web_sys::WebGl2RenderingContext;
 use web_sys::WebGlUniformLocation;
-use web_sys::WebGlVertexArrayObject;
 
 use crate::include_shader;
 use crate::material::Material;
@@ -32,24 +32,24 @@ impl Game {
         Ok(())
     }
 
-    pub fn init(&mut self, context: &WebGl2RenderingContext) -> Result<(), String> {
-        self.scene.init(context)?;
+    pub unsafe fn init(&mut self, gl: &glow::Context) -> Result<(), String> {
+        self.scene.init(gl)?;
 
         Ok(())
     }
 
-    pub fn render(&self, context: &WebGl2RenderingContext) {
-        context.clear_color(0.0, 0.0, 0.0, 1.0);
-        context.clear(WebGl2RenderingContext::COLOR_BUFFER_BIT);
+    pub unsafe fn render(&self, gl: &glow::Context) {
+        gl.clear_color(0.0, 0.0, 0.0, 1.0);
+        gl.clear(glow::COLOR_BUFFER_BIT);
 
-        self.scene.render(context);
+        self.scene.render(gl);
     }
 }
 
 struct TriangleScene {
     tris: Vec<Tri>,
     quads: Vec<Quad>,
-    vao: Option<WebGlVertexArrayObject>,
+    vao: Option<WebVertexArrayKey>,
     transform_location: Option<WebGlUniformLocation>,
     shader: Option<CompiledShader>,
 }
@@ -76,16 +76,16 @@ impl TriangleScene {
         Ok(())
     }
 
-    pub fn init(&mut self, context: &WebGl2RenderingContext) -> Result<(), String> {
+    pub unsafe fn init(&mut self, gl: &glow::Context) -> Result<(), String> {
         let vert_color_def: ShaderDef = shader_def!(
             "vertColor.vert",
             "vertColor.frag",
             vec!("position", "vertexColor")
         );
-        let shader = vert_color_def.compile(context)?;
+        let shader = vert_color_def.compile(gl)?;
 
         let quad_shader =
-            shader_def!("colorTrans.vert", "colorTrans.frag", vec!("position")).compile(context)?;
+            shader_def!("colorTrans.vert", "colorTrans.frag", vec!("position")).compile(gl)?;
         let quad_shader_ref = Rc::new(quad_shader);
         let quad_mat = Rc::new(Material::from_shader(&quad_shader_ref));
 
@@ -119,86 +119,65 @@ impl TriangleScene {
         self.quads.push(Quad::new(&quad_mat));
 
         for quad in self.quads.iter_mut() {
-            quad.init(context)?;
+            quad.init(gl)?;
         }
 
-        let vao = context
-            .create_vertex_array()
-            .ok_or("Could not create vertex array object")?;
+        let vao = gl.create_vertex_array()?;
         self.vao = Some(vao);
-        context.bind_vertex_array(self.vao.as_ref());
-        let buffer = context.create_buffer().ok_or("Failed to create buffer")?;
-        context.bind_buffer(WebGl2RenderingContext::ARRAY_BUFFER, Some(&buffer));
+        gl.bind_vertex_array(self.vao);
+        let buffer = gl.create_buffer()?;
+        gl.bind_buffer(glow::ARRAY_BUFFER, Some(buffer));
 
-        unsafe {
-            let mut data = Vec::with_capacity(TRI_BUFFER_SIZE * self.tris.len());
+        let mut vertices = Vec::with_capacity(TRI_BUFFER_SIZE * self.tris.len());
 
-            for tri in &self.tris {
-                data.extend_from_slice(&tri.buffer);
-            }
+        for tri in &self.tris {
+            vertices.extend_from_slice(&tri.buffer);
+        }
 
-            // need to make sure we don't allow between view and buffer_data
-            let positions = js_sys::Float32Array::view(data.as_slice());
-
-            context.buffer_data_with_array_buffer_view(
-                WebGl2RenderingContext::ARRAY_BUFFER,
-                &positions,
-                WebGl2RenderingContext::STATIC_DRAW,
-            );
-        };
+        gl.buffer_data_u8_slice(
+            glow::ARRAY_BUFFER,
+            &vertices.align_to::<u8>().1,
+            glow::STATIC_DRAW,
+        );
 
         let position_location = *shader
             .get_attr_location("position")
             .ok_or("can't get position")?;
-        context.vertex_attrib_pointer_with_i32(
-            position_location,
-            3,
-            WebGl2RenderingContext::FLOAT,
-            false,
-            6 * 4,
-            0,
-        );
-        context.enable_vertex_attrib_array(position_location);
+        gl.vertex_attrib_pointer_f32(position_location, 3, glow::FLOAT, false, 6 * 4, 0);
+        gl.enable_vertex_attrib_array(position_location);
 
         let color_location = *shader
             .get_attr_location("vertexColor")
             .ok_or("can't get color")?;
-        context.vertex_attrib_pointer_with_i32(
-            color_location,
-            3,
-            WebGl2RenderingContext::FLOAT,
-            false,
-            6 * 4,
-            3 * 4,
-        );
-        context.enable_vertex_attrib_array(color_location);
+        gl.vertex_attrib_pointer_f32(color_location, 3, glow::FLOAT, false, 6 * 4, 3 * 4);
+        gl.enable_vertex_attrib_array(color_location);
 
         self.shader = Some(shader);
 
         Ok(())
     }
 
-    pub fn render(&self, context: &WebGl2RenderingContext) {
+    pub unsafe fn render(&self, gl: &glow::Context) {
         let shader = match &self.shader {
             Some(s) => s,
             None => return,
         };
-        context.use_program(Some(shader.get_program()));
-        context.bind_vertex_array(self.vao.as_ref());
+        gl.use_program(Some(shader.get_program()));
+        gl.bind_vertex_array(self.vao);
 
         let mat = Mat4::IDENTITY;
 
-        context.uniform_matrix4fv_with_f32_array(
+        gl.uniform_matrix_4_f32_slice(
             self.transform_location.as_ref(),
             false,
             &mat.to_cols_array().as_slice(),
         );
 
         let vert_count = self.tris.len() as i32 * 3;
-        context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vert_count);
+        gl.draw_arrays(glow::TRIANGLES, 0, vert_count);
 
         for quad in &self.quads {
-            quad.render(context);
+            quad.render(gl);
         }
     }
 }
