@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::sync::Mutex;
 
 use gloo::events::EventListener;
 use glow::{HasContext, WebTextureKey};
@@ -7,7 +8,8 @@ use log::{debug, info};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    HtmlImageElement, Request, RequestInit, RequestMode, Response, WebGl2RenderingContext,
+    Document, HtmlImageElement, Performance, Request, RequestInit, RequestMode, Response,
+    WebGl2RenderingContext, Window,
 };
 
 pub fn set_panic_hook() {
@@ -21,8 +23,22 @@ pub fn set_panic_hook() {
     console_error_panic_hook::set_once();
 }
 
-pub fn get_webgl2_context() -> Result<glow::Context, JsValue> {
-    let document = web_sys::window().unwrap().document().unwrap();
+pub fn get_window() -> Result<Window, String> {
+    web_sys::window().ok_or("Can't get window".into())
+}
+
+pub fn get_document() -> Result<Document, String> {
+    get_window()?.document().ok_or("Can't get document".into())
+}
+
+pub fn get_performance() -> Result<Performance, String> {
+    get_window()?
+        .performance()
+        .ok_or("Can't get document".into())
+}
+
+pub fn get_web_sys_context() -> Result<WebGl2RenderingContext, JsValue> {
+    let document = get_document()?;
     let canvas = document.get_element_by_id("canvas").unwrap();
     let canvas: web_sys::HtmlCanvasElement = canvas.dyn_into::<web_sys::HtmlCanvasElement>()?;
 
@@ -31,7 +47,11 @@ pub fn get_webgl2_context() -> Result<glow::Context, JsValue> {
         .expect("Unable to get WebGl2 context from canvas.")
         .dyn_into::<WebGl2RenderingContext>()?;
 
-    Ok(glow::Context::from_webgl2_context(context))
+    Ok(context)
+}
+
+pub fn get_webgl2_context() -> Result<glow::Context, JsValue> {
+    Ok(glow::Context::from_webgl2_context(get_web_sys_context()?))
 }
 
 #[wasm_bindgen]
@@ -116,28 +136,28 @@ pub unsafe fn load_texture(gl: &glow::Context, img_src: &str) -> Result<WebTextu
         let texture = texture_rc.clone();
 
         let a = Closure::wrap(Box::new(move || {
-            web_sys::console::log_1(&"LOAD EVENT".into());
-            let gl2 = get_webgl2_context().unwrap();
-            info!("Binding texture {:?}", texture);
-            gl2.bind_texture(glow::TEXTURE_2D, Some(*texture));
+            // web_sys::console::log_1(&"LOAD EVENT".into());
+            // let gl2 = gl; // get_webgl2_context().unwrap();
+            // info!("Binding texture {:?}", texture);
+            // gl2.bind_texture(glow::TEXTURE_2D, Some(*texture));
 
-            gl2.tex_image_2d_with_html_image(
-                glow::TEXTURE_2D,
-                level,
-                internal_format as i32,
-                src_format,
-                src_type,
-                &img,
-            );
-            info!(
-                "Image loaded into texture {:?}: {}*{}",
-                texture,
-                img.client_width(),
-                img.client_height()
-            );
+            // gl2.tex_image_2d_with_html_image(
+            //     glow::TEXTURE_2D,
+            //     level,
+            //     internal_format as i32,
+            //     src_format,
+            //     src_type,
+            //     &img,
+            // );
+            // info!(
+            //     "Image loaded into texture {:?}: {}*{}",
+            //     texture,
+            //     img.client_width(),
+            //     img.client_height()
+            // );
 
-            // different from webgl1 where we need the pic to be power of 2
-            gl2.generate_mipmap(glow::TEXTURE_2D);
+            // // different from webgl1 where we need the pic to be power of 2
+            // gl2.generate_mipmap(glow::TEXTURE_2D);
         }) as Box<dyn FnMut()>);
         imgrc.set_onload(Some(a.as_ref().unchecked_ref()));
 

@@ -8,6 +8,7 @@ mod game;
 mod material;
 mod quad;
 mod shaders;
+mod textureloader;
 mod utils;
 
 cfg_if! {
@@ -41,7 +42,7 @@ fn start() -> Result<(), JsValue> {
 
     let gl = get_webgl2_context()?;
 
-    let mut game = Game::new();
+    let mut game = Game::new()?;
     unsafe {
         game.init(&gl)?;
     }

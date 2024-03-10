@@ -5,8 +5,8 @@ use glam::Mat4;
 use glam::Vec3;
 use glow::HasContext;
 use glow::WebVertexArrayKey;
-use js_sys::Math::sin;
 use rand::Rng;
+use wasm_bindgen::JsValue;
 use web_sys::WebGlUniformLocation;
 
 use crate::include_shader;
@@ -15,28 +15,36 @@ use crate::quad::Quad;
 use crate::shader_def;
 use crate::shaders::CompiledShader;
 use crate::shaders::ShaderDef;
-use crate::utils::load_texture;
+use crate::textureloader::TextureLoader;
 
 pub struct Game {
     scene: TriangleScene,
+    texture_loader: TextureLoader,
 }
 
 impl Game {
-    pub fn new() -> Self {
-        Game {
+    pub fn new() -> Result<Self, JsValue> {
+        Ok(Game {
             scene: TriangleScene::new(),
-        }
+            texture_loader: TextureLoader::new(10)?,
+        })
     }
 
     pub fn update(&mut self, time: f64) -> Result<(), String> {
         self.scene.update(time)?;
+        self.texture_loader.tick()?;
         Ok(())
     }
 
     pub unsafe fn init(&mut self, gl: &glow::Context) -> Result<(), String> {
         self.scene.init(gl)?;
 
-        let _ = load_texture(gl, "data/textures/blocks/dirt.png")?;
+        // let _ = load_texture(gl, "data/textures/blocks/dirt.png")?;
+
+        self.texture_loader.load("data/textures/blocks/sand.png")?;
+
+        self.texture_loader
+            .load("data/textures/blocks/grass_block_side.png")?;
 
         Ok(())
     }
@@ -45,7 +53,7 @@ impl Game {
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
         gl.clear(glow::COLOR_BUFFER_BIT);
 
-        // self.scene.render(gl);
+        self.scene.render(gl);
     }
 }
 
@@ -72,8 +80,12 @@ impl TriangleScene {
     pub fn update(&mut self, _time: f64) -> Result<(), String> {
         let mut rng = rand::thread_rng();
         for quad in self.quads.iter_mut() {
-            quad.position = vec3(sin(_time / 1000.0) as f32, 0.0, 0.0);
-            quad.color = vec3(rng.gen(), rng.gen(), rng.gen());
+            quad.position = vec3(
+                f64::sin(_time / 1000.0) as f32,
+                f64::cos(_time / 200.0) as f32,
+                0.0,
+            );
+            // quad.color = vec3(rng.gen(), rng.gen(), rng.gen());
         }
 
         Ok(())
@@ -161,6 +173,8 @@ impl TriangleScene {
     }
 
     pub unsafe fn render(&self, gl: &glow::Context) {
+        gl.clear_color(0.0, 0.0, 0.0, 1.0);
+        gl.clear(glow::COLOR_BUFFER_BIT);
         let shader = match &self.shader {
             Some(s) => s,
             None => return,
@@ -180,7 +194,7 @@ impl TriangleScene {
         gl.draw_arrays(glow::TRIANGLES, 0, vert_count);
 
         for quad in &self.quads {
-            quad.render(gl);
+            quad.render(&gl);
         }
     }
 }

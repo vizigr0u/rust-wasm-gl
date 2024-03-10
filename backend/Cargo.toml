@@ -57,6 +57,7 @@ features = [
     'RequestInit',
     'RequestMode',
     'Response',
+    'Performance',
 ]
 
 [profile.release]
