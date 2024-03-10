@@ -1,17 +1,23 @@
-use glam::Mat4;
-use glam::Vec4;
-use web_sys::WebGl2RenderingContext;
-use web_sys::WebGlVertexArrayObject;
+use std::rc::Rc;
+
+// use glam::Mat4;
+// use glam::Vec4;
+// use web_sys::WebGl2RenderingContext;
+// use web_sys::WebGlVertexArrayObject;
 
 use crate::shaders::CompiledShader;
 
-trait Material {
-    fn get_shader(&self) -> &CompiledShader;
-    fn make_vertex_array(
-        &self,
-        context: &WebGl2RenderingContext,
-    ) -> Result<WebGlVertexArrayObject, String>;
+pub struct Material {
+    shader: Rc<CompiledShader>,
+}
 
-    fn set_color(color: &Vec4);
-    fn set_transform(transform: &Mat4);
+impl Material {
+    pub fn from_shader(shader: &Rc<CompiledShader>) -> Self {
+        Material {
+            shader: shader.clone(),
+        }
+    }
+    pub fn get_shader(&self) -> &CompiledShader {
+        &self.shader
+    }
 }

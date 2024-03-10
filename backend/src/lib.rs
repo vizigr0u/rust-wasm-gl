@@ -6,6 +6,7 @@ use web_sys::WebGl2RenderingContext;
 
 mod game;
 mod material;
+mod quad;
 mod shaders;
 mod utils;
 

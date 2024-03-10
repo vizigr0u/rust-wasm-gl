@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use glam::Mat4;
 use glam::Vec3;
 use web_sys::WebGl2RenderingContext;
@@ -5,6 +7,8 @@ use web_sys::WebGlUniformLocation;
 use web_sys::WebGlVertexArrayObject;
 
 use crate::include_shader;
+use crate::material::Material;
+use crate::quad::Quad;
 use crate::shader_def;
 use crate::shaders::CompiledShader;
 use crate::shaders::ShaderDef;
@@ -41,6 +45,7 @@ impl Game {
 
 struct TriangleScene {
     tris: Vec<Tri>,
+    quads: Vec<Quad>,
     vao: Option<WebGlVertexArrayObject>,
     transform_location: Option<WebGlUniformLocation>,
     shader: Option<CompiledShader>,
@@ -51,6 +56,7 @@ impl TriangleScene {
         let tris = Vec::<Tri>::new();
         TriangleScene {
             tris,
+            quads: Vec::new(),
             vao: None,
             transform_location: None,
             shader: None,
@@ -68,6 +74,11 @@ impl TriangleScene {
             vec!("position", "vertexColor")
         );
         let shader = vert_color_def.compile(context)?;
+
+        let quad_shader =
+            shader_def!("colorTrans.vert", "colorTrans.frag", vec!("position")).compile(context)?;
+        let quad_shader_ref = Rc::new(quad_shader);
+        let quad_mat = Rc::new(Material::from_shader(&quad_shader_ref));
 
         // self.transform_location = context.get_uniform_location(&program, "transform");
 
@@ -95,6 +106,12 @@ impl TriangleScene {
             },
             0.3,
         )?);
+
+        self.quads.push(Quad::new(&quad_mat));
+
+        for quad in self.quads.iter_mut() {
+            quad.init(context)?;
+        }
 
         let vao = context
             .create_vertex_array()
@@ -170,6 +187,10 @@ impl TriangleScene {
 
         let vert_count = self.tris.len() as i32 * 3;
         context.draw_arrays(WebGl2RenderingContext::TRIANGLES, 0, vert_count);
+
+        for quad in &self.quads {
+            quad.render(context);
+        }
     }
 }
 
