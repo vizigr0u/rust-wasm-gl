@@ -5,9 +5,7 @@ use glam::Mat4;
 use glam::Quat;
 use glam::Vec3;
 use glow::HasContext;
-use glow::WebTextureKey;
 use glow::WebVertexArrayKey;
-use log::info;
 use web_sys::WebGlUniformLocation;
 
 use crate::material::Material;
@@ -21,13 +19,12 @@ pub struct Quad {
 
     vao: Option<WebVertexArrayKey>,
     material: Rc<Material>,
-    texture_key: Rc<WebTextureKey>,
     transform_location: Option<WebGlUniformLocation>,
     texture_location: Option<WebGlUniformLocation>,
 }
 
 impl Quad {
-    pub fn new(material: &Rc<Material>, texture_key: Rc<WebTextureKey>) -> Self {
+    pub fn new(material: &Rc<Material>) -> Self {
         Quad {
             buffer: [
                 -1.0, -1.0, 0.0, 0.0, 1.0, //
@@ -43,7 +40,6 @@ impl Quad {
             material: material.clone(),
             transform_location: None,
             texture_location: None,
-            texture_key,
         }
     }
     pub unsafe fn init(&mut self, gl: &glow::Context) -> Result<(), String> {
@@ -58,8 +54,6 @@ impl Quad {
             &self.buffer.align_to::<u8>().1,
             glow::STATIC_DRAW,
         );
-
-        info!("Quad init with key {:?}", self.texture_key);
 
         let shader = self.material.get_shader();
         let position_location = *shader
@@ -90,6 +84,8 @@ impl Quad {
         let gl = gl;
         gl.use_program(Some(self.material.get_shader().get_program()));
         gl.bind_vertex_array(self.vao);
+
+        gl.bind_texture(glow::TEXTURE_2D, self.material.texture);
 
         let mat = Mat4::from_scale(self.scale)
             * Mat4::from_quat(self.rotation)

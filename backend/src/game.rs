@@ -40,11 +40,10 @@ impl Game {
         let grass_key = self
             .texture_loader
             .load(gl, "data/textures/blocks/grass_block_side.png")?;
-        self.scene.init(gl, grass_key)?;
-
-        // let _ = load_texture(gl, "data/textures/blocks/dirt.png")?;
-
-        // self.texture_loader.load("data/textures/blocks/sand.png")?;
+        let dirt_key = self
+            .texture_loader
+            .load(gl, "data/textures/blocks/sand.png")?;
+        self.scene.init(gl, grass_key, dirt_key)?;
 
         Ok(())
     }
@@ -97,16 +96,13 @@ impl TriangleScene {
         &mut self,
         gl: &glow::Context,
         grass_key: WebTextureKey,
+        dirt_key: WebTextureKey,
     ) -> Result<(), String> {
         let vert_color_def: ShaderDef = shader_def!(
             "vertColor.vert",
             "vertColor.frag",
             vec!("position", "vertexColor")
         );
-        let shader = vert_color_def.compile(gl)?;
-
-        let quad_shader =
-            shader_def!("colorTrans.vert", "colorTrans.frag", vec!("position")).compile(gl)?;
         let quad_shader = shader_def!(
             "textureTransform.vert",
             "textureTransform.frag",
@@ -114,7 +110,12 @@ impl TriangleScene {
         )
         .compile(gl)?;
         let quad_shader_ref = Rc::new(quad_shader);
-        let quad_mat = Rc::new(Material::from_shader(&quad_shader_ref));
+        let mut mat = Material::from_shader(&quad_shader_ref);
+        mat.texture = Some(grass_key);
+        let mut mat2 = mat.clone();
+        mat2.texture = Some(dirt_key);
+        let mat1 = Rc::new(mat);
+        let mat2 = Rc::new(mat2);
 
         // self.transform_location = context.get_uniform_location(&program, "transform");
 
@@ -143,9 +144,12 @@ impl TriangleScene {
             0.3,
         )?);
 
-        let grass_key = Rc::new(grass_key);
-        for _ in 0..50 {
-            self.quads.push(Quad::new(&quad_mat, grass_key.clone()));
+        for i in 0..50 {
+            if i % 2 == 0 {
+                self.quads.push(Quad::new(&mat1));
+            } else {
+                self.quads.push(Quad::new(&mat2));
+            }
         }
 
         for quad in self.quads.iter_mut() {
@@ -169,6 +173,8 @@ impl TriangleScene {
             &vertices.align_to::<u8>().1,
             glow::STATIC_DRAW,
         );
+
+        let shader = vert_color_def.compile(gl)?;
 
         let position_location = *shader
             .get_attr_location("position")
