@@ -5,6 +5,7 @@ use glam::Quat;
 use glam::Vec3;
 use glow::HasContext;
 
+use crate::camera::Camera;
 use crate::material::TextureDef;
 use crate::material::TextureType;
 use crate::meshrenderer::MeshRenderer;
@@ -56,13 +57,13 @@ impl GameObject {
         self.transform_dirty = true;
     }
 
-    pub unsafe fn render(&self, gl: &glow::Context) {
+    pub unsafe fn render(&self, gl: &glow::Context, camera: &Camera) {
         let program = self.renderer.get_program();
         program.gl_use(gl);
 
-        program.set_matrix(gl, UniformTypes::ModelMatrix, &Mat4::IDENTITY);
-        program.set_matrix(gl, UniformTypes::ViewMatrix, &Mat4::IDENTITY);
-        program.set_matrix(gl, UniformTypes::ProjMatrix, &Mat4::IDENTITY);
+        program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
+        program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
+        program.set_matrix(gl, UniformTypes::ModelMatrix, &self.transform);
 
         let (tex_type, key) = *self.texture;
         let texture = Some(key);
@@ -70,8 +71,6 @@ impl GameObject {
             TextureType::Texture2D => gl.bind_texture(glow::TEXTURE_2D, texture),
             TextureType::Texture2DArray => todo!(),
         };
-
-        program.set_matrix(gl, UniformTypes::ModelMatrix, &self.transform);
 
         self.renderer.render(gl);
     }

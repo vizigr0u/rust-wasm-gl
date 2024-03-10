@@ -1,7 +1,8 @@
 Todo:
   ✔ Cube @done(24-03-03 22:41)
-  ☐ Camera
+  ✔ Camera @done(24-03-05 23:20)
   ☐ Inputs
+  ☐ Better camera?
 
   ☐ publish github page - ref https://github.com/vizigr0u/svelteboy/blob/main/.github/workflows/github-page.yaml
   ☐ check correctness https://webgl2fundamentals.org/webgl/lessons/webgl-drawing-multiple-things.html

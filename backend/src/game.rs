@@ -1,10 +1,11 @@
 use std::path;
 use std::rc::Rc;
 
-use glam::{vec3, Mat4, Quat};
+use glam::{vec3, Mat4, Quat, Vec3};
 use glow::HasContext;
 use wasm_bindgen::JsValue;
 
+use crate::camera::Camera;
 use crate::gameobject::GameObject;
 use crate::material::{TextureDef, TextureType};
 use crate::mesh::{Mesh, VertexAttrType};
@@ -24,6 +25,7 @@ pub struct Game {
     texture_loader: TextureLoader,
     quads: Vec<GameObject>,
     cube: Option<GameObject>,
+    camera: Camera,
 
     loaded_textures: Vec<Rc<TextureDef>>,
 }
@@ -36,6 +38,25 @@ impl Game {
             quads: Vec::new(),
             cube: None,
             loaded_textures: Vec::new(),
+            camera: Camera {
+                position: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -10.0,
+                },
+                direction: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                },
+                up: Vec3 {
+                    x: 0.0,
+                    y: 1.0,
+                    z: 0.0,
+                },
+                projection: Mat4::IDENTITY,
+                look_at: Mat4::IDENTITY,
+            },
         })
     }
 
@@ -52,6 +73,8 @@ impl Game {
         }
 
         gl.enable(glow::CULL_FACE);
+        self.camera.projection =
+            Mat4::perspective_rh_gl(f32::to_degrees(45.0), 800.0 / 600.0, 0.1, 100.0);
 
         self.scene.init(gl)?;
 
@@ -84,6 +107,10 @@ impl Game {
 
         self.scene.update(time)?;
 
+        self.camera.position = vec3(0.0, 0.0, -5.0 - (f64::cos(time / 1000.0) as f32 * 4.0));
+        self.camera.look_at =
+            Mat4::look_at_rh(self.camera.position, self.camera.direction, self.camera.up);
+
         Ok(())
     }
 
@@ -99,7 +126,7 @@ impl Game {
         // self.scene.render(gl);
 
         if let Some(cube) = &self.cube {
-            cube.render(gl);
+            cube.render(gl, &self.camera);
         }
 
         Ok(())

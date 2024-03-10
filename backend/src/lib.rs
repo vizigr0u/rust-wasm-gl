@@ -4,6 +4,7 @@ use cfg_if::cfg_if;
 use game::Game;
 use wasm_bindgen::prelude::*;
 
+mod camera;
 mod cube;
 mod game;
 mod gameobject;
