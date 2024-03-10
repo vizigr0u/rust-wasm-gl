@@ -1,3 +1,8 @@
 Todo:
+  ✔ Cube @done(24-03-03 22:41)
+  ☐ Camera
+  ☐ Inputs
+
+  ☐ publish github page - ref https://github.com/vizigr0u/svelteboy/blob/main/.github/workflows/github-page.yaml
   ☐ check correctness https://webgl2fundamentals.org/webgl/lessons/webgl-drawing-multiple-things.html
   ☐ check out glsl tutorials https://www.youtube.com/watch?v=pEdlZ9W2Xs0
