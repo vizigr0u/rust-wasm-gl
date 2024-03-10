@@ -4,7 +4,6 @@ use glam::{vec3, Mat4};
 use glow::HasContext;
 use wasm_bindgen::JsValue;
 
-use crate::cube::Cube;
 use crate::material::{Material, TextureType};
 use crate::mesh::VertexAttrType;
 use crate::meshrenderer::MeshRenderer;
@@ -21,8 +20,7 @@ pub struct Game {
     scene: TriangleScene,
     texture_loader: TextureLoader,
     quads: Vec<Quad>,
-    cubes: Vec<Cube>,
-    cube_renderer: Option<MeshRenderer>,
+    quad_renderer: Option<MeshRenderer>,
 }
 
 impl Game {
@@ -31,23 +29,13 @@ impl Game {
             scene: TriangleScene::new(),
             texture_loader: TextureLoader::new(10)?,
             quads: Vec::new(),
-            cubes: Vec::new(),
-            cube_renderer: None,
+            quad_renderer: None,
         })
     }
 
     pub fn update(&mut self, time: f64) -> Result<(), String> {
         for (index, quad) in self.quads.iter_mut().enumerate() {
             quad.position = vec3(
-                f64::sin(2.0 * index as f64 + time / 1000.0) as f32,
-                f64::cos(2.0 * index as f64 + time / 200.0) as f32,
-                0.0,
-            );
-            // quad.color = vec3(rng.gen(), rng.gen(), rng.gen());
-        }
-
-        for (index, cube) in self.cubes.iter_mut().enumerate() {
-            cube.position = vec3(
                 f64::sin(2.0 * index as f64 + time / 1000.0) as f32,
                 f64::cos(2.0 * index as f64 + time / 200.0) as f32,
                 0.0,
@@ -92,15 +80,11 @@ impl Game {
         let mat1 = Rc::new(mat);
         let mat2 = Rc::new(mat2);
 
-        let cube_mesh = Rc::new(Cube::make_mesh());
-        self.cube_renderer = Some(MeshRenderer::load(gl, mat1, cube_mesh)?);
+        let quad_mesh = Rc::new(Quad::make_mesh());
+        self.quad_renderer = Some(MeshRenderer::load(gl, mat1, quad_mesh)?);
         for i in 0..50 {
-            let cube = Cube::new();
-            self.cubes.push(cube);
-        }
-
-        for quad in self.quads.iter_mut() {
-            quad.init_render(gl)?;
+            let quad: Quad = Quad::new();
+            self.quads.push(quad);
         }
 
         Ok(())
@@ -111,14 +95,10 @@ impl Game {
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
         gl.clear(glow::COLOR_BUFFER_BIT);
 
-        for quad in &self.quads {
-            quad.render(&gl);
-        }
-
-        if let Some(cube_renderer) = &self.cube_renderer {
-            for cube in &self.cubes {
-                let (position, rotation, scale) = (cube.position, cube.rotation, cube.scale);
-                cube_renderer.draw(
+        if let Some(quad_renderer) = &self.quad_renderer {
+            for quad in &self.quads {
+                let (position, rotation, scale) = (quad.position, quad.rotation, quad.scale);
+                quad_renderer.draw(
                     gl,
                     &Mat4::from_scale_rotation_translation(scale, rotation, position),
                 );

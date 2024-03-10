@@ -7,7 +7,8 @@ use crate::shaders::CompiledShader;
 
 #[derive(Clone, Copy)]
 pub enum TextureType {
-    Texture2D = glow::TEXTURE_2D as _,
+    Texture2D,
+    Texture2DArray,
 }
 
 #[derive(Clone)]

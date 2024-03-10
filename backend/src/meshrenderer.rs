@@ -4,7 +4,7 @@ use glam::Mat4;
 use glow::{HasContext, WebVertexArrayKey};
 use log::warn;
 
-use crate::material::Material;
+use crate::material::{Material, TextureType};
 use crate::mesh::{Mesh, MeshDisplayType};
 use crate::shaders::UniformTypes;
 
@@ -12,13 +12,10 @@ pub struct MeshRenderer {
     material: Rc<Material>,
     vao: Option<WebVertexArrayKey>,
     display_type: MeshDisplayType,
+    vertex_count: i32,
 }
 
 impl MeshRenderer {
-    pub fn get_material(&self) -> &Material {
-        &self.material
-    }
-
     pub unsafe fn load(
         gl: &glow::Context,
         material: Rc<Material>,
@@ -39,7 +36,7 @@ impl MeshRenderer {
 
         let layout_size: usize = mesh.layout.iter().map(|(_type, size)| size).sum();
 
-        if mesh.get_data().len() % layout_size == 0 {
+        if mesh.get_data().len() % layout_size != 0 {
             warn!(
                 "Mesh data of size {} doesn't match layout size of {}.",
                 mesh.get_data().len(),
@@ -69,10 +66,25 @@ impl MeshRenderer {
             offset += 4 * size as i32;
         }
 
+        gl.use_program(Some(shader.get_program()));
+
+        shader.set_matrix(gl, UniformTypes::ModelMatrix, &Mat4::IDENTITY);
+        shader.set_matrix(gl, UniformTypes::ViewMatrix, &Mat4::IDENTITY);
+        shader.set_matrix(gl, UniformTypes::ProjMatrix, &Mat4::IDENTITY);
+
+        if let Some((tex_type, key)) = &material.texture {
+            let texture = Some(*key);
+            match tex_type {
+                TextureType::Texture2D => gl.bind_texture(glow::TEXTURE_2D, texture),
+                TextureType::Texture2DArray => todo!(),
+            };
+        }
+
         Ok(MeshRenderer {
             material: material.clone(),
             vao,
             display_type: mesh.display_type,
+            vertex_count: mesh.get_data().len() as i32 / layout_size as i32,
         })
     }
 
@@ -83,15 +95,9 @@ impl MeshRenderer {
         let shader = material.get_shader();
 
         shader.set_matrix(gl, UniformTypes::ModelMatrix, transform);
-        shader.set_matrix(gl, UniformTypes::ViewMatrix, &Mat4::IDENTITY);
-        shader.set_matrix(gl, UniformTypes::ProjMatrix, &Mat4::IDENTITY);
-
-        if let Some((tex_type, key)) = &self.material.texture {
-            gl.bind_texture((*tex_type) as _, Some(*key));
-        }
 
         gl.bind_vertex_array(self.vao);
 
-        gl.draw_arrays(self.display_type as _, 0, 4);
+        gl.draw_arrays(self.display_type as _, 0, self.vertex_count);
     }
 }
