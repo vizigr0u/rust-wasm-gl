@@ -9,14 +9,20 @@ pub enum VertexAttrType {
 }
 
 #[derive(Clone, Copy)]
-pub enum MeshDisplayType {
-    None = 0,
+pub enum PrimitiveType {
     Triangles = glow::TRIANGLES as _,
-    TriangleStrip = glow::TRIANGLE_STRIP as _,
+    TriangleStrips = glow::TRIANGLE_STRIP as _,
+}
+
+pub enum MeshDisplayType {
+    None,
+    Primitive(PrimitiveType),
+    Elements,
 }
 
 pub struct Mesh {
     pub data: Vec<f32>,
+    pub indices: Vec<u32>,
     pub layout: Vec<(VertexAttrType, usize)>,
     pub display_type: MeshDisplayType,
 }
@@ -33,8 +39,9 @@ impl Mesh {
                 -1.0, 1.0, 0.0, 0.0, 0.0, //
                 1.0, 1.0, 0.0, 1.0, 0.0, //
             ],
+            indices: vec![],
             layout: vec![(VertexAttrType::Position, 3), (VertexAttrType::UVs, 2)],
-            display_type: MeshDisplayType::TriangleStrip,
+            display_type: MeshDisplayType::Primitive(PrimitiveType::TriangleStrips),
         }
     }
     pub fn make_cube() -> Mesh {
@@ -94,7 +101,8 @@ impl Mesh {
                 (VertexAttrType::UVs, 2),
                 (VertexAttrType::Normal, 3),
             ],
-            display_type: MeshDisplayType::Triangles,
+            indices: vec![],
+            display_type: MeshDisplayType::Primitive(PrimitiveType::Triangles),
         }
     }
 }
