@@ -3,9 +3,11 @@ use std::rc::Rc;
 
 use glam::{vec3, Quat, Vec3};
 use glow::HasContext;
+use log::{info, warn};
 use wasm_bindgen::JsValue;
 
 use crate::camera::Camera;
+use crate::eguibackend::EguiBackend;
 use crate::gameobject::GameObject;
 use crate::inputsystem::{self, InputEventType, InputSubscription, InputSystem};
 use crate::material::{TextureDef, TextureType};
@@ -34,6 +36,7 @@ pub struct Game {
     time: Time,
 
     camera_input_sub: Option<InputSubscription>,
+    egui: Option<EguiBackend>,
 }
 
 impl Game {
@@ -66,6 +69,7 @@ impl Game {
             input_system,
             time: Time::new(),
             camera_input_sub: None,
+            egui: None,
         };
 
         Ok(game)
@@ -95,6 +99,7 @@ impl Game {
 
         self.init_quads(gl)?;
         self.init_cube(gl)?;
+        self.egui = Some(EguiBackend::new(gl));
 
         Ok(())
     }
@@ -137,10 +142,14 @@ impl Game {
         //     quad.render(gl);
         // }
 
-        self.scene.render(gl);
+        // self.scene.render(gl);
 
-        if let Some(cube) = &self.cube {
-            cube.render(gl, &self.camera.borrow());
+        // if let Some(cube) = &self.cube {
+        //     cube.render(gl, &self.camera.borrow());
+        // }
+
+        if let Some(egui) = &mut self.egui {
+            egui.render(gl);
         }
 
         Ok(())
@@ -167,7 +176,9 @@ impl Game {
         let grass_tex = &self.loaded_textures[0];
 
         let cube_mesh = Rc::new(Mesh::make_cube());
-        let cube_renderer = Rc::new(MeshRenderer::new(gl, &program, cube_mesh)?);
+        let mut cube_renderer = MeshRenderer::new(gl, &program)?;
+        cube_renderer.set_mesh(gl, cube_mesh);
+        let cube_renderer = Rc::new(cube_renderer);
         let cube: GameObject = GameObject::new(&grass_tex, &cube_renderer);
         self.cube = Some(cube);
 
@@ -195,7 +206,9 @@ impl Game {
         let dirt_tex = &self.loaded_textures[1];
 
         let quad_mesh = Rc::new(Mesh::make_quad());
-        let quad_renderer = Rc::new(MeshRenderer::new(gl, &quad_program, quad_mesh)?);
+        let mut quad_renderer = MeshRenderer::new(gl, &quad_program)?;
+        quad_renderer.set_mesh(gl, quad_mesh);
+        let quad_renderer = Rc::new(quad_renderer);
         for i in 0..50 {
             let tex = if i % 2 == 0 { &grass_tex } else { &dirt_tex };
             let quad: GameObject = GameObject::new(tex, &quad_renderer);

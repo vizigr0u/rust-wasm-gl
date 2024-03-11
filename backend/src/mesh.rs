@@ -10,6 +10,7 @@ pub enum VertexAttrType {
 
 #[derive(Clone, Copy)]
 pub enum MeshDisplayType {
+    None = 0,
     Triangles = glow::TRIANGLES as _,
     TriangleStrip = glow::TRIANGLE_STRIP as _,
 }

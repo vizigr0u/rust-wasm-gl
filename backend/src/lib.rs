@@ -2,10 +2,12 @@ use std::{cell::RefCell, rc::Rc};
 
 use cfg_if::cfg_if;
 use game::Game;
+use log::warn;
 use wasm_bindgen::prelude::*;
 
 mod camera;
 mod cube;
+mod eguibackend;
 mod game;
 mod gameobject;
 mod inputsystem;
