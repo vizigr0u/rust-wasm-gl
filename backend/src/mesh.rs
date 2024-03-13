@@ -8,23 +8,11 @@ pub enum VertexAttrType {
     UVs,
 }
 
-#[derive(Clone, Copy)]
-pub enum PrimitiveType {
-    Triangles = glow::TRIANGLES as _,
-    TriangleStrips = glow::TRIANGLE_STRIP as _,
-}
-
-pub enum MeshDisplayType {
-    None,
-    Primitive(PrimitiveType),
-    Elements,
-}
-
 pub struct Mesh {
     pub data: Vec<f32>,
-    pub indices: Vec<u32>,
+    pub indices: Option<Vec<u32>>,
     pub layout: Vec<(VertexAttrType, usize)>,
-    pub display_type: MeshDisplayType,
+    pub primitive_type: u32,
 }
 
 impl Mesh {
@@ -32,16 +20,65 @@ impl Mesh {
         &self.data
     }
     pub fn make_quad() -> Mesh {
+        let verts = [(A, TOP_LEFT), (B, TOP_RIGHT), (E, BOT_LEFT), (F, BOT_RIGHT)];
+        let mut data = Vec::<f32>::with_capacity(verts.len() * 5);
+        for (pos, uv) in &verts {
+            data.push(pos.x);
+            data.push(pos.y);
+            data.push(pos.z);
+            data.push(uv.0 as _);
+            data.push(uv.1 as _);
+        }
         Mesh {
-            data: vec![
-                -1.0, -1.0, 0.0, 0.0, 1.0, //
-                1.0, -1.0, 0.0, 1.0, 1.0, //
-                -1.0, 1.0, 0.0, 0.0, 0.0, //
-                1.0, 1.0, 0.0, 1.0, 0.0, //
-            ],
-            indices: vec![],
+            data,
+            indices: None,
             layout: vec![(VertexAttrType::Position, 3), (VertexAttrType::UVs, 2)],
-            display_type: MeshDisplayType::Primitive(PrimitiveType::TriangleStrips),
+            primitive_type: glow::TRIANGLE_STRIP,
+        }
+    }
+
+    // . .
+    // . .
+    pub fn make_quad_triangles() -> Mesh {
+        let verts = [
+            (A, TOP_LEFT),
+            (B, TOP_RIGHT),
+            (E, BOT_LEFT),
+            (B, TOP_RIGHT),
+            (F, BOT_RIGHT),
+            (E, BOT_LEFT),
+        ];
+        let mut data = Vec::<f32>::with_capacity(verts.len() * 5);
+        for (pos, uv) in &verts {
+            data.push(pos.x);
+            data.push(pos.y);
+            data.push(pos.z);
+            data.push(uv.0 as _);
+            data.push(uv.1 as _);
+        }
+        Mesh {
+            data,
+            indices: None,
+            layout: vec![(VertexAttrType::Position, 3), (VertexAttrType::UVs, 2)],
+            primitive_type: glow::TRIANGLES,
+        }
+    }
+
+    pub fn make_quad_elements() -> Mesh {
+        let verts = [(A, TOP_LEFT), (B, TOP_RIGHT), (E, BOT_LEFT), (F, BOT_RIGHT)];
+        let mut data = Vec::<f32>::with_capacity(verts.len() * 5);
+        for (pos, uv) in &verts {
+            data.push(pos.x);
+            data.push(pos.y);
+            data.push(pos.z);
+            data.push(uv.0 as _);
+            data.push(uv.1 as _);
+        }
+        Mesh {
+            data,
+            indices: Some(vec![0, 1, 2, 1, 3, 2]),
+            layout: vec![(VertexAttrType::Position, 3), (VertexAttrType::UVs, 2)],
+            primitive_type: glow::TRIANGLES,
         }
     }
     pub fn make_cube() -> Mesh {
@@ -101,8 +138,8 @@ impl Mesh {
                 (VertexAttrType::UVs, 2),
                 (VertexAttrType::Normal, 3),
             ],
-            indices: vec![],
-            display_type: MeshDisplayType::Primitive(PrimitiveType::Triangles),
+            indices: None,
+            primitive_type: glow::TRIANGLES,
         }
     }
 }

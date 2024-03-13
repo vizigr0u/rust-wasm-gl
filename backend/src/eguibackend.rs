@@ -1,10 +1,7 @@
-use std::{
-    collections::{hash_map, HashMap},
-    rc::Rc,
-};
+use std::{collections::HashMap, rc::Rc};
 
-use egui::TextureId;
-use glow::WebTextureKey;
+use egui::{epaint::Primitive, TextureId};
+use glow::{HasContext, WebTextureKey};
 use log::{info, warn};
 
 use crate::{
@@ -32,7 +29,7 @@ impl EguiBackend {
                     (VertexAttrType::UVs, "uv"),
                     (VertexAttrType::Color, "color"),
                 ),
-                vec!()
+                vec!((UniformTypes::ProjMatrix, "u_ortho"),)
             )
             .compile(gl)
         }
@@ -41,7 +38,7 @@ impl EguiBackend {
         Self {
             egui_ctx: egui::Context::default(),
             egui_once: true,
-            mesh_renderer: MeshRenderer::new(gl, &program).expect("Cant init eguis mesh renderer"),
+            mesh_renderer: MeshRenderer::new(&program),
             textures: HashMap::new(),
         }
     }
@@ -62,7 +59,11 @@ impl EguiBackend {
             .egui_ctx
             .tessellate(full_output.shapes, full_output.pixels_per_point);
 
-        self.paint(gl, full_output.textures_delta, clipped_primitives);
+        unsafe {
+            gl.enable(glow::CULL_FACE);
+            self.paint(gl, full_output.textures_delta, clipped_primitives);
+            gl.disable(glow::CULL_FACE);
+        }
     }
 
     fn paint(
@@ -71,41 +72,139 @@ impl EguiBackend {
         textures_delta: egui::TexturesDelta,
         clipped_primitives: Vec<egui::ClippedPrimitive>,
     ) {
-        self.debug_paint(textures_delta, &clipped_primitives);
-        let mesh = self.make_mesh(&clipped_primitives);
-        self.mesh_renderer.set_mesh(gl, mesh);
-        self.mesh_renderer.render(gl);
+        self.debug_paint(&textures_delta, &clipped_primitives);
+        self.update_textures(gl, &textures_delta);
+        for primitive in &clipped_primitives {
+            match &primitive.primitive {
+                Primitive::Mesh(p) => {
+                    unsafe {
+                        let tex = self.textures.get(&p.texture_id);
+                        match tex {
+                            Some(t) => gl.bind_texture(glow::TEXTURE_2D, Some(*t)),
+                            None => {
+                                warn!("Texture not found: {:?}", p.texture_id);
+                                continue;
+                            }
+                        }
+                    }
+                    let mesh = self.make_mesh(&p);
+                    self.mesh_renderer
+                        .set_mesh(gl, mesh)
+                        .expect("Can't set egui mesh");
+                    let program = self.mesh_renderer.get_program();
+                    program.gl_use(gl);
+                    program.set_matrix(
+                        gl,
+                        UniformTypes::ProjMatrix,
+                        &self.make_projection(800.0, 600.0),
+                    );
+                    self.mesh_renderer.render(gl);
+                }
+                _ => {
+                    warn!("Cant render egui callback");
+                }
+            }
+        }
     }
 
-    fn make_mesh(&self, clipped_primitives: &Vec<egui::ClippedPrimitive>) -> Rc<Mesh> {
-        let data: Vec<f32> = if clipped_primitives.len() < 1 {
-            vec![]
-        } else {
-            vec![
-                -1.0, -1.0, 0.0, 1.0, 0.1, 0.1, 0.1, 1.0, //
-                1.0, -1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, //
-                -1.0, 1.0, 0.0, 0.0, 0.1, 0.1, 0.1, 1.0, //
-                1.0, 1.0, 1.0, 0.0, 0.1, 0.1, 0.1, 1.0, //
-            ]
-        };
+    fn make_projection(&self, width: f32, height: f32) -> glam::Mat4 {
+        glam::Mat4::orthographic_rh(0.0, width, 0.0, height, -1.0, 1.0)
+    }
+
+    fn make_mesh(&self, mesh: &egui::Mesh) -> Rc<Mesh> {
+        let mut data = Vec::<f32>::with_capacity(mesh.vertices.len() * 8);
+        for v in &mesh.vertices {
+            data.push(v.pos.x);
+            data.push(v.pos.y);
+            data.push(v.uv.x);
+            data.push(v.uv.y);
+            data.push(v.color.r() as f32 / 255.0);
+            data.push(v.color.g() as f32 / 255.0);
+            data.push(v.color.b() as f32 / 255.0);
+            data.push(v.color.a() as f32 / 255.0);
+        }
         Rc::new(Mesh {
             data,
-            display_type: crate::mesh::MeshDisplayType::TriangleStrip,
+            primitive_type: glow::TRIANGLES,
             layout: vec![
                 (VertexAttrType::Position, 2),
                 (VertexAttrType::UVs, 2),
                 (VertexAttrType::Color, 4),
             ],
+            indices: Some(mesh.indices.clone()),
         })
+    }
+
+    fn update_textures(&mut self, gl: &glow::Context, textures_delta: &egui::TexturesDelta) {
+        unsafe {
+            for (id, img_delta) in &textures_delta.set {
+                if !img_delta.is_whole() {
+                    warn!("Partial update of texture {:?} not supported", id);
+                    continue;
+                }
+                info!("loading texture: {:?}", id);
+                let options = &img_delta.options;
+                let key: WebTextureKey = gl.create_texture().expect("Can't create texture");
+                gl.bind_texture(glow::TEXTURE_2D, Some(key));
+                let wrap_mode = wrap_to_glow(options.wrap_mode);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, wrap_mode as i32);
+                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, wrap_mode as i32);
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MIN_FILTER,
+                    filter_to_glow(options.minification) as i32,
+                );
+                gl.tex_parameter_i32(
+                    glow::TEXTURE_2D,
+                    glow::TEXTURE_MAG_FILTER,
+                    filter_to_glow(options.magnification) as i32,
+                );
+                match &img_delta.image {
+                    egui::ImageData::Color(image) => {
+                        gl.tex_image_2d(
+                            glow::TEXTURE_2D,
+                            0,
+                            glow::RGBA as i32,
+                            image.width() as i32,
+                            image.height() as i32,
+                            0,
+                            glow::RGBA,
+                            glow::UNSIGNED_BYTE,
+                            Some(&image.as_raw()),
+                        );
+                        self.textures.insert(*id, key);
+                    }
+                    egui::ImageData::Font(image) => {
+                        gl.tex_image_2d(
+                            glow::TEXTURE_2D,
+                            0,
+                            glow::RGBA as i32,
+                            image.width() as i32,
+                            image.height() as i32,
+                            0,
+                            glow::RGBA,
+                            glow::UNSIGNED_BYTE,
+                            Some(
+                                &image
+                                    .srgba_pixels(None)
+                                    .flat_map(|p| p.to_array())
+                                    .collect::<Vec<_>>(),
+                            ),
+                        );
+                    }
+                };
+                self.textures.insert(*id, key);
+            }
+        }
     }
 
     fn debug_paint(
         &mut self,
-        textures_delta: egui::TexturesDelta,
+        textures_delta: &egui::TexturesDelta,
         clipped_primitives: &Vec<egui::ClippedPrimitive>,
     ) {
         if self.egui_once {
-            for (id, img_delta) in textures_delta.set {
+            for (id, img_delta) in &textures_delta.set {
                 info!("{id:?}, {:?}", img_delta.options);
             }
             for p in clipped_primitives {
@@ -125,5 +224,22 @@ impl EguiBackend {
             }),
             ..Default::default()
         }
+    }
+}
+
+/* convert a TextureFilter to a glow filter */
+fn filter_to_glow(filter: egui::TextureFilter) -> u32 {
+    match filter {
+        egui::TextureFilter::Linear => glow::LINEAR,
+        egui::TextureFilter::Nearest => glow::NEAREST,
+    }
+}
+
+/* convert a TextureWrapMode to a glow filter */
+fn wrap_to_glow(wrap: egui::TextureWrapMode) -> u32 {
+    match wrap {
+        egui::TextureWrapMode::ClampToEdge => glow::CLAMP_TO_EDGE,
+        egui::TextureWrapMode::Repeat => glow::REPEAT,
+        egui::TextureWrapMode::MirroredRepeat => glow::MIRRORED_REPEAT,
     }
 }

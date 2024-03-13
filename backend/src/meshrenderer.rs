@@ -2,19 +2,19 @@ use std::rc::Rc;
 
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 use log::{info, warn};
-use web_sys::WebGlVertexArrayObject;
 
-use crate::mesh::{Mesh, MeshDisplayType, PrimitiveType};
+use crate::mesh::Mesh;
 use crate::shaders::CompiledShader;
 
 enum DisplayData {
     None,
-    Primitives(Option<WebVertexArrayKey>, PrimitiveType, usize),
+    Array(Option<WebVertexArrayKey>, usize),
     Elements(Option<WebVertexArrayKey>, Option<WebBufferKey>, usize),
 }
 
 pub struct MeshRenderer {
     program: Rc<CompiledShader>,
+    primitive_type: u32,
     display_data: DisplayData,
     vertex_count: i32,
 }
@@ -24,133 +24,103 @@ impl MeshRenderer {
         &self.program
     }
 
-    pub fn new(gl: &glow::Context, program: &Rc<CompiledShader>) -> Self {
+    pub fn new(program: &Rc<CompiledShader>) -> Self {
         MeshRenderer {
             display_data: DisplayData::None,
+            primitive_type: glow::TRIANGLES,
             vertex_count: 0,
             program: program.clone(),
         }
     }
 
     pub fn set_mesh(&mut self, gl: &glow::Context, mesh: Rc<Mesh>) -> Result<(), String> {
-        match self.display_data {
-            DisplayData::None => {}
-            DisplayData::Primitives(vao, t, size) => {}
-            DisplayData::Elements(vao, vbo, size) => {}
-        }
-        match mesh.display_type {
-            MeshDisplayType::None => {}
-            MeshDisplayType::Primitive(t) => unsafe {
-                let vao = Some(gl.create_vertex_array()?);
-                gl.bind_vertex_array(vao);
-                let buffer = gl.create_buffer()?;
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(buffer));
-                gl.bind_vertex_array(vao);
-                gl.buffer_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    mesh.get_data().align_to::<u8>().1,
-                    glow::STATIC_DRAW,
+        unsafe {
+            let vao = Some(gl.create_vertex_array()?);
+            gl.bind_vertex_array(vao);
+            let buffer = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(buffer));
+            gl.bind_vertex_array(vao);
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                mesh.get_data().align_to::<u8>().1,
+                glow::STATIC_DRAW,
+            );
+
+            let layout_size: usize = mesh.layout.iter().map(|(_type, size)| size).sum();
+
+            if mesh.get_data().len() % layout_size != 0 {
+                warn!(
+                    "Mesh data of size {} doesn't match layout size of {}.",
+                    mesh.get_data().len(),
+                    layout_size
                 );
+            }
 
-                let layout_size: usize = mesh.layout.iter().map(|(_type, size)| size).sum();
+            let stride: i32 = 4 * layout_size as i32;
 
-                if mesh.get_data().len() % layout_size != 0 {
-                    warn!(
-                        "Mesh data of size {} doesn't match layout size of {}.",
-                        mesh.get_data().len(),
-                        layout_size
-                    );
-                }
-
-                let stride: i32 = 4 * layout_size as i32;
-
-                let mut offset: i32 = 0;
-                for &(data_type, size) in mesh.layout.iter() {
-                    match self.program.get_attr_location(data_type) {
-                        Some(&location) => {
-                            let location = location as u32;
-                            gl.vertex_attrib_pointer_f32(
-                                location,
-                                size as _,
-                                glow::FLOAT,
-                                false,
-                                stride,
-                                offset,
-                            );
-                            gl.enable_vertex_attrib_array(location);
-                        }
-                        None => warn!("Unable to get location for type {:?}", data_type),
+            let mut offset: i32 = 0;
+            for &(data_type, size) in mesh.layout.iter() {
+                match self.program.get_attr_location(data_type) {
+                    Some(&location) => {
+                        let location = location as u32;
+                        gl.vertex_attrib_pointer_f32(
+                            location,
+                            size as _,
+                            glow::FLOAT,
+                            false,
+                            stride,
+                            offset,
+                        );
+                        gl.enable_vertex_attrib_array(location);
                     }
-                    offset += 4 * size as i32;
+                    None => warn!("Unable to get location for type {:?}", data_type),
                 }
+                offset += 4 * size as i32;
+            }
 
-                self.display_data =
-                    DisplayData::Primitives(vao, t, mesh.get_data().len() / layout_size);
-            },
-            MeshDisplayType::Elements => unsafe {
-                let vao = Some(gl.create_vertex_array()?);
-                gl.bind_vertex_array(vao);
-                let buffer = gl.create_buffer()?;
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(buffer));
-                gl.bind_vertex_array(vao);
-                gl.buffer_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    mesh.get_data().align_to::<u8>().1,
-                    glow::STATIC_DRAW,
-                );
-
-                let layout_size: usize = mesh.layout.iter().map(|(_type, size)| size).sum();
-
-                if mesh.get_data().len() % layout_size != 0 {
-                    warn!(
-                        "Mesh data of size {} doesn't match layout size of {}.",
-                        mesh.get_data().len(),
-                        layout_size
+            self.display_data = match &mesh.indices {
+                None => {
+                    // info!(
+                    //     "created Mesh of type {:?} with {} vertices.",
+                    //     mesh.primitive_type,
+                    //     mesh.get_data().len() / layout_size
+                    // );
+                    DisplayData::Array(vao, mesh.get_data().len() / layout_size)
+                }
+                Some(indices) => {
+                    /* create vbo out of mesh indices */
+                    let vbo = Some(gl.create_buffer()?);
+                    gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, vbo);
+                    gl.buffer_data_u8_slice(
+                        glow::ELEMENT_ARRAY_BUFFER,
+                        indices.align_to::<u8>().1,
+                        glow::STATIC_DRAW,
                     );
+
+                    // info!("created Mesh with {} indices.", indices.len());
+
+                    DisplayData::Elements(vao, vbo, indices.len() as _)
                 }
+            };
+            self.primitive_type = mesh.primitive_type;
 
-                let stride: i32 = 4 * layout_size as i32;
-
-                let mut offset: i32 = 0;
-                for &(data_type, size) in mesh.layout.iter() {
-                    match self.program.get_attr_location(data_type) {
-                        Some(&location) => {
-                            let location = location as u32;
-                            gl.vertex_attrib_pointer_f32(
-                                location,
-                                size as _,
-                                glow::FLOAT,
-                                false,
-                                stride,
-                                offset,
-                            );
-                            gl.enable_vertex_attrib_array(location);
-                        }
-                        None => warn!("Unable to get location for type {:?}", data_type),
-                    }
-                    offset += 4 * size as i32;
-                }
-
-                self.display_data =
-                    DisplayData::Elements(vao, vbo, mesh.get_data().len() / layout_size);
-            },
+            Ok(())
         }
-
-        Ok(())
     }
 
     pub fn render(&self, gl: &glow::Context) {
         match self.display_data {
             DisplayData::None => {}
-            DisplayData::Primitives(vao, t, vertex_count) => unsafe {
+            DisplayData::Array(vao, vertex_count) => unsafe {
                 self.get_program().gl_use(gl);
                 gl.bind_vertex_array(vao);
-                gl.draw_arrays(t as _, 0, vertex_count as _);
+                gl.draw_arrays(self.primitive_type as _, 0, vertex_count as _);
             },
-            DisplayData::Elements(vbo, count) => unsafe {
+            DisplayData::Elements(vao, vbo, count) => unsafe {
                 self.get_program().gl_use(gl);
+                gl.bind_vertex_array(vao);
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, vbo);
-                gl.draw_elements(glow::ELEMENT_ARRAY_BUFFER, 0, self.vertex_count);
+                gl.draw_elements(self.primitive_type as _, count as _, glow::UNSIGNED_INT, 0);
             },
         }
     }

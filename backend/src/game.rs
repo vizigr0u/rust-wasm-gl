@@ -27,7 +27,7 @@ const BLOCK_ATLAS_PATH: &str = "data/textures/blocks/atlas_blocks.png";
 pub struct Game {
     scene: TriangleScene,
     texture_loader: TextureLoader,
-    quads: Vec<GameObject>,
+    objects: Vec<GameObject>,
     cube: Option<GameObject>,
     camera: Rc<RefCell<Camera>>,
 
@@ -46,7 +46,7 @@ impl Game {
         let game = Game {
             scene: TriangleScene::new(),
             texture_loader: TextureLoader::new(10)?,
-            quads: Vec::new(),
+            objects: Vec::new(),
             cube: None,
             loaded_textures: Vec::new(),
             camera: Rc::new(RefCell::new(Camera::new(
@@ -95,9 +95,8 @@ impl Game {
             camera.borrow_mut().handle_input(e);
         });
         self.camera_input_sub = Some(self.input_system.subscribe(callback));
-        // self.camera.borrow_mut().register_inputs(self.input_system);
 
-        self.init_quads(gl)?;
+        self.init_objects(gl)?;
         self.init_cube(gl)?;
         self.egui = Some(EguiBackend::new(gl));
 
@@ -106,13 +105,14 @@ impl Game {
 
     pub fn update(&mut self, time: f64) -> Result<(), String> {
         self.time.update(time);
-        for (index, quad) in self.quads.iter_mut().enumerate() {
+        for (index, quad) in self.objects.iter_mut().enumerate() {
             quad.set_position(vec3(
                 f64::sin(2.0 * index as f64 + time / 1000.0) as f32,
                 f64::cos(2.0 * index as f64 + time / 200.0) as f32,
                 0.0,
             ));
             quad.set_scale(vec3(0.2, f64::sin(time / 1000.0) as f32 * 0.2, 0.5));
+            quad.set_scale(vec3(0.2, 0.5, 0.5));
             quad.update();
         }
 
@@ -138,11 +138,11 @@ impl Game {
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
         gl.clear(glow::COLOR_BUFFER_BIT);
 
-        // for quad in &self.quads {
-        //     quad.render(gl);
-        // }
+        self.scene.render(gl);
 
-        // self.scene.render(gl);
+        // for quad in &self.objects {
+        //     quad.render(gl, &self.camera.borrow());
+        // }
 
         // if let Some(cube) = &self.cube {
         //     cube.render(gl, &self.camera.borrow());
@@ -176,8 +176,8 @@ impl Game {
         let grass_tex = &self.loaded_textures[0];
 
         let cube_mesh = Rc::new(Mesh::make_cube());
-        let mut cube_renderer = MeshRenderer::new(gl, &program)?;
-        cube_renderer.set_mesh(gl, cube_mesh);
+        let mut cube_renderer = MeshRenderer::new(&program);
+        cube_renderer.set_mesh(gl, cube_mesh)?;
         let cube_renderer = Rc::new(cube_renderer);
         let cube: GameObject = GameObject::new(&grass_tex, &cube_renderer);
         self.cube = Some(cube);
@@ -185,7 +185,7 @@ impl Game {
         Ok(())
     }
 
-    pub unsafe fn init_quads(&mut self, gl: &glow::Context) -> Result<(), String> {
+    pub unsafe fn init_objects(&mut self, gl: &glow::Context) -> Result<(), String> {
         let program = shader_def!(
             "textureTransform.vert",
             "textureTransform.frag",
@@ -200,19 +200,19 @@ impl Game {
             )
         )
         .compile(gl)?;
-        let quad_program = Rc::new(program);
+        let program = Rc::new(program);
 
         let grass_tex = &self.loaded_textures[0];
         let dirt_tex = &self.loaded_textures[1];
 
-        let quad_mesh = Rc::new(Mesh::make_quad());
-        let mut quad_renderer = MeshRenderer::new(gl, &quad_program)?;
-        quad_renderer.set_mesh(gl, quad_mesh);
-        let quad_renderer = Rc::new(quad_renderer);
+        let mesh = Rc::new(Mesh::make_quad_elements());
+        let mut renderer = MeshRenderer::new(&program);
+        renderer.set_mesh(gl, mesh)?;
+        let renderer = Rc::new(renderer);
         for i in 0..50 {
             let tex = if i % 2 == 0 { &grass_tex } else { &dirt_tex };
-            let quad: GameObject = GameObject::new(tex, &quad_renderer);
-            self.quads.push(quad);
+            let quad: GameObject = GameObject::new(tex, &renderer);
+            self.objects.push(quad);
         }
 
         Ok(())
