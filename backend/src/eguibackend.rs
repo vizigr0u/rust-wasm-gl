@@ -123,30 +123,6 @@ impl EguiBackend {
         glam::Mat4::orthographic_rh_gl(0.0, width, height, 0.0, -1.0, 1.0)
     }
 
-    // fn make_mesh(&self, mesh: &egui::Mesh) -> Rc<Mesh> {
-    //     let mut data = Vec::<f32>::with_capacity(mesh.vertices.len() * 8);
-    //     for v in &mesh.vertices {
-    //         data.push(v.pos.x);
-    //         data.push(v.pos.y);
-    //         data.push(v.uv.x);
-    //         data.push(v.uv.y);
-    //         data.push(v.color.r() as f32 / 255.0);
-    //         data.push(v.color.g() as f32 / 255.0);
-    //         data.push(v.color.b() as f32 / 255.0);
-    //         data.push(v.color.a() as f32 / 255.0);
-    //     }
-    //     Rc::new(Mesh {
-    //         data,
-    //         primitive_type: glow::TRIANGLES,
-    //         layout: vec![
-    //             (VertexAttrType::Position, 2),
-    //             (VertexAttrType::UVs, 2),
-    //             (VertexAttrType::Color, 4),
-    //         ],
-    //         indices: Some(mesh.indices.clone()),
-    //     })
-    // }
-
     fn update_textures(&mut self, gl: &glow::Context, textures_delta: &egui::TexturesDelta) {
         unsafe {
             for (id, img_delta) in &textures_delta.set {
@@ -257,33 +233,6 @@ fn wrap_to_glow(wrap: TextureWrapMode) -> u32 {
         TextureWrapMode::MirroredRepeat => glow::MIRRORED_REPEAT,
     }
 }
-
-// impl Into<Mesh> for egui::Mesh {
-//     fn into(self) -> Mesh {
-//         let mesh = self;
-//         let mut data = Vec::<f32>::with_capacity(mesh.vertices.len() * 8);
-//         for v in &mesh.vertices {
-//             data.push(v.pos.x);
-//             data.push(v.pos.y);
-//             data.push(v.uv.x);
-//             data.push(v.uv.y);
-//             data.push(v.color.r() as f32 / 255.0);
-//             data.push(v.color.g() as f32 / 255.0);
-//             data.push(v.color.b() as f32 / 255.0);
-//             data.push(v.color.a() as f32 / 255.0);
-//         }
-//         Mesh {
-//             data,
-//             primitive_type: glow::TRIANGLES,
-//             layout: vec![
-//                 (VertexAttrType::Position, 2),
-//                 (VertexAttrType::UVs, 2),
-//                 (VertexAttrType::Color, 4),
-//             ],
-//             indices: Some(mesh.indices.clone()),
-//         }
-//     }
-// }
 
 impl From<&egui::Mesh> for Mesh {
     fn from(mesh: &egui::Mesh) -> Self {
