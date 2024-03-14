@@ -46,9 +46,23 @@ impl EguiBackend {
     pub fn render(&mut self, gl: &glow::Context) {
         let raw_input: egui::RawInput = self.gather_input();
 
+        let mut name = "Arthur".to_owned();
+        let mut age = 42;
+
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
             egui::CentralPanel::default().show(&ctx, |ui| {
-                ui.label("Hello world!");
+                ui.heading("My egui Application");
+                ui.horizontal(|ui| {
+                    let name_label = ui.label("Your name: ");
+                    ui.text_edit_singleline(&mut name)
+                        .labelled_by(name_label.id);
+                });
+                ui.add(egui::Slider::new(&mut age, 0..=120).text("age"));
+                if ui.button("Increment").clicked() {
+                    age += 1;
+                }
+                ui.label(format!("Hello '{name}', age {age}"));
+
                 if ui.button("Click me").clicked() {
                     warn!("CLICK!");
                 }
