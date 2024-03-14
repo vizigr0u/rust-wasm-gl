@@ -33,6 +33,7 @@ gloo = { version = "0.11.0", features = ['gloo-events'] }
 log = "0.4.20"
 console_log = { version = "1.0.0", optional = true }
 egui = { version = "0.26.2", features = ['bytemuck', 'log', 'mint'] }
+bytemuck = "1.15.0"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.13"
