@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::{collections::HashMap, convert::TryInto, rc::Rc};
 
 use crate::shader_def;
@@ -14,12 +15,19 @@ use glow::{HasContext, WebTextureKey};
 use log::{info, warn};
 use web_sys::{KeyboardEvent, MouseEvent};
 
+struct DemoData {
+    pub name: String,
+    pub age: i32,
+}
+
 pub struct EguiBackend {
     egui_ctx: egui::Context,
     egui_once: bool,
     textures: HashMap<TextureId, WebTextureKey>,
     mesh_renderer: MeshRenderer,
     current_events: Vec<Event>,
+
+    demo_data: Rc<RefCell<DemoData>>,
 }
 
 impl EguiBackend {
@@ -45,28 +53,36 @@ impl EguiBackend {
             mesh_renderer: MeshRenderer::new(&program),
             textures: HashMap::new(),
             current_events: Vec::new(),
+            demo_data: Rc::new(RefCell::new(DemoData {
+                name: "Arthur".to_string(),
+                age: 42,
+            })),
         }
     }
 
     pub fn render(&mut self, gl: &glow::Context) {
         let raw_input: egui::RawInput = self.gather_input();
 
-        let mut name = "Arthur".to_owned();
-        let mut age = 42;
+        let demo_data = self.demo_data.clone();
 
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
+            let mut data = demo_data.borrow_mut();
             egui::CentralPanel::default().show(&ctx, |ui| {
                 ui.heading("My egui Application");
                 ui.horizontal(|ui| {
                     let name_label = ui.label("Your name: ");
-                    ui.text_edit_singleline(&mut name)
+                    ui.text_edit_singleline(&mut data.name)
                         .labelled_by(name_label.id);
                 });
-                ui.add(egui::Slider::new(&mut age, 0..=120).text("age"));
+                ui.add(egui::Slider::new(&mut data.age, 0..=120).text("age"));
                 if ui.button("Increment").clicked() {
-                    age += 1;
+                    data.age += 1;
                 }
-                ui.label(format!("Hello '{name}', age {age}"));
+                ui.label(format!(
+                    "Hello '{name}', age {age}",
+                    name = data.name,
+                    age = data.age
+                ));
 
                 if ui.button("Click me").clicked() {
                     warn!("CLICK!");
@@ -237,14 +253,16 @@ impl EguiBackend {
     }
 
     fn set_events(&mut self, events: &Vec<InputEventType>) {
+        self.current_events.clear();
         for e in events.iter().map(|e| e.try_into()) {
             match e {
                 Ok(e) => {
                     self.current_events.push(e);
                 }
-                Err(e) => {
-                    warn!("Could not convert event: {:?}", e);
-                }
+                Err(e) => match e {
+                    ConversionError::IgnoredKey(_) => {}
+                    _ => warn!("Could not convert event: {e:?}"),
+                },
             }
         }
     }
@@ -260,6 +278,7 @@ impl HandleInputs for EguiBackend {
 pub enum ConversionError {
     KeyNotFound(String),
     UnknownButton(i16),
+    IgnoredKey(String),
     Unhandled,
 }
 
@@ -282,9 +301,7 @@ impl TryInto<Event> for &InputEventType {
                 physical_key: None,
                 repeat: false,
             },
-            InputEventType::MouseMove(event) => {
-                Event::PointerMoved(egui::pos2(event.client_x() as f32, event.client_y() as f32))
-            }
+            InputEventType::MouseMove(event) => Event::PointerMoved(mouse_event_to_pos2(&event)),
             InputEventType::MouseDown(event) => Event::PointerButton {
                 pos: mouse_event_to_pos2(&event),
                 button: try_parse_mouse_button(event.button())?,
@@ -308,6 +325,7 @@ fn get_key_modifiers(event: &KeyboardEvent) -> egui::Modifiers {
     modifiers.shift = event.get_modifier_state("Shift");
     modifiers.ctrl = event.get_modifier_state("Control");
     modifiers.alt = event.get_modifier_state("Alt");
+    modifiers.command = event.get_modifier_state("Meta");
 
     modifiers
 }
@@ -317,6 +335,7 @@ fn get_mouse_modifiers(event: &MouseEvent) -> egui::Modifiers {
     modifiers.shift = event.get_modifier_state("Shift");
     modifiers.ctrl = event.get_modifier_state("Control");
     modifiers.alt = event.get_modifier_state("Alt");
+    modifiers.command = event.get_modifier_state("Meta");
 
     modifiers
 }
@@ -331,7 +350,11 @@ fn try_parse_mouse_button(button: i16) -> Result<egui::PointerButton, Conversion
 }
 
 fn try_parse_key(key: String) -> Result<egui::Key, ConversionError> {
-    Key::from_name(key.as_str()).ok_or_else(|| ConversionError::KeyNotFound(key))
+    if key == "Shift" || key == "Control" || key == "Alt" || key == "Meta" {
+        Err(ConversionError::IgnoredKey(key))
+    } else {
+        Key::from_name(key.as_str()).ok_or_else(|| ConversionError::KeyNotFound(key))
+    }
 }
 
 fn mouse_event_to_pos2(event: &MouseEvent) -> egui::Pos2 {
