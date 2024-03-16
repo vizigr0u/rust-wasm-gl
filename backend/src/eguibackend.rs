@@ -1,21 +1,25 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, convert::TryInto, rc::Rc};
 
-use egui::{epaint::Primitive, TextureFilter, TextureId, TextureWrapMode};
-use glow::{HasContext, WebTextureKey};
-use log::{info, warn};
-
+use crate::shader_def;
 use crate::{
+    inputsystem::{HandleInputs, InputEventType, InputState},
     mesh::{Mesh, VertexAttrType},
     meshrenderer::MeshRenderer,
-    shader_def,
-    shaders::{ShaderDef, UniformTypes},
+    shaders::UniformTypes,
 };
+
+use crate::shaders::ShaderDef;
+use egui::{epaint::Primitive, Event, Key, TextureFilter, TextureId, TextureWrapMode};
+use glow::{HasContext, WebTextureKey};
+use log::{info, warn};
+use web_sys::{KeyboardEvent, MouseEvent};
 
 pub struct EguiBackend {
     egui_ctx: egui::Context,
     egui_once: bool,
     textures: HashMap<TextureId, WebTextureKey>,
     mesh_renderer: MeshRenderer,
+    current_events: Vec<Event>,
 }
 
 impl EguiBackend {
@@ -40,6 +44,7 @@ impl EguiBackend {
             egui_once: true,
             mesh_renderer: MeshRenderer::new(&program),
             textures: HashMap::new(),
+            current_events: Vec::new(),
         }
     }
 
@@ -226,9 +231,111 @@ impl EguiBackend {
                 min: egui::pos2(0.0, 0.0),
                 max: egui::pos2(200.0, 200.0),
             }),
+            events: self.current_events.clone(),
             ..Default::default()
         }
     }
+
+    fn set_events(&mut self, events: &Vec<InputEventType>) {
+        for e in events.iter().map(|e| e.try_into()) {
+            match e {
+                Ok(e) => {
+                    self.current_events.push(e);
+                }
+                Err(e) => {
+                    warn!("Could not convert event: {:?}", e);
+                }
+            }
+        }
+    }
+}
+
+impl HandleInputs for EguiBackend {
+    fn handle_inputs(&mut self, inputs: &InputState) {
+        self.set_events(inputs.get_events());
+    }
+}
+
+#[derive(Debug)]
+pub enum ConversionError {
+    KeyNotFound(String),
+    UnknownButton(i16),
+    Unhandled,
+}
+
+impl TryInto<Event> for &InputEventType {
+    type Error = ConversionError;
+
+    fn try_into(self) -> Result<Event, Self::Error> {
+        let event = match self {
+            InputEventType::KeyDown(event) => Event::Key {
+                key: try_parse_key(event.key())?,
+                pressed: true,
+                modifiers: get_key_modifiers(&event),
+                physical_key: None,
+                repeat: false,
+            },
+            InputEventType::KeyUp(event) => Event::Key {
+                key: try_parse_key(event.key())?,
+                pressed: false,
+                modifiers: get_key_modifiers(&event),
+                physical_key: None,
+                repeat: false,
+            },
+            InputEventType::MouseMove(event) => {
+                Event::PointerMoved(egui::pos2(event.client_x() as f32, event.client_y() as f32))
+            }
+            InputEventType::MouseDown(event) => Event::PointerButton {
+                pos: mouse_event_to_pos2(&event),
+                button: try_parse_mouse_button(event.button())?,
+                pressed: true,
+                modifiers: get_mouse_modifiers(&event),
+            },
+            InputEventType::MouseUp(event) => Event::PointerButton {
+                pos: mouse_event_to_pos2(&event),
+                button: try_parse_mouse_button(event.button())?,
+                pressed: false,
+                modifiers: get_mouse_modifiers(&event),
+            },
+            _ => Err(ConversionError::Unhandled)?,
+        };
+        Ok(event)
+    }
+}
+
+fn get_key_modifiers(event: &KeyboardEvent) -> egui::Modifiers {
+    let mut modifiers = egui::Modifiers::default();
+    modifiers.shift = event.get_modifier_state("Shift");
+    modifiers.ctrl = event.get_modifier_state("Control");
+    modifiers.alt = event.get_modifier_state("Alt");
+
+    modifiers
+}
+
+fn get_mouse_modifiers(event: &MouseEvent) -> egui::Modifiers {
+    let mut modifiers = egui::Modifiers::default();
+    modifiers.shift = event.get_modifier_state("Shift");
+    modifiers.ctrl = event.get_modifier_state("Control");
+    modifiers.alt = event.get_modifier_state("Alt");
+
+    modifiers
+}
+
+fn try_parse_mouse_button(button: i16) -> Result<egui::PointerButton, ConversionError> {
+    match button {
+        0 => Ok(egui::PointerButton::Primary),
+        1 => Ok(egui::PointerButton::Middle),
+        2 => Ok(egui::PointerButton::Secondary),
+        n => Err(ConversionError::UnknownButton(n))?,
+    }
+}
+
+fn try_parse_key(key: String) -> Result<egui::Key, ConversionError> {
+    Key::from_name(key.as_str()).ok_or_else(|| ConversionError::KeyNotFound(key))
+}
+
+fn mouse_event_to_pos2(event: &MouseEvent) -> egui::Pos2 {
+    egui::pos2(event.client_x() as f32, event.client_y() as f32)
 }
 
 /* convert a TextureFilter to a glow filter */

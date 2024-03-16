@@ -9,7 +9,7 @@ use wasm_bindgen::JsValue;
 use crate::camera::Camera;
 use crate::eguibackend::EguiBackend;
 use crate::gameobject::GameObject;
-use crate::inputsystem::{self, HandleInputs, InputSystem};
+use crate::inputsystem::{self, HandleInputs, InputEventType, InputSystem};
 use crate::material::{TextureDef, TextureType};
 use crate::mesh::{Mesh, VertexAttrType};
 use crate::meshrenderer::MeshRenderer;
@@ -34,6 +34,7 @@ pub struct Game {
     input_system: InputSystem,
     loaded_textures: Vec<Rc<TextureDef>>,
     time: Time,
+    show_menu: bool,
 
     egui: Option<EguiBackend>,
 }
@@ -66,6 +67,7 @@ impl Game {
             input_system: inputsystem::InputSystem::new()?,
             time: Time::new(),
             egui: None,
+            show_menu: false,
         };
 
         Ok(game)
@@ -97,28 +99,31 @@ impl Game {
     pub fn update(&mut self, time: f64) -> Result<(), String> {
         self.time.update(time);
         self.handle_inputs();
-        for (index, quad) in self.objects.iter_mut().enumerate() {
-            quad.set_position(vec3(
-                f64::sin(2.0 * index as f64 + time / 1000.0) as f32,
-                f64::cos(2.0 * index as f64 + time / 200.0) as f32,
-                0.0,
-            ));
-            quad.set_scale(vec3(0.2, f64::sin(time / 1000.0) as f32 * 0.2, 0.5));
-            quad.set_scale(vec3(0.2, 0.5, 0.5));
-            quad.update();
-        }
 
-        if let Some(cube) = &mut self.cube {
-            cube.set_rotation(Quat::from_euler(
-                glam::EulerRot::XYZ,
-                0.0,
-                (time / 1000.0) as f32,
-                (time / 2000.0) as f32,
-            ));
-            cube.update();
-        }
+        if !self.show_menu {
+            for (index, quad) in self.objects.iter_mut().enumerate() {
+                quad.set_position(vec3(
+                    f64::sin(2.0 * index as f64 + time / 1000.0) as f32,
+                    f64::cos(2.0 * index as f64 + time / 200.0) as f32,
+                    0.0,
+                ));
+                quad.set_scale(vec3(0.2, f64::sin(time / 1000.0) as f32 * 0.2, 0.5));
+                quad.set_scale(vec3(0.2, 0.5, 0.5));
+                quad.update();
+            }
 
-        self.scene.update(&self.time)?;
+            if let Some(cube) = &mut self.cube {
+                cube.set_rotation(Quat::from_euler(
+                    glam::EulerRot::XYZ,
+                    0.0,
+                    (time / 1000.0) as f32,
+                    (time / 2000.0) as f32,
+                ));
+                cube.update();
+            }
+
+            self.scene.update(&self.time)?;
+        }
 
         self.camera.update(&self.time);
 
@@ -126,8 +131,26 @@ impl Game {
     }
 
     pub fn handle_inputs(&mut self) {
-        let input_state = self.input_system.get_inputs();
-        self.camera.handle_inputs(&input_state);
+        let inputs = self.input_system.get_inputs();
+
+        for event in inputs.get_events() {
+            match event {
+                InputEventType::KeyDown(_event) => {
+                    if inputs.is_key_down("Escape") {
+                        self.show_menu = !self.show_menu;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if !self.show_menu {
+            self.camera.handle_inputs(&inputs);
+        } else {
+            if let Some(egui) = &mut self.egui {
+                egui.handle_inputs(&inputs);
+            }
+        }
 
         self.input_system.clear_events();
     }
@@ -147,8 +170,10 @@ impl Game {
             cube.render(gl, &self.camera);
         }
 
-        if let Some(egui) = &mut self.egui {
-            egui.render(gl);
+        if self.show_menu {
+            if let Some(egui) = &mut self.egui {
+                egui.render(gl);
+            }
         }
 
         Ok(())
