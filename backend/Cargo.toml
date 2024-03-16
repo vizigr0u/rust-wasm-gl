@@ -65,9 +65,18 @@ features = [
     'KeyboardEvent',
 ]
 
+[profile.dev]
+opt-level = 0           # do not optimize for debug
+debug = true            # print debug info
+debug-assertions = true # enable debug assertions
+overflow-checks = true  # check for overflows
+
 [profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
+opt-level = "s"     # optimize for small code size.
+lto = true          # Enable link time optimizations
+debug = false       # Strip debug information
+codegen-units = 1   # More aggressive optimizations at the cost of compilation time
+incremental = false # Disable incremental compilation
 
 [features]
 default = ["console_error_panic_hook", "console_log", "wee_alloc"]

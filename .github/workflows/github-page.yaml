@@ -40,7 +40,7 @@ jobs:
       - name: Setup Wasm-pack
         run: npm install -g wasm-pack
       - name: Build Wasm
-        run: npm run wasm
+        run: npm run wasm-release
       - name: Build Html
         run: npm run build -- --base=/rust-wasm-gl/
       - name: Setup Pages

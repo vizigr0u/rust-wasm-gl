@@ -4,7 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "wasm": "wasm-pack build ./backend --target web",
+    "wasm": "wasm-pack build --dev ./backend --target web",
+    "wasm-release": "wasm-pack build --release ./backend --target web",
     "dev": "yarn wasm && vite",
     "build": "tsc && vite build",
     "preview": "vite preview"
