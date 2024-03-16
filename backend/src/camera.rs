@@ -93,7 +93,6 @@ impl HandleInputs for Camera {
                         self.up = up.normalize();
                         self.forward = forward.normalize();
                         self.right = right;
-                        info!("Forward: {:?}", self.forward);
                     }
                 }
                 InputEventType::MouseWheel(e) => {
