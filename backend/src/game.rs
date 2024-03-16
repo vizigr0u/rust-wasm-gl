@@ -9,15 +9,15 @@ use wasm_bindgen::JsValue;
 use crate::camera::Camera;
 use crate::eguibackend::EguiBackend;
 use crate::gameobject::GameObject;
-use crate::inputsystem::{self, InputEventType, InputSubscription, InputSystem};
+use crate::inputsystem::{self, HandleInputs, InputSystem};
 use crate::material::{TextureDef, TextureType};
 use crate::mesh::{Mesh, VertexAttrType};
 use crate::meshrenderer::MeshRenderer;
+use crate::shader_def;
 use crate::shaders::{ShaderDef, UniformTypes};
 use crate::textureloader::TextureLoader;
 use crate::time::Time;
 use crate::trianglescene::TriangleScene;
-use crate::{shader_def, utils};
 
 const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
 const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";
@@ -29,27 +29,24 @@ pub struct Game {
     texture_loader: TextureLoader,
     objects: Vec<GameObject>,
     cube: Option<GameObject>,
-    camera: Rc<RefCell<Camera>>,
+    camera: Camera,
 
     input_system: InputSystem,
     loaded_textures: Vec<Rc<TextureDef>>,
     time: Time,
 
-    camera_input_sub: Option<InputSubscription>,
     egui: Option<EguiBackend>,
 }
 
 impl Game {
     pub fn new() -> Result<Self, JsValue> {
-        let input_system = inputsystem::InputSystem::new(&utils::get_canvas()?)?;
-
         let game = Game {
             scene: TriangleScene::new(),
             texture_loader: TextureLoader::new(10)?,
             objects: Vec::new(),
             cube: None,
             loaded_textures: Vec::new(),
-            camera: Rc::new(RefCell::new(Camera::new(
+            camera: Camera::new(
                 Vec3 {
                     x: 0.0,
                     y: 0.0,
@@ -65,10 +62,9 @@ impl Game {
                     y: 1.0,
                     z: 0.0,
                 },
-            ))),
-            input_system,
+            ),
+            input_system: inputsystem::InputSystem::new()?,
             time: Time::new(),
-            camera_input_sub: None,
             egui: None,
         };
 
@@ -90,11 +86,6 @@ impl Game {
         gl.enable(glow::CULL_FACE);
 
         self.scene.init(gl)?;
-        let camera: Rc<RefCell<Camera>> = self.camera.clone();
-        let callback = Box::new(move |e: &InputEventType| {
-            camera.borrow_mut().handle_input(e);
-        });
-        self.camera_input_sub = Some(self.input_system.subscribe(callback));
 
         self.init_objects(gl)?;
         self.init_cube(gl)?;
@@ -105,6 +96,7 @@ impl Game {
 
     pub fn update(&mut self, time: f64) -> Result<(), String> {
         self.time.update(time);
+        self.handle_inputs();
         for (index, quad) in self.objects.iter_mut().enumerate() {
             quad.set_position(vec3(
                 f64::sin(2.0 * index as f64 + time / 1000.0) as f32,
@@ -128,9 +120,16 @@ impl Game {
 
         self.scene.update(&self.time)?;
 
-        self.camera.borrow_mut().update(&self.time);
+        self.camera.update(&self.time);
 
         Ok(())
+    }
+
+    pub fn handle_inputs(&mut self) {
+        let input_state = self.input_system.get_inputs();
+        self.camera.handle_inputs(&input_state);
+
+        self.input_system.clear_events();
     }
 
     pub unsafe fn render(&mut self, gl: &glow::Context) -> Result<(), String> {
@@ -144,9 +143,9 @@ impl Game {
         //     quad.render(gl, &self.camera.borrow());
         // }
 
-        // if let Some(cube) = &self.cube {
-        //     cube.render(gl, &self.camera.borrow());
-        // }
+        if let Some(cube) = &self.cube {
+            cube.render(gl, &self.camera);
+        }
 
         if let Some(egui) = &mut self.egui {
             egui.render(gl);

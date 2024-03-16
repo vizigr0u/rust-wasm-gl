@@ -61,6 +61,7 @@ features = [
     'Response',
     'Performance',
     'MouseEvent',
+    'WheelEvent',
     'KeyboardEvent',
 ]
 
