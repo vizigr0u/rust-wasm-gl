@@ -47,6 +47,10 @@ impl GameObject {
         self.transform_dirty = true;
     }
 
+    pub fn get_rotation(&self) -> Quat {
+        self.rotation
+    }
+
     pub fn set_rotation(&mut self, rotation: Quat) {
         self.rotation = rotation;
         self.transform_dirty = true;

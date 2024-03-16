@@ -113,12 +113,11 @@ impl Game {
             }
 
             if let Some(cube) = &mut self.cube {
-                cube.set_rotation(Quat::from_euler(
-                    glam::EulerRot::XYZ,
-                    0.0,
-                    (time / 1000.0) as f32,
-                    (time / 2000.0) as f32,
-                ));
+                // Step 1 & 2: Calculate the rotation angle in radians
+                let rotation_angle_radians = 3.0 * 0.001 * self.time.delta_time() as f32;
+                let rotation_y = Quat::from_rotation_y(-rotation_angle_radians);
+                let rotation_z = Quat::from_rotation_z(0.8 * rotation_angle_radians);
+                cube.set_rotation(cube.get_rotation() * rotation_y * rotation_z);
                 cube.update();
             }
 
