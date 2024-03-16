@@ -1,6 +1,8 @@
 Todo:
   ✔ Cube @done(24-03-03 22:41)
   ✔ Camera @done(24-03-05 23:20)
+  ☐ refactor renderer to support dynamic/streaming vs static meshes (e.g. create vao only once etc.)
+  ☐ load mesh
   ☐ Inputs
   ☐ Better camera?
 
