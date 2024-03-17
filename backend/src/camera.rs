@@ -95,17 +95,14 @@ impl HandleInputs for Camera {
                         let yaw = -d.x * speed.to_radians();
                         let pitch = -d.y * speed.to_radians();
 
-                        let yaw_rotation = Quat::from_axis_angle(self.up, yaw);
-                        let forward = yaw_rotation.mul_vec3(self.forward);
-                        let right = yaw_rotation.mul_vec3(self.right);
+                        let yaw_rotation = Quat::from_rotation_y(yaw);
+                        let forward = yaw_rotation.mul_vec3(self.forward).normalize();
+                        let right = yaw_rotation.mul_vec3(self.right).normalize();
 
-                        // Pitch rotation around the right vector
                         let pitch_rotation = Quat::from_axis_angle(right, pitch);
-                        let forward = pitch_rotation.mul_vec3(forward);
-                        let up = pitch_rotation.mul_vec3(self.up);
+                        let forward = pitch_rotation.mul_vec3(forward).normalize();
 
-                        self.up = up.normalize();
-                        self.forward = forward.normalize();
+                        self.forward = forward;
                         self.right = right;
                     }
                 }
