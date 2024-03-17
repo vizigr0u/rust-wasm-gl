@@ -91,7 +91,12 @@ impl Game {
         Ok(())
     }
 
-    pub fn update(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
+    pub fn tick(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
+        self.update(gl, time)?;
+        self.render(gl)
+    }
+
+    fn update(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
         self.time.update(time);
         self.handle_inputs();
 
@@ -133,11 +138,12 @@ impl Game {
         self.input_system.clear_events();
     }
 
-    pub unsafe fn render(&mut self, gl: &glow::Context) -> Result<(), String> {
+    fn render(&mut self, gl: &glow::Context) -> Result<(), String> {
         self.texture_loader.tick(&gl)?;
-        gl.clear_color(0.0, 0.0, 0.0, 1.0);
-        gl.clear(glow::COLOR_BUFFER_BIT);
-
+        unsafe {
+            gl.clear_color(0.0, 0.0, 0.0, 1.0);
+            gl.clear(glow::COLOR_BUFFER_BIT);
+        }
         self.world.render(gl, &self.camera);
 
         self.draw_ui(gl);

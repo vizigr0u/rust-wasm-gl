@@ -73,10 +73,7 @@ fn main_loop(game: Game, gl: glow::Context) -> Result<(), JsValue> {
 
     *request_update.borrow_mut() = Some(Closure::new(move |time| {
         let gl = &context.borrow();
-        game.borrow_mut().update(gl, time)?;
-        unsafe {
-            game.borrow_mut().render(gl)?; // borrow the game for drawing.
-        }
+        game.borrow_mut().tick(gl, time)?;
 
         // Request the next animation frame.
         request_animation_frame(update.borrow().as_ref().unwrap());
