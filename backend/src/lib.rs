@@ -5,8 +5,9 @@ use game::Game;
 use log::warn;
 use wasm_bindgen::prelude::*;
 
+mod basicmeshes;
 mod camera;
-mod cube;
+mod chunk;
 mod eguibackend;
 mod game;
 mod gameobject;

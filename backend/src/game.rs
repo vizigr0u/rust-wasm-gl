@@ -6,17 +6,18 @@ use log::{info, warn};
 use wasm_bindgen::JsValue;
 
 use crate::camera::Camera;
+use crate::chunk::Chunk;
 use crate::eguibackend::EguiBackend;
 use crate::gameobject::GameObject;
 use crate::inputsystem::{self, HandleInputs, InputEventType, InputSystem};
 use crate::material::{TextureDef, TextureType};
 use crate::mesh::{Mesh, VertexAttrType};
 use crate::meshrenderer::MeshRenderer;
-use crate::shader_def;
-use crate::shaders::{ShaderDef, UniformTypes};
+use crate::shaders::{CompiledShader, ShaderDef, UniformTypes};
 use crate::textureloader::TextureLoader;
 use crate::time::Time;
 use crate::trianglescene::TriangleScene;
+use crate::{basicmeshes, shader_def};
 
 const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
 const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";
@@ -28,6 +29,7 @@ pub struct Game {
     texture_loader: TextureLoader,
     objects: Vec<GameObject>,
     cube: Option<GameObject>,
+    chunk: Option<GameObject>,
     camera: Camera,
 
     input_system: InputSystem,
@@ -45,6 +47,7 @@ impl Game {
             texture_loader: TextureLoader::new(10)?,
             objects: Vec::new(),
             cube: None,
+            chunk: None,
             loaded_textures: Vec::new(),
             camera: Camera::new(
                 Vec3 {
@@ -83,12 +86,16 @@ impl Game {
             self.loaded_textures.push(Rc::new((t, key)));
         }
 
+        gl.enable(glow::DEPTH_TEST);
+        gl.depth_func(glow::LESS);
         gl.enable(glow::CULL_FACE);
 
         self.scene.init(gl)?;
 
         self.init_objects(gl)?;
-        self.init_cube(gl)?;
+        let program = make_cube_program(gl)?;
+        // self.init_cube(gl, &program)?;
+        self.init_chunk(gl, &program)?;
         self.egui = Some(EguiBackend::new(gl));
 
         Ok(())
@@ -111,12 +118,20 @@ impl Game {
             }
 
             if let Some(cube) = &mut self.cube {
-                // Step 1 & 2: Calculate the rotation angle in radians
                 let rotation_angle_radians = 3.0 * 0.001 * self.time.delta_time() as f32;
                 let rotation_y = Quat::from_rotation_y(-rotation_angle_radians);
                 let rotation_z = Quat::from_rotation_z(0.8 * rotation_angle_radians);
                 cube.set_rotation(cube.get_rotation() * rotation_y * rotation_z);
                 cube.update();
+            }
+
+            if let Some(chunk) = &mut self.chunk {
+                let rotation_angle_radians = 0.3 * 0.001 * self.time.delta_time() as f32;
+                let rotation_y = Quat::from_rotation_y(-rotation_angle_radians);
+                let rotation_z = Quat::from_rotation_z(0.8 * rotation_angle_radians);
+                let rotation_z = Quat::IDENTITY;
+                chunk.set_rotation(chunk.get_rotation() * rotation_y * rotation_z);
+                chunk.update();
             }
 
             self.scene.update(&self.time)?;
@@ -157,7 +172,7 @@ impl Game {
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
         gl.clear(glow::COLOR_BUFFER_BIT);
 
-        self.scene.render(gl);
+        // self.scene.render(gl);
 
         // for quad in &self.objects {
         //     quad.render(gl, &self.camera.borrow());
@@ -165,6 +180,10 @@ impl Game {
 
         if let Some(cube) = &self.cube {
             cube.render(gl, &self.camera);
+        }
+
+        if let Some(chunk) = &self.chunk {
+            chunk.render(gl, &self.camera);
         }
 
         if self.show_menu {
@@ -176,32 +195,38 @@ impl Game {
         Ok(())
     }
 
-    pub unsafe fn init_cube(&mut self, gl: &glow::Context) -> Result<(), String> {
-        let program = shader_def!(
-            "cube.vert",
-            "cube.frag",
-            vec!(
-                (VertexAttrType::Position, "position"),
-                (VertexAttrType::UVs, "uv"),
-                (VertexAttrType::Normal, "normal"),
-                (VertexAttrType::Depth, "depth"),
-            ),
-            vec!(
-                (UniformTypes::ModelMatrix, "model"),
-                (UniformTypes::ViewMatrix, "view"),
-                (UniformTypes::ProjMatrix, "projection"),
-            )
-        )
-        .compile(gl)?;
-        let program = Rc::new(program);
-
+    unsafe fn init_chunk(
+        &mut self,
+        gl: &glow::Context,
+        program: &Rc<CompiledShader>,
+    ) -> Result<(), String> {
         let grass_tex = &self.loaded_textures[0];
 
-        let cube_mesh = Rc::new(Mesh::make_cube());
-        let mut cube_renderer = MeshRenderer::new(&program);
+        let chunk: Chunk = rand::random();
+        let mesh = Rc::new(chunk.into());
+        let mut renderer = MeshRenderer::new(program);
+        renderer.set_mesh(gl, mesh)?;
+        let renderer = Rc::new(renderer);
+        let mut chunk: GameObject = GameObject::new(&grass_tex, &renderer);
+        chunk.set_position(Vec3::ONE * -0.5);
+        self.chunk = Some(chunk);
+
+        Ok(())
+    }
+
+    unsafe fn init_cube(
+        &mut self,
+        gl: &glow::Context,
+        program: &Rc<CompiledShader>,
+    ) -> Result<(), String> {
+        let grass_tex = &self.loaded_textures[0];
+
+        let cube_mesh = Rc::new(basicmeshes::make_cube());
+        let mut cube_renderer = MeshRenderer::new(program);
         cube_renderer.set_mesh(gl, cube_mesh)?;
         let cube_renderer = Rc::new(cube_renderer);
-        let cube: GameObject = GameObject::new(&grass_tex, &cube_renderer);
+        let mut cube: GameObject = GameObject::new(&grass_tex, &cube_renderer);
+        cube.set_position(Vec3::ONE * -0.5);
         self.cube = Some(cube);
 
         Ok(())
@@ -227,7 +252,7 @@ impl Game {
         let grass_tex = &self.loaded_textures[0];
         let dirt_tex = &self.loaded_textures[1];
 
-        let mesh = Rc::new(Mesh::make_quad_elements());
+        let mesh = Rc::new(basicmeshes::make_quad_elements());
         let mut renderer = MeshRenderer::new(&program);
         renderer.set_mesh(gl, mesh)?;
         let renderer = Rc::new(renderer);
@@ -238,5 +263,27 @@ impl Game {
         }
 
         Ok(())
+    }
+}
+
+fn make_cube_program(gl: &glow::Context) -> Result<Rc<CompiledShader>, String> {
+    unsafe {
+        let program = shader_def!(
+            "cube.vert",
+            "cube.frag",
+            vec!(
+                (VertexAttrType::Position, "position"),
+                (VertexAttrType::UVs, "uv"),
+                (VertexAttrType::Normal, "normal"),
+                (VertexAttrType::Depth, "depth"),
+            ),
+            vec!(
+                (UniformTypes::ModelMatrix, "model"),
+                (UniformTypes::ViewMatrix, "view"),
+                (UniformTypes::ProjMatrix, "projection"),
+            )
+        )
+        .compile(gl)?;
+        Ok(Rc::new(program))
     }
 }
