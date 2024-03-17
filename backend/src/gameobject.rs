@@ -23,11 +23,11 @@ pub struct GameObject {
 }
 
 impl GameObject {
-    pub unsafe fn new(texture: &Rc<TextureDef>, renderer: &Rc<MeshRenderer>) -> Self {
+    pub fn new(texture: &Rc<TextureDef>, renderer: &Rc<MeshRenderer>) -> Self {
         GameObject {
             position: Vec3::ZERO,
             rotation: Quat::IDENTITY,
-            scale: Vec3::ONE * 0.5,
+            scale: Vec3::ONE,
             texture: texture.clone(),
             transform: Mat4::IDENTITY,
             renderer: renderer.clone(),
@@ -40,6 +40,10 @@ impl GameObject {
             self.transform =
                 Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position);
         }
+    }
+
+    pub fn get_position(&self) -> Vec3 {
+        self.position
     }
 
     pub fn set_position(&mut self, position: Vec3) {
@@ -61,21 +65,25 @@ impl GameObject {
         self.transform_dirty = true;
     }
 
-    pub unsafe fn render(&self, gl: &glow::Context, camera: &Camera) {
-        let program = self.renderer.get_program();
-        program.gl_use(gl);
+    pub fn render(&self, gl: &glow::Context, camera: &Camera) {
+        unsafe {
+            let program = self.renderer.get_program();
+            program.gl_use(gl);
 
-        program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
-        program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
-        program.set_matrix(gl, UniformTypes::ModelMatrix, &self.transform);
+            program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
+            program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
+            program.set_matrix(gl, UniformTypes::ModelMatrix, &self.transform);
 
-        let (tex_type, key) = *self.texture;
-        let texture = Some(key);
-        match tex_type {
-            TextureType::Texture2D => gl.bind_texture(glow::TEXTURE_2D, texture),
-            TextureType::Texture2DArray(_depth) => gl.bind_texture(glow::TEXTURE_2D_ARRAY, texture),
-        };
+            let (tex_type, key) = *self.texture;
+            let texture = Some(key);
+            match tex_type {
+                TextureType::Texture2D => gl.bind_texture(glow::TEXTURE_2D, texture),
+                TextureType::Texture2DArray(_depth) => {
+                    gl.bind_texture(glow::TEXTURE_2D_ARRAY, texture)
+                }
+            };
 
-        self.renderer.render(gl);
+            self.renderer.render(gl);
+        }
     }
 }

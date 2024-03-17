@@ -20,6 +20,10 @@ mod textureloader;
 mod time;
 mod trianglescene;
 mod utils;
+mod world;
+
+#[cfg(not(any(target_arch = "wasm32")))]
+compile_error!("This project is for wasm only");
 
 cfg_if! {
     if #[cfg(feature = "console_log")] {
@@ -39,10 +43,6 @@ fn request_animation_frame(f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>) {
         .unwrap();
 }
 
-#[cfg(not(any(target_arch = "wasm32")))]
-compile_error!("This project is for wasm only");
-
-#[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(start)]
 fn start() -> Result<(), JsValue> {
     use utils::get_webgl2_context;
@@ -72,9 +72,10 @@ fn main_loop(game: Game, gl: glow::Context) -> Result<(), JsValue> {
     let game = Rc::new(RefCell::new(game));
 
     *request_update.borrow_mut() = Some(Closure::new(move |time| {
-        game.borrow_mut().update(time)?;
+        let gl = &context.borrow();
+        game.borrow_mut().update(gl, time)?;
         unsafe {
-            game.borrow_mut().render(&context.borrow())?; // borrow the game for drawing.
+            game.borrow_mut().render(gl)?; // borrow the game for drawing.
         }
 
         // Request the next animation frame.

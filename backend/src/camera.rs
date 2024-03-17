@@ -18,6 +18,9 @@ const MAX_MOUSE_SENSITIVITY: f32 = 1.0;
 const MIN_MOUSE_SENSITIVITY: f32 = 0.01;
 const MOUSE_SENSITIVITY_FACTOR: f32 = 0.5;
 
+const NEAR_VIEW: f32 = 0.1;
+const FAR_VIEW: f32 = 300.0;
+
 pub struct Camera {
     pub position: Vec3,
     pub forward: Vec3,
@@ -39,7 +42,12 @@ impl Camera {
             forward,
             up,
             right: forward.cross(up),
-            projection: Mat4::perspective_rh_gl(f32::to_radians(45.0), 800.0 / 600.0, 0.1, 100.0),
+            projection: Mat4::perspective_rh_gl(
+                f32::to_radians(45.0),
+                800.0 / 600.0,
+                NEAR_VIEW,
+                FAR_VIEW,
+            ),
             look_at: Mat4::IDENTITY,
             velocity: Vec3::ZERO,
             camera_speed: DEFAULT_CAMERA_SPEED,
@@ -71,6 +79,12 @@ impl HandleInputs for Camera {
         }
         if inputs.is_key_down("KeyD") {
             self.velocity.x = -1.0;
+        }
+        if inputs.is_key_down("KeyC") {
+            info!(
+                "Camera position: {:?}, forward: {:?}, up: {:?}",
+                self.position, self.forward, self.up
+            );
         }
         for e in inputs.get_events() {
             match e {

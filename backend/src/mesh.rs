@@ -21,6 +21,10 @@ pub struct Mesh {
     pub primitive_type: u32,
 }
 
+pub trait ToMesh {
+    fn to_mesh(&self) -> Mesh;
+}
+
 impl Mesh {
     pub fn get_data(&self) -> &Vec<f32> {
         &self.data
