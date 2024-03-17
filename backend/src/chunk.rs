@@ -6,7 +6,7 @@ use crate::mesh::{Mesh, QuadSideData, Side, SideVertices};
 pub const BLOCK_SIZE: f32 = 1.0;
 
 #[derive(Clone, Copy)]
-enum BlockType {
+pub enum BlockType {
     Empty = 0,
     Grass,
     Dirt,
@@ -41,7 +41,7 @@ impl Distribution<Chunk> for Standard {
         for x in 0..CHUNK_SIZE {
             for y in 0..CHUNK_SIZE {
                 for z in 0..CHUNK_SIZE {
-                    blocks[x][y] = rand::random();
+                    blocks[x][y][z] = rand::random();
                 }
             }
         }
@@ -60,22 +60,42 @@ impl Into<Mesh> for Chunk {
             for y in 0..chunk_size {
                 for z in 0..chunk_size {
                     let offset = Vec3::new(x as f32, y as f32, z as f32) * BLOCK_SIZE;
-                    let tex = match self.blocks[x][y][z] {
+                    let (top, side, bottom) = match self.blocks[x][y][z] {
                         BlockType::Empty => continue,
-                        BlockType::Grass => BlockSideTexture::GrassTop,
-                        BlockType::Dirt => BlockSideTexture::Dirt,
-                        BlockType::Stone => BlockSideTexture::Cobblestone,
-                        BlockType::Sand => BlockSideTexture::Sand,
-                        BlockType::Lava => BlockSideTexture::Lava,
+                        BlockType::Grass => (
+                            BlockSideTexture::GrassTop,
+                            BlockSideTexture::GrassSide,
+                            BlockSideTexture::Dirt,
+                        ),
+                        BlockType::Dirt => (
+                            BlockSideTexture::Dirt,
+                            BlockSideTexture::Dirt,
+                            BlockSideTexture::Dirt,
+                        ),
+                        BlockType::Stone => (
+                            BlockSideTexture::Cobblestone,
+                            BlockSideTexture::Cobblestone,
+                            BlockSideTexture::Cobblestone,
+                        ),
+                        BlockType::Sand => (
+                            BlockSideTexture::Sand,
+                            BlockSideTexture::Sand,
+                            BlockSideTexture::Sand,
+                        ),
+                        BlockType::Lava => (
+                            BlockSideTexture::Lava,
+                            BlockSideTexture::Lava,
+                            BlockSideTexture::Lava,
+                        ),
                     };
 
                     // todo: don't generate hidden sides
-                    sides.push((Side::Top, tex, offset));
-                    sides.push((Side::Bottom, tex, offset));
-                    sides.push((Side::Front, tex, offset));
-                    sides.push((Side::Back, tex, offset));
-                    sides.push((Side::Left, tex, offset));
-                    sides.push((Side::Right, tex, offset));
+                    sides.push((Side::Top, top, offset));
+                    sides.push((Side::Bottom, bottom, offset));
+                    sides.push((Side::Front, side, offset));
+                    sides.push((Side::Back, side, offset));
+                    sides.push((Side::Left, side, offset));
+                    sides.push((Side::Right, side, offset));
                 }
             }
         }
@@ -103,6 +123,12 @@ pub enum BlockSideTexture {
     Dirt2,
 }
 
+//   C        D
+// A        B
+
+//   G        H
+// E        F
+
 const SIDE_VERTICES: [SideVertices; 6] = [
     SideVertices {
         a: C,
@@ -111,16 +137,22 @@ const SIDE_VERTICES: [SideVertices; 6] = [
         d: D,
     },
     SideVertices {
+        a: E,
+        b: G,
+        c: H,
+        d: F,
+    },
+    SideVertices {
         a: A,
         b: E,
         c: F,
         d: B,
     },
     SideVertices {
-        a: E,
-        b: G,
-        c: H,
-        d: F,
+        a: D,
+        b: H,
+        c: G,
+        d: C,
     },
     SideVertices {
         a: B,
@@ -134,19 +166,7 @@ const SIDE_VERTICES: [SideVertices; 6] = [
         c: E,
         d: A,
     },
-    SideVertices {
-        a: D,
-        b: H,
-        c: G,
-        d: C,
-    },
 ];
-
-//   C        D
-// A        B
-
-//   G        H
-// E        F
 
 const A: Vec3 = Vec3 {
     x: 0.0,

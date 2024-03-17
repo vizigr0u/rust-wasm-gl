@@ -101,16 +101,22 @@ const SIDE_VERTICES: [SideVertices; 6] = [
         d: D,
     },
     SideVertices {
+        a: E,
+        b: G,
+        c: H,
+        d: F,
+    },
+    SideVertices {
         a: A,
         b: E,
         c: F,
         d: B,
     },
     SideVertices {
-        a: E,
-        b: G,
-        c: H,
-        d: F,
+        a: D,
+        b: H,
+        c: G,
+        d: C,
     },
     SideVertices {
         a: B,
@@ -123,12 +129,6 @@ const SIDE_VERTICES: [SideVertices; 6] = [
         b: G,
         c: E,
         d: A,
-    },
-    SideVertices {
-        a: D,
-        b: H,
-        c: G,
-        d: C,
     },
 ];
 
