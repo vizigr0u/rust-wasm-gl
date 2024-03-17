@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use glam::{vec3, Quat, Vec3};
@@ -22,7 +21,7 @@ use crate::trianglescene::TriangleScene;
 const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
 const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";
 const DIRT_TEXTURE_PATH: &str = "data/textures/blocks/dirt.png";
-const BLOCK_ATLAS_PATH: &str = "data/textures/blocks/atlas_blocks.png";
+const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 
 pub struct Game {
     scene: TriangleScene,
@@ -74,15 +73,14 @@ impl Game {
     }
 
     pub unsafe fn load(&mut self, gl: &glow::Context) -> Result<(), String> {
-        for path in [
-            GRASS_TEXTURE_PATH,
-            SAND_TEXTURE_PATH,
-            DIRT_TEXTURE_PATH,
-            BLOCK_ATLAS_PATH,
+        for (path, t) in [
+            (GRASS_TEXTURE_PATH, TextureType::Texture2D),
+            (SAND_TEXTURE_PATH, TextureType::Texture2D),
+            (DIRT_TEXTURE_PATH, TextureType::Texture2D),
+            (BLOCKS_ATLAS_PATH, TextureType::Texture2DArray(16)),
         ] {
-            let key = self.texture_loader.load(gl, path)?;
-            self.loaded_textures
-                .push(Rc::new((TextureType::Texture2D, key)));
+            let key = self.texture_loader.load(gl, path, t)?;
+            self.loaded_textures.push(Rc::new((t, key)));
         }
 
         gl.enable(glow::CULL_FACE);
@@ -186,6 +184,7 @@ impl Game {
                 (VertexAttrType::Position, "position"),
                 (VertexAttrType::UVs, "uv"),
                 (VertexAttrType::Normal, "normal"),
+                (VertexAttrType::Depth, "depth"),
             ),
             vec!(
                 (UniformTypes::ModelMatrix, "model"),

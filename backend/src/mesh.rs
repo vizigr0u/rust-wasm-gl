@@ -1,4 +1,4 @@
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum VertexAttrType {
@@ -6,6 +6,7 @@ pub enum VertexAttrType {
     Color,
     Normal,
     UVs,
+    Depth,
 }
 
 pub struct Mesh {
@@ -81,55 +82,30 @@ impl Mesh {
             primitive_type: glow::TRIANGLES,
         }
     }
+
     pub fn make_cube() -> Mesh {
-        let verts = [
-            (C, TOP_LEFT, Vec3::Y), // Top
-            (A, BOT_LEFT, Vec3::Y),
-            (B, BOT_RIGHT, Vec3::Y),
-            (C, TOP_LEFT, Vec3::Y),
-            (B, BOT_RIGHT, Vec3::Y),
-            (D, TOP_RIGHT, Vec3::Y),
-            (A, TOP_LEFT, Vec3::Z), // Front
-            (E, BOT_LEFT, Vec3::Z),
-            (F, BOT_RIGHT, Vec3::Z),
-            (A, TOP_LEFT, Vec3::Z),
-            (F, BOT_RIGHT, Vec3::Z),
-            (B, TOP_RIGHT, Vec3::Z),
-            (E, TOP_LEFT, Vec3::NEG_Y), // Bottom
-            (G, BOT_LEFT, Vec3::NEG_Y),
-            (H, BOT_RIGHT, Vec3::NEG_Y),
-            (E, TOP_LEFT, Vec3::NEG_Y),
-            (H, BOT_RIGHT, Vec3::NEG_Y),
-            (F, TOP_RIGHT, Vec3::NEG_Y),
-            (B, TOP_LEFT, Vec3::X), // Right
-            (F, BOT_LEFT, Vec3::X),
-            (H, BOT_RIGHT, Vec3::X),
-            (B, TOP_LEFT, Vec3::X),
-            (H, BOT_RIGHT, Vec3::X),
-            (D, TOP_RIGHT, Vec3::X),
-            (C, TOP_LEFT, Vec3::NEG_X), // Left
-            (G, BOT_LEFT, Vec3::NEG_X),
-            (E, BOT_RIGHT, Vec3::NEG_X),
-            (C, TOP_LEFT, Vec3::NEG_X),
-            (E, BOT_RIGHT, Vec3::NEG_X),
-            (A, TOP_RIGHT, Vec3::NEG_X),
-            (D, TOP_LEFT, Vec3::NEG_Z), // Back
-            (H, BOT_LEFT, Vec3::NEG_Z),
-            (G, BOT_RIGHT, Vec3::NEG_Z),
-            (D, TOP_LEFT, Vec3::NEG_Z),
-            (G, BOT_RIGHT, Vec3::NEG_Z),
-            (C, TOP_RIGHT, Vec3::NEG_Z),
+        let sides = [
+            (Side::Top, Texture::GrassTop),
+            (Side::Bottom, Texture::Dirt),
+            (Side::Front, Texture::GrassSide),
+            (Side::Back, Texture::GrassSide),
+            (Side::Left, Texture::GrassSide),
+            (Side::Right, Texture::GrassSide),
         ];
-        let mut data = Vec::<f32>::with_capacity(verts.len() * 8);
-        for (pos, uv, normal) in &verts {
-            data.push(pos.x);
-            data.push(pos.y);
-            data.push(pos.z);
-            data.push(uv.0 as _);
-            data.push(uv.1 as _);
-            data.push(normal.x);
-            data.push(normal.y);
-            data.push(normal.z);
+        let mut data = Vec::<f32>::with_capacity(sides.len() * 4 * 9);
+        for (side, texture) in &sides {
+            for (vert, uv) in SIDE_VERTICES[*side as usize].get_quad_triangles() {
+                let norm = &SIDE_NORMS[*side as usize];
+                data.push(vert.x);
+                data.push(vert.y);
+                data.push(vert.z);
+                data.push(uv.0 as _);
+                data.push(uv.1 as _);
+                data.push(norm.x);
+                data.push(norm.y);
+                data.push(norm.z);
+                data.push(*texture as u8 as _);
+            }
         }
         Mesh {
             data,
@@ -137,10 +113,103 @@ impl Mesh {
                 (VertexAttrType::Position, 3),
                 (VertexAttrType::UVs, 2),
                 (VertexAttrType::Normal, 3),
+                (VertexAttrType::Depth, 1),
             ],
             indices: None,
             primitive_type: glow::TRIANGLES,
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Side {
+    Top = 0,
+    Bottom,
+    Front,
+    Back,
+    Right,
+    Left,
+}
+
+const SIDE_NORMS: [Vec3; 6] = [
+    Vec3::Y,
+    Vec3::NEG_Y,
+    Vec3::Z,
+    Vec3::NEG_Z,
+    Vec3::X,
+    Vec3::NEG_X,
+];
+
+const SIDE_VERTICES: [SideVertices; 6] = [
+    SideVertices {
+        a: C,
+        b: A,
+        c: B,
+        d: D,
+    },
+    SideVertices {
+        a: A,
+        b: E,
+        c: F,
+        d: B,
+    },
+    SideVertices {
+        a: E,
+        b: G,
+        c: H,
+        d: F,
+    },
+    SideVertices {
+        a: B,
+        b: F,
+        c: H,
+        d: D,
+    },
+    SideVertices {
+        a: C,
+        b: G,
+        c: E,
+        d: A,
+    },
+    SideVertices {
+        a: D,
+        b: H,
+        c: G,
+        d: C,
+    },
+];
+
+type Norm = Vec3;
+
+impl Into<Norm> for Side {
+    fn into(self) -> Norm {
+        SIDE_NORMS[self as usize]
+    }
+}
+
+impl Into<&'static SideVertices> for Side {
+    fn into(self) -> &'static SideVertices {
+        &SIDE_VERTICES[self as usize]
+    }
+}
+
+struct SideVertices {
+    pub a: Vec3,
+    pub b: Vec3,
+    pub c: Vec3,
+    pub d: Vec3,
+}
+
+impl SideVertices {
+    pub fn get_quad_triangles(&self) -> [(Vec3, (i8, i8)); 6] {
+        [
+            (self.a, TOP_LEFT),
+            (self.b, BOT_LEFT),
+            (self.c, BOT_RIGHT),
+            (self.a, TOP_LEFT),
+            (self.c, BOT_RIGHT),
+            (self.d, TOP_RIGHT),
+        ]
     }
 }
 
@@ -191,7 +260,27 @@ const H: Vec3 = Vec3 {
     z: -1.0,
 };
 
-const BOT_LEFT: (i8, i8) = (0, 0);
-const BOT_RIGHT: (i8, i8) = (1, 0);
-const TOP_LEFT: (i8, i8) = (0, 1);
-const TOP_RIGHT: (i8, i8) = (1, 1);
+const BOT_LEFT: (i8, i8) = (0, 1);
+const BOT_RIGHT: (i8, i8) = (1, 1);
+const TOP_LEFT: (i8, i8) = (0, 0);
+const TOP_RIGHT: (i8, i8) = (1, 0);
+
+#[derive(Clone, Copy)]
+enum Texture {
+    Unknown = 0,
+    GrassSide,
+    Cobblestone,
+    RedStone,
+    TreeBark,
+    Sand,
+    Dirt,
+    Pickaxe,
+    TreeCenter,
+    GrassTop,
+    Coal,
+    Lava,
+    Diamond,
+    Iron,
+    Gold,
+    Dirt2,
+}

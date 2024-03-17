@@ -73,7 +73,7 @@ impl GameObject {
         let texture = Some(key);
         match tex_type {
             TextureType::Texture2D => gl.bind_texture(glow::TEXTURE_2D, texture),
-            TextureType::Texture2DArray => todo!(),
+            TextureType::Texture2DArray(_depth) => gl.bind_texture(glow::TEXTURE_2D_ARRAY, texture),
         };
 
         self.renderer.render(gl);
