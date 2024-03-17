@@ -85,3 +85,34 @@ pub async fn run(repo: String) -> Result<JsValue, JsValue> {
     // Send the JSON response back to JS.
     Ok(json)
 }
+
+pub struct GlState {
+    pub depth_test: bool,
+    pub cull_face: bool,
+    pub blend: bool,
+}
+
+impl GlState {
+    pub fn save(gl: &glow::Context) -> Self {
+        unsafe {
+            Self {
+                depth_test: gl.is_enabled(glow::DEPTH_TEST),
+                cull_face: gl.is_enabled(glow::CULL_FACE),
+                blend: gl.is_enabled(glow::BLEND),
+            }
+        }
+    }
+    pub fn restore(&self, gl: &glow::Context) {
+        GlState::restore_parameter(gl, glow::DEPTH_TEST, self.depth_test);
+        GlState::restore_parameter(gl, glow::CULL_FACE, self.cull_face);
+        GlState::restore_parameter(gl, glow::BLEND, self.blend);
+    }
+
+    fn restore_parameter(gl: &glow::Context, param: u32, value: bool) {
+        if value {
+            unsafe { gl.enable(param) };
+        } else {
+            unsafe { gl.disable(param) };
+        }
+    }
+}
