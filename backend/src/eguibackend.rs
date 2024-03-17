@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::{collections::HashMap, convert::TryInto, rc::Rc};
 
 use crate::shader_def;
+use crate::utils::GlState;
 use crate::{
     inputsystem::{HandleInputs, InputEventType, InputState},
     mesh::{Mesh, VertexAttrType},
@@ -95,6 +96,8 @@ impl EguiBackend {
             .tessellate(full_output.shapes, full_output.pixels_per_point);
 
         unsafe {
+            let state = GlState::save(gl);
+            gl.disable(glow::DEPTH_TEST);
             gl.disable(glow::CULL_FACE);
             gl.enable(glow::BLEND);
             gl.blend_equation_separate(glow::FUNC_ADD, glow::FUNC_ADD);
@@ -108,8 +111,7 @@ impl EguiBackend {
                 glow::ONE,
             );
             self.paint(gl, full_output.textures_delta, clipped_primitives);
-            gl.disable(glow::BLEND);
-            gl.enable(glow::CULL_FACE);
+            state.restore(gl);
         }
     }
 
