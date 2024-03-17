@@ -26,8 +26,6 @@ const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 
 pub struct Game {
     texture_loader: TextureLoader,
-    objects: Vec<GameObject>,
-    cube: Option<GameObject>,
     world: World,
     camera: Camera,
 
@@ -43,8 +41,6 @@ impl Game {
     pub fn new() -> Result<Self, JsValue> {
         let game = Game {
             texture_loader: TextureLoader::new(10)?,
-            objects: Vec::new(),
-            cube: None,
             world: World::random(UVec3::new(25, 1, 25)),
             loaded_textures: Vec::new(),
             camera: Camera::new(
@@ -88,7 +84,6 @@ impl Game {
         gl.depth_func(glow::LESS);
         gl.enable(glow::CULL_FACE);
 
-        self.init_objects(gl)?;
         let program = make_cube_program(gl)?;
         // self.init_cube(gl, &program)?;
         self.world
@@ -103,27 +98,8 @@ impl Game {
         self.handle_inputs();
 
         if !self.show_menu {
-            for (index, quad) in self.objects.iter_mut().enumerate() {
-                quad.set_position(vec3(
-                    f64::sin(2.0 * index as f64 + time / 1000.0) as f32,
-                    f64::cos(2.0 * index as f64 + time / 200.0) as f32,
-                    0.0,
-                ));
-                quad.set_scale(vec3(0.2, f64::sin(time / 1000.0) as f32 * 0.2, 0.5));
-                quad.set_scale(vec3(0.2, 0.5, 0.5));
-                quad.update();
-            }
-
-            if let Some(cube) = &mut self.cube {
-                let rotation_angle_radians = 3.0 * 0.001 * self.time.delta_time() as f32;
-                let rotation_y = Quat::from_rotation_y(-rotation_angle_radians);
-                let rotation_z = Quat::from_rotation_z(0.8 * rotation_angle_radians);
-                cube.set_rotation(cube.get_rotation() * rotation_y * rotation_z);
-                cube.update();
-            }
+            self.world.update(gl, &self.time);
         }
-
-        self.world.update(gl, &self.time);
 
         self.camera.update(&self.time);
 
@@ -160,73 +136,12 @@ impl Game {
         gl.clear_color(0.0, 0.0, 0.0, 1.0);
         gl.clear(glow::COLOR_BUFFER_BIT);
 
-        // self.scene.render(gl);
-
-        // for quad in &self.objects {
-        //     quad.render(gl, &self.camera.borrow());
-        // }
-
-        if let Some(cube) = &self.cube {
-            cube.render(gl, &self.camera);
-        }
-
         self.world.render(gl, &self.camera);
 
         if self.show_menu {
             if let Some(egui) = &mut self.egui {
                 egui.render(gl);
             }
-        }
-
-        Ok(())
-    }
-
-    unsafe fn init_cube(
-        &mut self,
-        gl: &glow::Context,
-        program: &Rc<CompiledShader>,
-    ) -> Result<(), String> {
-        let grass_tex = &self.loaded_textures[0];
-
-        let cube_mesh = Rc::new(basicmeshes::make_cube());
-        let mut cube_renderer = MeshRenderer::new(program);
-        cube_renderer.set_mesh(gl, cube_mesh)?;
-        let cube_renderer = Rc::new(cube_renderer);
-        let mut cube: GameObject = GameObject::new(&grass_tex, &cube_renderer);
-        cube.set_position(Vec3::ONE * -0.5);
-        self.cube = Some(cube);
-
-        Ok(())
-    }
-
-    pub unsafe fn init_objects(&mut self, gl: &glow::Context) -> Result<(), String> {
-        let program = shader_def!(
-            "textureTransform.vert",
-            "textureTransform.frag",
-            vec!(
-                (VertexAttrType::Position, "position"),
-                (VertexAttrType::UVs, "uv")
-            ),
-            vec!(
-                (UniformTypes::ModelMatrix, "model"),
-                (UniformTypes::ViewMatrix, "view"),
-                (UniformTypes::ProjMatrix, "projection"),
-            )
-        )
-        .compile(gl)?;
-        let program = Rc::new(program);
-
-        let grass_tex = &self.loaded_textures[0];
-        let dirt_tex = &self.loaded_textures[1];
-
-        let mesh = Rc::new(basicmeshes::make_quad_elements());
-        let mut renderer = MeshRenderer::new(&program);
-        renderer.set_mesh(gl, mesh)?;
-        let renderer = Rc::new(renderer);
-        for i in 0..50 {
-            let tex = if i % 2 == 0 { &grass_tex } else { &dirt_tex };
-            let quad: GameObject = GameObject::new(tex, &renderer);
-            self.objects.push(quad);
         }
 
         Ok(())
