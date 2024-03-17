@@ -16,10 +16,32 @@ use glow::{HasContext, WebTextureKey};
 use log::{info, warn};
 use web_sys::{KeyboardEvent, MouseEvent};
 
-struct DemoData {
-    pub name: String,
-    pub age: i32,
-}
+// struct DemoData {
+//     pub name: String,
+//     pub age: i32,
+// }
+
+// egui::CentralPanel::default().show(&ctx, |ui| {
+//     ui.heading("My egui Application");
+//     ui.horizontal(|ui| {
+//         let name_label = ui.label("Your name: ");
+//         ui.text_edit_singleline(&mut data.name)
+//             .labelled_by(name_label.id);
+//     });
+//     ui.add(egui::Slider::new(&mut data.age, 0..=120).text("age"));
+//     if ui.button("Increment").clicked() {
+//         data.age += 1;
+//     }
+//     ui.label(format!(
+//         "Hello '{name}', age {age}",
+//         name = data.name,
+//         age = data.age
+//     ));
+
+//     if ui.button("Click me").clicked() {
+//         warn!("CLICK!");
+//     }
+// });
 
 pub struct EguiBackend {
     egui_ctx: egui::Context,
@@ -27,8 +49,7 @@ pub struct EguiBackend {
     textures: HashMap<TextureId, WebTextureKey>,
     mesh_renderer: MeshRenderer,
     current_events: Vec<Event>,
-
-    demo_data: Rc<RefCell<DemoData>>,
+    size: (usize, usize),
 }
 
 impl EguiBackend {
@@ -54,41 +75,18 @@ impl EguiBackend {
             mesh_renderer: MeshRenderer::new(&program),
             textures: HashMap::new(),
             current_events: Vec::new(),
-            demo_data: Rc::new(RefCell::new(DemoData {
-                name: "Arthur".to_string(),
-                age: 42,
-            })),
+            size: (800, 600),
         }
     }
 
-    pub fn render(&mut self, gl: &glow::Context) {
+    pub fn render_ui<F>(&mut self, gl: &glow::Context, mut build_gui: F)
+    where
+        F: FnMut(&egui::Context),
+    {
         let raw_input: egui::RawInput = self.gather_input();
 
-        let demo_data = self.demo_data.clone();
-
         let full_output = self.egui_ctx.run(raw_input, |ctx| {
-            let mut data = demo_data.borrow_mut();
-            egui::CentralPanel::default().show(&ctx, |ui| {
-                ui.heading("My egui Application");
-                ui.horizontal(|ui| {
-                    let name_label = ui.label("Your name: ");
-                    ui.text_edit_singleline(&mut data.name)
-                        .labelled_by(name_label.id);
-                });
-                ui.add(egui::Slider::new(&mut data.age, 0..=120).text("age"));
-                if ui.button("Increment").clicked() {
-                    data.age += 1;
-                }
-                ui.label(format!(
-                    "Hello '{name}', age {age}",
-                    name = data.name,
-                    age = data.age
-                ));
-
-                if ui.button("Click me").clicked() {
-                    warn!("CLICK!");
-                }
-            });
+            build_gui(ctx);
         });
         self.handle_platform_output(full_output.platform_output);
         let clipped_primitives = self
@@ -121,7 +119,7 @@ impl EguiBackend {
         textures_delta: egui::TexturesDelta,
         clipped_primitives: Vec<egui::ClippedPrimitive>,
     ) {
-        self.debug_paint(&textures_delta, &clipped_primitives);
+        // self.debug_paint(&textures_delta, &clipped_primitives);
         self.update_textures(gl, &textures_delta);
         for primitive in &clipped_primitives {
             match &primitive.primitive {
@@ -247,7 +245,7 @@ impl EguiBackend {
         egui::RawInput {
             screen_rect: Some(egui::Rect {
                 min: egui::pos2(0.0, 0.0),
-                max: egui::pos2(200.0, 200.0),
+                max: egui::pos2(self.size.0 as f32, self.size.1 as f32),
             }),
             events: self.current_events.clone(),
             ..Default::default()

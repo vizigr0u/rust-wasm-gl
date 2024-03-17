@@ -1,23 +1,20 @@
 use std::rc::Rc;
 
-use glam::{vec3, Quat, UVec3, Vec3};
+use glam::{UVec3, Vec3};
 use glow::HasContext;
 use log::{info, warn};
 use wasm_bindgen::JsValue;
 
 use crate::camera::Camera;
-use crate::chunk::Chunk;
 use crate::eguibackend::EguiBackend;
-use crate::gameobject::GameObject;
 use crate::inputsystem::{self, HandleInputs, InputEventType, InputSystem};
 use crate::material::{TextureDef, TextureType};
-use crate::mesh::{Mesh, ToMesh, VertexAttrType};
-use crate::meshrenderer::MeshRenderer;
+use crate::mesh::VertexAttrType;
+use crate::shader_def;
 use crate::shaders::{CompiledShader, ShaderDef, UniformTypes};
 use crate::textureloader::TextureLoader;
 use crate::time::Time;
 use crate::world::World;
-use crate::{basicmeshes, shader_def};
 
 const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
 const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";
@@ -33,6 +30,7 @@ pub struct Game {
     loaded_textures: Vec<Rc<TextureDef>>,
     time: Time,
     show_menu: bool,
+    show_info: bool,
 
     egui: Option<EguiBackend>,
 }
@@ -64,6 +62,7 @@ impl Game {
             time: Time::new(),
             egui: None,
             show_menu: false,
+            show_info: false,
         };
 
         Ok(game)
@@ -85,7 +84,6 @@ impl Game {
         gl.enable(glow::CULL_FACE);
 
         let program = make_cube_program(gl)?;
-        // self.init_cube(gl, &program)?;
         self.world
             .set_graphics(program.clone(), self.loaded_textures[3].clone());
         self.egui = Some(EguiBackend::new(gl));
@@ -111,9 +109,13 @@ impl Game {
 
         for event in inputs.get_events() {
             match event {
-                InputEventType::KeyDown(_event) => {
+                InputEventType::KeyDown(event) => {
                     if inputs.is_key_down("Escape") {
                         self.show_menu = !self.show_menu;
+                    }
+                    if inputs.is_key_down("F2") {
+                        self.show_info = !self.show_info;
+                        event.prevent_default();
                     }
                 }
                 _ => {}
@@ -138,13 +140,26 @@ impl Game {
 
         self.world.render(gl, &self.camera);
 
-        if self.show_menu {
-            if let Some(egui) = &mut self.egui {
-                egui.render(gl);
-            }
-        }
+        self.draw_ui(gl);
 
         Ok(())
+    }
+
+    fn draw_ui(&mut self, gl: &glow::Context) {
+        if let Some(egui) = &mut self.egui {
+            egui.render_ui(gl, |ctx| {
+                if self.show_menu {
+                    egui::Window::new("PAUSE").show(ctx, |ui| {
+                        ui.label("Game is paused");
+                    });
+                }
+                if self.show_info {
+                    egui::Window::new("Game Info").show(ctx, |ui| {
+                        ui.label("Hello!");
+                    });
+                }
+            });
+        }
     }
 }
 
