@@ -62,11 +62,6 @@ impl Mesh {
                 data.push(texture as usize as _);
             }
         }
-        info!(
-            "created Mesh with {} vertices from {} faces.",
-            data.len() / 9,
-            size
-        );
         Mesh {
             data,
             layout: vec![

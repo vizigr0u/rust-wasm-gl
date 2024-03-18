@@ -116,3 +116,7 @@ impl GlState {
         }
     }
 }
+
+pub fn performance_now() -> f64 {
+    get_performance().unwrap().now()
+}

@@ -6,7 +6,7 @@ use crate::mesh::{Mesh, QuadSideData, Side, SideVertices, ToMesh};
 pub const BLOCK_SIZE: f32 = 1.0;
 pub const CHUNK_SIZE: usize = 8;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BlockType {
     Empty = 0,
     Grass,
@@ -57,6 +57,8 @@ impl Distribution<Chunk> for Standard {
     }
 }
 
+const OPTIMIZATION_LEVEL: usize = 1;
+
 impl ToMesh for Chunk {
     fn to_mesh(&self) -> Mesh {
         let mut sides: Vec<QuadSideData> = Vec::new();
@@ -70,13 +72,34 @@ impl ToMesh for Chunk {
                         t => t.into(),
                     };
 
-                    // todo: don't generate hidden sides
-                    sides.push((Side::Top, top, offset));
-                    sides.push((Side::Bottom, bottom, offset));
-                    sides.push((Side::Front, side, offset));
-                    sides.push((Side::Back, side, offset));
-                    sides.push((Side::Left, side, offset));
-                    sides.push((Side::Right, side, offset));
+                    if OPTIMIZATION_LEVEL < 1 {
+                        // todo: don't generate hidden sides
+                        sides.push((Side::Top, top, offset));
+                        sides.push((Side::Bottom, bottom, offset));
+                        sides.push((Side::Front, side, offset));
+                        sides.push((Side::Back, side, offset));
+                        sides.push((Side::Left, side, offset));
+                        sides.push((Side::Right, side, offset));
+                    } else {
+                        if y == chunk_size - 1 || self.blocks[x][y + 1][z] == BlockType::Empty {
+                            sides.push((Side::Top, top, offset));
+                        }
+                        if y == 0 || self.blocks[x][y - 1][z] == BlockType::Empty {
+                            sides.push((Side::Bottom, bottom, offset));
+                        }
+                        if x == chunk_size - 1 || self.blocks[x + 1][y][z] == BlockType::Empty {
+                            sides.push((Side::Right, side, offset));
+                        }
+                        if x == 0 || self.blocks[x - 1][y][z] == BlockType::Empty {
+                            sides.push((Side::Left, side, offset));
+                        }
+                        if z == chunk_size - 1 || self.blocks[x][y][z + 1] == BlockType::Empty {
+                            sides.push((Side::Front, side, offset));
+                        }
+                        if z == 0 || self.blocks[x][y][z - 1] == BlockType::Empty {
+                            sides.push((Side::Back, side, offset));
+                        }
+                    }
                 }
             }
         }

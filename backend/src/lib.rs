@@ -48,6 +48,8 @@ fn start() -> Result<(), JsValue> {
     use utils::get_webgl2_context;
 
     utils::set_panic_hook();
+    tracing_wasm::set_as_global_default();
+
     init_log();
 
     let gl = get_webgl2_context()?;

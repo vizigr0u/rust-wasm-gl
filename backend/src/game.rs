@@ -14,6 +14,7 @@ use crate::shader_def;
 use crate::shaders::{CompiledShader, ShaderDef, UniformTypes};
 use crate::textureloader::TextureLoader;
 use crate::time::Time;
+use crate::utils::performance_now;
 use crate::world::World;
 
 const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
@@ -31,6 +32,9 @@ pub struct Game {
     time: Time,
     show_menu: bool,
     show_info: bool,
+    tick_times: [f64; 30],
+    tick_time: f64,
+    tick_index: usize,
 
     egui: Option<EguiBackend>,
 }
@@ -62,7 +66,10 @@ impl Game {
             time: Time::new(),
             egui: None,
             show_menu: false,
-            show_info: false,
+            show_info: true,
+            tick_time: 0.0,
+            tick_times: [0.0; 30],
+            tick_index: 0,
         };
 
         Ok(game)
@@ -92,8 +99,16 @@ impl Game {
     }
 
     pub fn tick(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
+        let start = performance_now();
         self.update(gl, time)?;
-        self.render(gl)
+        self.render(gl)?;
+        let dt = performance_now() - start;
+        self.tick_times[self.tick_index] = dt;
+        self.tick_index = (self.tick_index + 1) % self.tick_times.len();
+        if self.tick_index == 0 {
+            self.tick_time = self.tick_times.iter().sum::<f64>() / self.tick_times.len() as f64;
+        }
+        Ok(())
     }
 
     fn update(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
@@ -161,7 +176,11 @@ impl Game {
                 }
                 if self.show_info {
                     egui::Window::new("Game Info").show(ctx, |ui| {
-                        ui.label("Hello!");
+                        ui.label(format!(
+                            "FPS: {:.1}\nWorld: {}",
+                            1000.0 / self.tick_time,
+                            self.world.get_info()
+                        ));
                     });
                 }
             });

@@ -65,6 +65,10 @@ impl GameObject {
         self.transform_dirty = true;
     }
 
+    pub fn get_renderer(&self) -> &Rc<MeshRenderer> {
+        &self.renderer
+    }
+
     pub fn render(&self, gl: &glow::Context, camera: &Camera) {
         unsafe {
             let program = self.renderer.get_program();

@@ -34,6 +34,8 @@ log = "0.4.21"
 console_log = { version = "1.0.0", optional = true }
 egui = { version = "0.26.2", features = ['bytemuck', 'log', 'mint'] }
 bytemuck = "1.15.0"
+tracing-wasm = "0.2.1"
+tracing = "0.1.40"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.42"
