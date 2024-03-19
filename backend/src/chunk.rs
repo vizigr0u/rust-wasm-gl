@@ -167,7 +167,6 @@ where
     let iterator = sides.into_iter();
     let size = iterator.len();
     let mut data = Vec::<i32>::with_capacity(size);
-    // let mut debug_count = 2;
     for (side, texture, offset) in iterator {
         for vert in SIDE_VERTICES[side as usize].get_quad_triangles() {
             let norm = side as i32;
@@ -178,23 +177,21 @@ where
             result |= (pos.z as i32 & 63) << 12;
             result |= (norm & 7) << 18;
             result |= (texture as i32 & 63) << 21;
-            // if debug_c+ount > 0
-            {
-                let data = result;
-                let x: i32 = data & 63;
-                let y: i32 = (data >> 6) & 63;
-                let z: i32 = (data >> 12) & 63;
-                let face: i32 = (data >> 18) & 7;
-                let depth: i32 = (data >> 21) & 63;
+            // {
+            //     let data = result;
+            //     let x: i32 = data & 63;
+            //     let y: i32 = (data >> 6) & 63;
+            //     let z: i32 = (data >> 12) & 63;
+            //     let face: i32 = (data >> 18) & 7;
+            //     let depth: i32 = (data >> 21) & 63;
 
-                info!(
-                    "x:{}, y:{}, z:{}, norm:{norm}, texture:{} -> result: {result:b}\nx:{x}, y:{y}, z:{z}, norm:{face}, texture:{depth}",
-                    pos.x, pos.y, pos.z, texture as u32
-                );
-            }
+            //     info!(
+            //         "x:{}, y:{}, z:{}, norm:{norm}, texture:{} -> result: {result:b}\nx:{x}, y:{y}, z:{z}, norm:{face}, texture:{depth}",
+            //         pos.x, pos.y, pos.z, texture as u32
+            //     );
+            // }
             data.push(result);
         }
-        // debug_count -= 1;
     }
     data
 }
