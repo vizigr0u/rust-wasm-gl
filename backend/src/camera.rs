@@ -21,6 +21,7 @@ const MOUSE_SENSITIVITY_FACTOR: f32 = 0.5;
 const NEAR_VIEW: f32 = 0.1;
 const FAR_VIEW: f32 = 300.0;
 
+#[derive(Debug)]
 pub struct Camera {
     pub position: Vec3,
     pub forward: Vec3,

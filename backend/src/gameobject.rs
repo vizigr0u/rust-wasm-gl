@@ -11,6 +11,7 @@ use crate::material::TextureType;
 use crate::meshrenderer::MeshRenderer;
 use crate::shaders::UniformTypes;
 
+#[derive(Debug)]
 pub struct GameObject {
     position: Vec3,
     rotation: Quat,

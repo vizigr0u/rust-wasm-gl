@@ -12,6 +12,7 @@ use web_sys::EventTarget;
 
 use crate::utils;
 
+#[derive(Debug)]
 pub enum InputEventType {
     MouseDown(Rc<web_sys::MouseEvent>),
     MouseUp(Rc<web_sys::MouseEvent>),
@@ -34,6 +35,7 @@ impl Clone for InputEventType {
     }
 }
 
+#[derive(Debug)]
 pub struct InputState {
     mouse_pos: Vec2,
     mouse_delta: Vec2,
@@ -110,6 +112,7 @@ pub trait HandleInputs {
     fn handle_inputs(&mut self, inputs: &InputState);
 }
 
+#[derive(Debug)]
 pub struct InputSystem {
     current_inputs: Rc<RefCell<InputState>>,
     closures: Vec<Arc<Mutex<Closure<dyn FnMut(JsValue)>>>>,

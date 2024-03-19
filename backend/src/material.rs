@@ -5,7 +5,7 @@ use glow::WebTextureKey;
 
 use crate::shaders::CompiledShader;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum TextureType {
     Texture2D,
     Texture2DArray(u32),

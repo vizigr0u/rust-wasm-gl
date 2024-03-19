@@ -10,11 +10,13 @@ use web_sys::HtmlImageElement;
 use crate::material::TextureType;
 use crate::utils::{get_document, get_performance};
 
+#[derive(Debug)]
 enum TextureStatus {
     Idle,
     Busy(f64, Rc<RefCell<Closure<dyn FnMut()>>>),
 }
 
+#[derive(Debug)]
 struct LoadingTexture {
     img: HtmlImageElement,
     key: Option<WebTextureKey>,
@@ -22,6 +24,7 @@ struct LoadingTexture {
     status: TextureStatus,
 }
 
+#[derive(Debug)]
 pub struct TextureLoader {
     pool: Rc<RefCell<Vec<LoadingTexture>>>,
 }

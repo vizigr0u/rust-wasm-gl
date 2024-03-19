@@ -6,12 +6,14 @@ use log::{info, warn};
 use crate::mesh::Mesh;
 use crate::shaders::CompiledShader;
 
+#[derive(Debug)]
 enum DisplayData {
     None,
     Array(Option<WebVertexArrayKey>, usize),
     Elements(Option<WebVertexArrayKey>, Option<WebBufferKey>, usize),
 }
 
+#[derive(Debug)]
 pub struct MeshRenderer {
     program: Rc<CompiledShader>,
     primitive_type: u32,

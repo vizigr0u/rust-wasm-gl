@@ -43,6 +43,7 @@ use web_sys::{KeyboardEvent, MouseEvent};
 //     }
 // });
 
+#[derive(Debug)]
 pub struct EguiBackend {
     egui_ctx: egui::Context,
     egui_once: bool,

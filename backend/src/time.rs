@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct Time {
     previous_time: Option<f64>,
     delta_time: f64,
