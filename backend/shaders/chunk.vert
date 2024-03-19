@@ -20,13 +20,6 @@ vec3(1.0f, 0.0f, 0.0f), // +X
 vec3(-1.0f, 0.0f, 0.0f)  // -X
 );
 
-vec2 UVS[] = vec2[]( //
-vec2(0, 0),  // TopLeft
-vec2(1, 0),   // TopRight
-vec2(0, 1),  // BotLeft
-vec2(1, 1)  // BotRight
-);
-
 void main() {
     int x = data & 63;
     int y = (data >> 6) & 63;

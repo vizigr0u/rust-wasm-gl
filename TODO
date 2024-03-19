@@ -1,13 +1,15 @@
 Todo:
   ✔ Cube @done(24-03-03 22:41)
   ✔ Camera @done(24-03-05 23:20)
-  ☐ Handle repeating key presses
-  ☐ show FPS
-  ☐ refactor renderer to support dynamic/streaming vs static meshes (e.g. create vao only once etc.)
+  ✔ Handle repeating key presses @done(24-03-19 00:12)
+  ✔ show FPS @done(24-03-19 00:12)
+  ✔ publish github page @done(24-03-10 00:12)
+  ☐ Add gizmo
+  ☐ Optimize chunk - cull faces between other chunks
+  ☐ MOAR chunk optimization ideas: https://www.youtube.com/watch?v=40JzyaOYJeY
   ☐ load mesh
   ☐ Inputs
   ☐ Better camera?
 
-  ☐ publish github page - ref https://github.com/vizigr0u/svelteboy/blob/main/.github/workflows/github-page.yaml
   ☐ check correctness https://webgl2fundamentals.org/webgl/lessons/webgl-drawing-multiple-things.html
   ☐ check out glsl tutorials https://www.youtube.com/watch?v=pEdlZ9W2Xs0
