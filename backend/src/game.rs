@@ -9,19 +9,19 @@ use crate::camera::Camera;
 use crate::eguibackend::EguiBackend;
 use crate::inputsystem::{self, HandleInputs, InputEventType, InputSystem};
 use crate::material::{TextureDef, TextureType};
-use crate::mesh::VertexAttrType;
-use crate::shader_def;
-use crate::shaders::{CompiledShader, ShaderDef, UniformTypes};
 use crate::textureloader::TextureLoader;
 use crate::time::Time;
 use crate::utils::performance_now;
 use crate::world::World;
+
+const WORLD_SIZE: UVec3 = UVec3::new(25, 1, 25);
 
 const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
 const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";
 const DIRT_TEXTURE_PATH: &str = "data/textures/blocks/dirt.png";
 const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 
+#[derive(Debug)]
 pub struct Game {
     texture_loader: TextureLoader,
     world: World,
@@ -43,7 +43,7 @@ impl Game {
     pub fn new() -> Result<Self, JsValue> {
         let game = Game {
             texture_loader: TextureLoader::new(10)?,
-            world: World::random(UVec3::new(25, 1, 25)),
+            world: World::random(WORLD_SIZE),
             loaded_textures: Vec::new(),
             camera: Camera::new(
                 Vec3 {
@@ -90,9 +90,8 @@ impl Game {
         gl.depth_func(glow::LESS);
         gl.enable(glow::CULL_FACE);
 
-        let program = make_cube_program(gl)?;
         self.world
-            .set_graphics(program.clone(), self.loaded_textures[3].clone());
+            .setup_graphics(gl, self.loaded_textures[3].clone())?;
         self.egui = Some(EguiBackend::new(gl));
 
         Ok(())
@@ -185,27 +184,5 @@ impl Game {
                 }
             });
         }
-    }
-}
-
-fn make_cube_program(gl: &glow::Context) -> Result<Rc<CompiledShader>, String> {
-    unsafe {
-        let program = shader_def!(
-            "cube.vert",
-            "cube.frag",
-            vec!(
-                (VertexAttrType::Position, "position"),
-                (VertexAttrType::UVs, "uv"),
-                (VertexAttrType::Normal, "normal"),
-                (VertexAttrType::Depth, "depth"),
-            ),
-            vec!(
-                (UniformTypes::ModelMatrix, "model"),
-                (UniformTypes::ViewMatrix, "view"),
-                (UniformTypes::ProjMatrix, "projection"),
-            )
-        )
-        .compile(gl)?;
-        Ok(Rc::new(program))
     }
 }

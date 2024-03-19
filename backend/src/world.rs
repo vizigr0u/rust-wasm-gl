@@ -1,30 +1,37 @@
 use std::{mem::size_of, rc::Rc};
 
-use glam::{UVec3, Vec3};
+use glam::UVec3;
+use glow::{HasContext, WebVertexArrayKey};
 use log::info;
-use tracing::{span, Level};
 
 use crate::{
     camera::Camera,
-    chunk::{Chunk, BLOCK_SIZE, CHUNK_SIZE},
-    gameobject::GameObject,
+    chunk::{Chunk, CHUNK_SIZE},
     material::TextureType,
-    mesh::{Mesh, ToMesh},
-    meshrenderer::MeshRenderer,
-    shaders::CompiledShader,
+    mesh::VertexAttrType,
+    shader_def,
+    shaders::{CompiledShader, ShaderDef, UniformTypes},
     time::Time,
 };
 
+#[derive(Debug)]
 struct GraphicContext {
     program: Rc<CompiledShader>,
     texture: Rc<(TextureType, glow::WebTextureKey)>,
 }
 
+#[derive(Debug)]
+struct LoadedChunkMesh {
+    pub vertex_array: WebVertexArrayKey,
+    pub vertex_count: usize,
+}
+
+#[derive(Debug)]
 pub struct World {
     chunks: Vec<Chunk>,
     size: UVec3,
     loaded_vertices: usize,
-    gameobjects: Vec<GameObject>,
+    loaded_meshes: Vec<LoadedChunkMesh>,
     graphics: Option<GraphicContext>,
 }
 
@@ -37,7 +44,7 @@ impl World {
         World {
             chunks,
             size,
-            gameobjects: Vec::with_capacity(num_chunks),
+            loaded_meshes: Vec::with_capacity(num_chunks),
             graphics: None,
             loaded_vertices: 0,
         }
@@ -55,51 +62,37 @@ impl World {
             self.size.x,
             self.size.y,
             self.size.z,
-            self.gameobjects.len(),
+            self.loaded_meshes.len(),
             self.chunks.len(),
         )
     }
 
-    pub fn is_loading(&self) -> bool {
-        self.chunks.len() == (self.size.x * self.size.y * self.size.z) as usize
-    }
-
-    pub fn set_graphics(
+    pub fn setup_graphics(
         &mut self,
-        program: Rc<CompiledShader>,
+        gl: &glow::Context,
         texture: Rc<(TextureType, glow::WebTextureKey)>,
-    ) {
+    ) -> Result<(), String> {
+        let program = compile_shader(gl)?;
         self.graphics = Some(GraphicContext { program, texture });
-    }
-
-    pub fn load_all(&mut self, gl: &glow::Context) -> Result<(), String> {
-        let mut vertex_count = 0;
-        if let Some(graphics) = &self.graphics {
-            for chunk in &self.chunks {
-                self.gameobjects
-                    .push(World::bake_chunk(gl, chunk, &graphics, &mut vertex_count)?);
-            }
-            self.loaded_vertices += vertex_count;
-        }
         Ok(())
     }
 
+    // pub fn load_all(&mut self, gl: &glow::Context) -> Result<(), String> {
+    //     self.bake_chunks(gl, self.chunks.len())
+    // }
+
     fn bake_chunks(&mut self, gl: &glow::Context, max_count: usize) -> Result<(), String> {
-        let span = span!(Level::INFO, "bake_chunks");
-        if let Some(graphics) = &self.graphics {
-            let start_index = self.gameobjects.len();
-            let mut max_index = start_index + max_count;
-            if max_index > self.chunks.len() {
-                max_index = self.chunks.len();
-            }
-            let mut vertex_count = 0;
-            for i in start_index..max_index {
-                let chunk = &self.chunks[i];
-                self.gameobjects
-                    .push(World::bake_chunk(gl, chunk, graphics, &mut vertex_count)?)
-            }
-            self.loaded_vertices += vertex_count;
+        let start_index = self.loaded_meshes.len();
+        let mut max_index = start_index + max_count;
+        if max_index > self.chunks.len() {
+            max_index = self.chunks.len();
         }
+        for i in start_index..max_index {
+            let chunk = &self.chunks[i];
+            let mesh = LoadedChunkMesh::load(gl, chunk)?;
+            self.loaded_meshes.push(mesh)
+        }
+        self.loaded_vertices = self.loaded_meshes.iter().map(|m| m.vertex_count).sum();
         Ok(())
     }
 
@@ -121,30 +114,13 @@ impl World {
         }
     }
 
-    fn bake_chunk(
-        gl: &glow::Context,
-        chunk: &Chunk,
-        graphics: &GraphicContext,
-        vertex_count: &mut usize,
-    ) -> Result<GameObject, String> {
-        let mesh = Rc::new(chunk.to_mesh());
-        *vertex_count += mesh.get_data().len();
-        let mut renderer = MeshRenderer::new(&graphics.program);
-        renderer.set_mesh(gl, mesh)?;
-        let renderer = Rc::new(renderer);
-        let mut gameobject = GameObject::new(&graphics.texture, &renderer);
-        gameobject.set_position(chunk.world_position.as_vec3() * CHUNK_SIZE as f32 * BLOCK_SIZE);
-        gameobject.update();
-        Ok(gameobject)
-    }
-
     pub fn update(&mut self, gl: &glow::Context, _time: &Time) {
         let max_chunk_count = (self.size.x * self.size.y * self.size.z) as _;
         if self.chunks.len() < max_chunk_count {
-            self.generate_chunks(8);
+            self.generate_chunks(64);
         } else {
-            if self.gameobjects.len() < self.chunks.len() {
-                if let Err(e) = self.bake_chunks(gl, 4) {
+            if self.loaded_meshes.len() < self.chunks.len() {
+                if let Err(e) = self.bake_chunks(gl, 1) {
                     info!("{}", e);
                 }
             }
@@ -152,8 +128,73 @@ impl World {
     }
 
     pub fn render(&self, gl: &glow::Context, camera: &Camera) {
-        for go in &self.gameobjects {
-            go.render(gl, camera);
+        if let Some(graphics) = &self.graphics {
+            unsafe {
+                let program = &graphics.program;
+                program.gl_use(gl);
+                gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(graphics.texture.1));
+                program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
+                program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
+                let world_pos_position = program.get_uniform_location(UniformTypes::WorldPosition);
+
+                for i in 0..self.loaded_meshes.len() {
+                    let chunk = &self.chunks[i];
+                    let mesh = &self.loaded_meshes[i];
+                    let world_pos = chunk.world_position.as_vec3() * CHUNK_SIZE as f32;
+                    gl.uniform_3_f32(world_pos_position, world_pos.x, world_pos.y, world_pos.z);
+
+                    gl.bind_vertex_array(Some(mesh.vertex_array));
+                    gl.draw_arrays(glow::TRIANGLES, 0, mesh.vertex_count as _);
+                }
+            }
         }
+    }
+}
+
+impl LoadedChunkMesh {
+    fn load(gl: &glow::Context, chunk: &Chunk) -> Result<Self, String> {
+        let vertex_data = chunk.to_vertex_data();
+        info!("chunk vertex count: {}", vertex_data.len());
+        unsafe {
+            let vao = gl.create_vertex_array()?;
+            gl.bind_vertex_array(Some(vao));
+            let vbo = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                vertex_data.align_to::<u8>().1,
+                glow::STATIC_DRAW,
+            );
+
+            let location = 0;
+            let size = 1;
+            gl.vertex_attrib_pointer_i32(location, size, glow::INT, 0, 0);
+            gl.enable_vertex_attrib_array(location);
+
+            gl.bind_vertex_array(None);
+            gl.bind_buffer(glow::ARRAY_BUFFER, None);
+
+            Ok(Self {
+                vertex_array: vao,
+                vertex_count: vertex_data.len(),
+            })
+        }
+    }
+}
+
+fn compile_shader(gl: &glow::Context) -> Result<Rc<CompiledShader>, String> {
+    unsafe {
+        let program = shader_def!(
+            "chunk.vert",
+            "chunk.frag",
+            vec!(),
+            vec!(
+                (UniformTypes::WorldPosition, "world_pos"),
+                (UniformTypes::ViewMatrix, "view"),
+                (UniformTypes::ProjMatrix, "projection"),
+            )
+        )
+        .compile(gl)?;
+        Ok(Rc::new(program))
     }
 }

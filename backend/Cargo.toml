@@ -67,7 +67,6 @@ features = [
     'KeyboardEvent',
 ]
 
-[profile.dev]
 opt-level = 0           # do not optimize for debug
 debug = true            # print debug info
 debug-assertions = true # enable debug assertions

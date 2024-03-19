@@ -3,6 +3,18 @@ use log::info;
 
 use crate::chunk::BlockSideTexture;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum VertexDataType {
+    U8 = glow::UNSIGNED_BYTE as _,
+    I8 = glow::BYTE as _,
+    U16 = glow::UNSIGNED_SHORT as _,
+    I16 = glow::SHORT as _,
+    U32 = glow::UNSIGNED_INT as _,
+    I32 = glow::INT as _,
+    F16 = glow::HALF_FLOAT as _,
+    F32 = glow::FLOAT as _,
+}
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum VertexAttrType {
     Position,
@@ -10,6 +22,7 @@ pub enum VertexAttrType {
     Normal,
     UVs,
     Depth,
+    Custom(VertexDataType),
 }
 
 pub type QuadSideData = (Side, BlockSideTexture, Vec3);
@@ -76,7 +89,7 @@ impl Mesh {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Side {
     Top = 0,
     Bottom,
@@ -86,7 +99,7 @@ pub enum Side {
     Left,
 }
 
-const SIDE_NORMS: [Vec3; 6] = [
+pub const SIDE_NORMS: [Vec3; 6] = [
     Vec3::Y,
     Vec3::NEG_Y,
     Vec3::Z,

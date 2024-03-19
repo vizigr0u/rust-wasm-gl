@@ -1,12 +1,14 @@
-use glam::{UVec3, Vec3};
+use glam::{U16Vec3, UVec3, Vec3};
+use log::info;
 use rand::{distributions::Distribution, distributions::Standard, Rng};
 
-use crate::mesh::{Mesh, QuadSideData, Side, SideVertices, ToMesh};
+use crate::mesh::{
+    uv_definitions, Mesh, QuadSideData, Side, ToMesh, VertexAttrType, VertexDataType, SIDE_NORMS,
+};
 
-pub const BLOCK_SIZE: f32 = 1.0;
 pub const CHUNK_SIZE: usize = 8;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum BlockType {
     Empty = 0,
     Grass,
@@ -35,6 +37,7 @@ impl Distribution<BlockType> for Standard {
     }
 }
 
+#[derive(Debug)]
 pub struct Chunk {
     pub blocks: [[[BlockType; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
     pub world_position: UVec3,
@@ -59,14 +62,14 @@ impl Distribution<Chunk> for Standard {
 
 const OPTIMIZATION_LEVEL: usize = 1;
 
-impl ToMesh for Chunk {
-    fn to_mesh(&self) -> Mesh {
-        let mut sides: Vec<QuadSideData> = Vec::new();
+impl Chunk {
+    pub fn to_vertex_data(&self) -> Vec<i32> {
+        let mut sides: Vec<ChunkSideData> = Vec::new();
         let chunk_size = CHUNK_SIZE;
         for x in 0..chunk_size {
             for y in 0..chunk_size {
                 for z in 0..chunk_size {
-                    let offset = Vec3::new(x as f32, y as f32, z as f32) * BLOCK_SIZE;
+                    let offset = U16Vec3::new(x as _, y as _, z as _);
                     let (top, side, bottom) = match self.blocks[x][y][z] {
                         BlockType::Empty => continue,
                         t => t.into(),
@@ -103,7 +106,7 @@ impl ToMesh for Chunk {
                 }
             }
         }
-        Mesh::from_offset_sides(sides, 1.0, &SIDE_VERTICES)
+        generate_mesh(sides)
     }
 }
 
@@ -134,7 +137,7 @@ fn three_of(t: BlockSideTexture) -> BlockSideTextures {
     (t, t, t)
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum BlockSideTexture {
     Unknown = 0,
     GrassSide,
@@ -154,11 +157,82 @@ pub enum BlockSideTexture {
     Dirt2,
 }
 
+pub type ChunkSideData = (Side, BlockSideTexture, U16Vec3);
+
+pub fn generate_mesh<I>(sides: I) -> Vec<i32>
+where
+    I: IntoIterator<Item = ChunkSideData>,
+    I::IntoIter: ExactSizeIterator,
+{
+    let iterator = sides.into_iter();
+    let size = iterator.len();
+    let mut data = Vec::<i32>::with_capacity(size);
+    // let mut debug_count = 2;
+    for (side, texture, offset) in iterator {
+        for vert in SIDE_VERTICES[side as usize].get_quad_triangles() {
+            let norm = side as i32;
+            let pos = vert + offset;
+            let mut result: i32 = 0;
+            result |= (pos.x & 63) as i32;
+            result |= (pos.y as i32 & 63) << 6;
+            result |= (pos.z as i32 & 63) << 12;
+            result |= (norm & 7) << 18;
+            result |= (texture as i32 & 63) << 21;
+            // if debug_c+ount > 0
+            {
+                let data = result;
+                let x: i32 = data & 63;
+                let y: i32 = (data >> 6) & 63;
+                let z: i32 = (data >> 12) & 63;
+                let face: i32 = (data >> 18) & 7;
+                let depth: i32 = (data >> 21) & 63;
+
+                info!(
+                    "x:{}, y:{}, z:{}, norm:{norm}, texture:{} -> result: {result:b}\nx:{x}, y:{y}, z:{z}, norm:{face}, texture:{depth}",
+                    pos.x, pos.y, pos.z, texture as u32
+                );
+            }
+            data.push(result);
+        }
+        // debug_count -= 1;
+    }
+    data
+}
+
 //   C        D
 // A        B
 
 //   G        H
 // E        F
+
+const A: U16Vec3 = U16Vec3 { x: 0, y: 1, z: 1 };
+const B: U16Vec3 = U16Vec3 { x: 1, y: 1, z: 1 };
+const C: U16Vec3 = U16Vec3 { x: 0, y: 1, z: 0 };
+const D: U16Vec3 = U16Vec3 { x: 1, y: 1, z: 0 };
+const E: U16Vec3 = U16Vec3 { x: 0, y: 0, z: 1 };
+const F: U16Vec3 = U16Vec3 { x: 1, y: 0, z: 1 };
+const G: U16Vec3 = U16Vec3 { x: 0, y: 0, z: 0 };
+const H: U16Vec3 = U16Vec3 { x: 1, y: 0, z: 0 };
+
+pub struct SideVertices {
+    pub a: U16Vec3,
+    pub b: U16Vec3,
+    pub c: U16Vec3,
+    pub d: U16Vec3,
+}
+
+enum Corner {
+    TopLeft,
+    TopRight,
+    BotLeft,
+    BotRight,
+}
+
+impl SideVertices {
+    fn get_quad_triangles(&self) -> [U16Vec3; 6] {
+        [self.a, self.b, self.c, self.a, self.c, self.d]
+    }
+}
 
 const SIDE_VERTICES: [SideVertices; 6] = [
     SideVertices {
@@ -198,44 +272,3 @@ const SIDE_VERTICES: [SideVertices; 6] = [
         d: A,
     },
 ];
-
-const A: Vec3 = Vec3 {
-    x: 0.0,
-    y: 1.0,
-    z: 1.0,
-};
-const B: Vec3 = Vec3 {
-    x: 1.0,
-    y: 1.0,
-    z: 1.0,
-};
-const C: Vec3 = Vec3 {
-    x: 0.0,
-    y: 1.0,
-    z: 0.0,
-};
-const D: Vec3 = Vec3 {
-    x: 1.0,
-    y: 1.0,
-    z: 0.0,
-};
-const E: Vec3 = Vec3 {
-    x: 0.0,
-    y: 0.0,
-    z: 1.0,
-};
-const F: Vec3 = Vec3 {
-    x: 1.0,
-    y: 0.0,
-    z: 1.0,
-};
-const G: Vec3 = Vec3 {
-    x: 0.0,
-    y: 0.0,
-    z: 0.0,
-};
-const H: Vec3 = Vec3 {
-    x: 1.0,
-    y: 0.0,
-    z: 0.0,
-};

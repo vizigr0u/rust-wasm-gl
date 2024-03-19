@@ -26,6 +26,7 @@ pub enum UniformTypes {
     ModelMatrix,
     ViewMatrix,
     ProjMatrix,
+    WorldPosition,
 }
 
 pub struct ShaderDef {
@@ -37,6 +38,7 @@ pub struct ShaderDef {
     uniforms: Vec<(UniformTypes, &'static str)>,
 }
 
+#[derive(Debug)]
 pub struct CompiledShader {
     program_key: WebProgramKey,
     attribute_locations: HashMap<VertexAttrType, u32>,
