@@ -14,7 +14,7 @@ use crate::time::Time;
 use crate::utils::performance_now;
 use crate::world::World;
 
-const WORLD_SIZE: UVec3 = UVec3::new(25, 1, 25);
+const WORLD_SIZE: UVec3 = UVec3::new(32, 2, 32);
 
 const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
 const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";

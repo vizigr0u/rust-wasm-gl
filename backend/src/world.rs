@@ -4,11 +4,13 @@ use glam::UVec3;
 use glow::{HasContext, WebVertexArrayKey};
 use log::info;
 
+const MAX_CHUNKS_GENERATED_PER_FRAME: usize = 8;
+const MAX_CHUNKS_LOADED_PER_FRAME: usize = 16;
+
 use crate::{
     camera::Camera,
     chunk::{Chunk, CHUNK_SIZE},
     material::TextureType,
-    mesh::VertexAttrType,
     shader_def,
     shaders::{CompiledShader, ShaderDef, UniformTypes},
     time::Time,
@@ -117,10 +119,10 @@ impl World {
     pub fn update(&mut self, gl: &glow::Context, _time: &Time) {
         let max_chunk_count = (self.size.x * self.size.y * self.size.z) as _;
         if self.chunks.len() < max_chunk_count {
-            self.generate_chunks(64);
+            self.generate_chunks(MAX_CHUNKS_GENERATED_PER_FRAME);
         } else {
             if self.loaded_meshes.len() < self.chunks.len() {
-                if let Err(e) = self.bake_chunks(gl, 1) {
+                if let Err(e) = self.bake_chunks(gl, MAX_CHUNKS_LOADED_PER_FRAME) {
                     info!("{}", e);
                 }
             }
@@ -154,7 +156,6 @@ impl World {
 impl LoadedChunkMesh {
     fn load(gl: &glow::Context, chunk: &Chunk) -> Result<Self, String> {
         let vertex_data = chunk.to_vertex_data();
-        info!("chunk vertex count: {}", vertex_data.len());
         unsafe {
             let vao = gl.create_vertex_array()?;
             gl.bind_vertex_array(Some(vao));
