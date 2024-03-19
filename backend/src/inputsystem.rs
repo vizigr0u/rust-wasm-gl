@@ -81,7 +81,7 @@ impl InputState {
                 self.mouse_pos = new_pos;
             }
             InputEventType::KeyDown(e) => {
-                if !self.keys_down.insert(e.code()) {
+                if !e.repeat() && !self.keys_down.insert(e.code()) {
                     warn!("Key already down: {}", e.code());
                 }
             }

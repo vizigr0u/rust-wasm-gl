@@ -293,14 +293,14 @@ impl TryInto<Event> for &InputEventType {
                 pressed: true,
                 modifiers: get_key_modifiers(&event),
                 physical_key: None,
-                repeat: false,
+                repeat: event.repeat(),
             },
             InputEventType::KeyUp(event) => Event::Key {
                 key: try_parse_key(event.key())?,
                 pressed: false,
                 modifiers: get_key_modifiers(&event),
                 physical_key: None,
-                repeat: false,
+                repeat: event.repeat(),
             },
             InputEventType::MouseMove(event) => Event::PointerMoved(mouse_event_to_pos2(&event)),
             InputEventType::MouseDown(event) => Event::PointerButton {
