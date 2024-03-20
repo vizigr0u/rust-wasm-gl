@@ -252,8 +252,8 @@ impl EguiBackend {
                 max: egui::pos2(self.size.0 as f32, self.size.1 as f32),
             }),
             events: self.current_events.clone(),
-            time: Some(self.time.time()),
-            predicted_dt: self.time.delta_time() as _,
+            // time: Some(self.time.time()),
+            // predicted_dt: self.time.delta_time() as _,
             ..Default::default()
         }
     }
