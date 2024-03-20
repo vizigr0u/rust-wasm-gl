@@ -4,12 +4,12 @@ use glam::UVec3;
 use glow::{HasContext, WebVertexArrayKey};
 use log::info;
 
-const MAX_CHUNKS_GENERATED_PER_FRAME: usize = 8;
+const MAX_CHUNKS_GENERATED_PER_FRAME: usize = 32;
 const MAX_CHUNKS_LOADED_PER_FRAME: usize = 16;
 
 use crate::{
     camera::Camera,
-    chunk::{Chunk, CHUNK_SIZE},
+    chunk::{Chunk, ChunkGenerator, CHUNK_SIZE},
     material::TextureType,
     shader_def,
     shaders::{CompiledShader, ShaderDef, UniformTypes},
@@ -29,26 +29,34 @@ struct LoadedChunkMesh {
 }
 
 #[derive(Debug)]
-pub struct World {
+pub struct World<G>
+where
+    G: ChunkGenerator,
+{
     chunks: Vec<Chunk>,
     size: UVec3,
     loaded_vertices: usize,
     loaded_meshes: Vec<LoadedChunkMesh>,
     graphics: Option<GraphicContext>,
+    generator: G,
 }
 
-impl World {
-    pub fn random(size: UVec3) -> World {
+impl<G> World<G>
+where
+    G: ChunkGenerator,
+{
+    pub fn random(size: UVec3, generator: G) -> Self {
         let num_chunks = (size.x * size.y * size.z) as usize;
         let chunks = Vec::with_capacity(num_chunks);
         info!("Creating world with {} chunks", num_chunks);
 
-        World {
+        Self {
             chunks,
             size,
             loaded_meshes: Vec::with_capacity(num_chunks),
             graphics: None,
             loaded_vertices: 0,
+            generator,
         }
     }
 
@@ -110,8 +118,7 @@ impl World {
             let x = i % self.size.x;
             let y = (i / self.size.x) % self.size.y;
             let z = (i / self.size.x) / self.size.y;
-            let mut chunk: Chunk = rand::random();
-            chunk.world_position = UVec3::new(x, y, z);
+            let chunk: Chunk = self.generator.generate(&UVec3::new(x, y, z));
             self.chunks.push(chunk);
         }
     }

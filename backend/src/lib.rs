@@ -16,6 +16,7 @@ mod material;
 mod mesh;
 mod meshrenderer;
 mod shaders;
+mod testworldgenerator;
 mod textureloader;
 mod time;
 mod trianglescene;

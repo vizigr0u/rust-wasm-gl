@@ -1,12 +1,13 @@
-use glam::{U16Vec3, UVec3, Vec3};
-use log::info;
-use rand::{distributions::Distribution, distributions::Standard, Rng};
+use std::iter::repeat_with;
 
-use crate::mesh::{
-    uv_definitions, Mesh, QuadSideData, Side, ToMesh, VertexAttrType, VertexDataType, SIDE_NORMS,
-};
+use fastrand::Rng;
+use glam::{U16Vec3, UVec3};
+use log::info;
+
+use crate::mesh::Side;
 
 pub const CHUNK_SIZE: usize = 8;
+pub const BLOCKS_PER_CHUNK: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum BlockType {
@@ -21,9 +22,9 @@ pub enum BlockType {
     Gold,
 }
 
-impl Distribution<BlockType> for Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> BlockType {
-        match rng.gen_range(0..=8) {
+impl Into<BlockType> for u8 {
+    fn into(self) -> BlockType {
+        match self {
             0 => BlockType::Empty,
             1 => BlockType::Grass,
             2 => BlockType::Dirt,
@@ -32,45 +33,113 @@ impl Distribution<BlockType> for Standard {
             5 => BlockType::Lava,
             6 => BlockType::Diamond,
             7 => BlockType::Coal,
-            _ => BlockType::Gold,
+            8 => BlockType::Gold,
+            _ => BlockType::Empty,
         }
+    }
+}
+
+pub trait ChunkGenerator {
+    fn generate(&mut self, pos: &UVec3) -> Chunk;
+}
+
+pub struct EmptyChunkGenerator;
+
+impl ChunkGenerator for EmptyChunkGenerator {
+    fn generate(&mut self, _pos: &UVec3) -> Chunk {
+        Chunk::default()
+    }
+}
+
+#[derive(Debug)]
+pub struct RandomChunkGenerator {
+    pub rng: Rng,
+}
+
+impl ChunkGenerator for RandomChunkGenerator {
+    fn generate(&mut self, pos: &UVec3) -> Chunk {
+        Chunk::random(*pos, &mut self.rng)
     }
 }
 
 #[derive(Debug)]
 pub struct Chunk {
-    pub blocks: [[[BlockType; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE],
+    pub blocks: [BlockType; BLOCKS_PER_CHUNK],
     pub world_position: UVec3,
 }
 
-impl Distribution<Chunk> for Standard {
-    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Chunk {
-        let mut blocks = [[[BlockType::Empty; CHUNK_SIZE]; CHUNK_SIZE]; CHUNK_SIZE];
-        for x in 0..CHUNK_SIZE {
-            for y in 0..CHUNK_SIZE {
-                for z in 0..CHUNK_SIZE {
-                    blocks[x][y][z] = rand::random();
-                }
-            }
-        }
+const OPTIMIZATION_LEVEL: usize = 1;
+
+impl Default for Chunk {
+    fn default() -> Self {
         Chunk {
-            blocks,
+            blocks: [BlockType::Empty; BLOCKS_PER_CHUNK],
             world_position: UVec3::ZERO,
         }
     }
 }
 
-const OPTIMIZATION_LEVEL: usize = 1;
-
 impl Chunk {
+    pub fn new(world_position: UVec3) -> Chunk {
+        Chunk {
+            world_position,
+            ..Default::default()
+        }
+    }
+
+    pub fn random(world_position: UVec3, rng: &mut Rng) -> Chunk {
+        let mut res = Self::new(world_position);
+        for i in 0..BLOCKS_PER_CHUNK {
+            res.blocks[i] = Into::<BlockType>::into(rng.u8(..9));
+        }
+        res
+    }
+
+    pub fn empty(world_position: UVec3) -> Chunk {
+        Self::plain(world_position, BlockType::Empty)
+    }
+
+    pub fn plain(world_position: UVec3, block: BlockType) -> Chunk {
+        let mut res = Self::new(world_position);
+        for i in 0..BLOCKS_PER_CHUNK {
+            res.blocks[i] = block;
+        }
+        res
+    }
+
+    pub fn at(&self, offset: U16Vec3) -> &BlockType {
+        &self.blocks[chunk_index_from_offset(&offset)]
+    }
+
+    pub fn set(&mut self, offset: U16Vec3, block: BlockType) {
+        self.blocks[chunk_index_from_offset(&offset)] = block;
+    }
+
+    fn at_mut(&mut self, offset: U16Vec3) -> &mut BlockType {
+        &mut self.blocks[chunk_index_from_offset(&offset)]
+    }
+
+    pub fn dirt_with_grass_on_top(world_position: UVec3) -> Chunk {
+        let mut res = Self::plain(world_position, BlockType::Dirt);
+        for x in 0..CHUNK_SIZE {
+            for z in 0..CHUNK_SIZE {
+                *res.at_mut(U16Vec3::new(x as _, CHUNK_SIZE as u16 - 1, z as _)) = BlockType::Grass;
+            }
+        }
+        res
+    }
+
+    pub fn get_block(&self, offset: U16Vec3) -> BlockType {
+        self.blocks[chunk_index_from_offset(&offset)]
+    }
+
     pub fn to_vertex_data(&self) -> Vec<i32> {
         let mut sides: Vec<ChunkSideData> = Vec::new();
-        let chunk_size = CHUNK_SIZE;
-        for x in 0..chunk_size {
-            for y in 0..chunk_size {
-                for z in 0..chunk_size {
+        for x in 0..CHUNK_SIZE {
+            for y in 0..CHUNK_SIZE {
+                for z in 0..CHUNK_SIZE {
                     let offset = U16Vec3::new(x as _, y as _, z as _);
-                    let (top, side, bottom) = match self.blocks[x][y][z] {
+                    let (top, side, bottom) = match self.get_block(offset) {
                         BlockType::Empty => continue,
                         t => t.into(),
                     };
@@ -84,22 +153,28 @@ impl Chunk {
                         sides.push((Side::Left, side, offset));
                         sides.push((Side::Right, side, offset));
                     } else {
-                        if y == chunk_size - 1 || self.blocks[x][y + 1][z] == BlockType::Empty {
+                        if y == CHUNK_SIZE - 1
+                            || self.get_block(offset + U16Vec3::Y) == BlockType::Empty
+                        {
                             sides.push((Side::Top, top, offset));
                         }
-                        if y == 0 || self.blocks[x][y - 1][z] == BlockType::Empty {
+                        if y == 0 || self.get_block(offset - U16Vec3::Y) == BlockType::Empty {
                             sides.push((Side::Bottom, bottom, offset));
                         }
-                        if x == chunk_size - 1 || self.blocks[x + 1][y][z] == BlockType::Empty {
+                        if x == CHUNK_SIZE - 1
+                            || self.get_block(offset + U16Vec3::X) == BlockType::Empty
+                        {
                             sides.push((Side::Right, side, offset));
                         }
-                        if x == 0 || self.blocks[x - 1][y][z] == BlockType::Empty {
+                        if x == 0 || self.get_block(offset - U16Vec3::X) == BlockType::Empty {
                             sides.push((Side::Left, side, offset));
                         }
-                        if z == chunk_size - 1 || self.blocks[x][y][z + 1] == BlockType::Empty {
+                        if z == CHUNK_SIZE - 1
+                            || self.get_block(offset + U16Vec3::Z) == BlockType::Empty
+                        {
                             sides.push((Side::Front, side, offset));
                         }
-                        if z == 0 || self.blocks[x][y][z - 1] == BlockType::Empty {
+                        if z == 0 || self.get_block(offset - U16Vec3::Z) == BlockType::Empty {
                             sides.push((Side::Back, side, offset));
                         }
                     }
@@ -108,6 +183,20 @@ impl Chunk {
         }
         generate_mesh(sides)
     }
+}
+
+// #[inline(always)]
+// fn offset_from_chunk_index(i: usize) -> U16Vec3 {
+//     U16Vec3::new(
+//         (i % CHUNK_SIZE) as _,
+//         (i / CHUNK_SIZE) as _,
+//         (i / (CHUNK_SIZE * CHUNK_SIZE)) as _,
+//     )
+// }
+
+#[inline(always)]
+fn chunk_index_from_offset(offset: &U16Vec3) -> usize {
+    offset.x as usize + offset.y as usize * CHUNK_SIZE + offset.z as usize * CHUNK_SIZE * CHUNK_SIZE
 }
 
 type BlockSideTextures = (BlockSideTexture, BlockSideTexture, BlockSideTexture);
@@ -218,12 +307,12 @@ pub struct SideVertices {
     pub d: U16Vec3,
 }
 
-enum Corner {
-    TopLeft,
-    TopRight,
-    BotLeft,
-    BotRight,
-}
+// enum Corner {
+//     TopLeft,
+//     TopRight,
+//     BotLeft,
+//     BotRight,
+// }
 
 impl SideVertices {
     fn get_quad_triangles(&self) -> [U16Vec3; 6] {

@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use fastrand::Rng;
 use glam::{UVec3, Vec3};
 use glow::HasContext;
 use log::{info, warn};
@@ -9,22 +10,29 @@ use crate::camera::Camera;
 use crate::eguibackend::EguiBackend;
 use crate::inputsystem::{self, HandleInputs, InputEventType, InputSystem};
 use crate::material::{TextureDef, TextureType};
+use crate::testworldgenerator::TestGenerator;
 use crate::textureloader::TextureLoader;
 use crate::time::Time;
 use crate::utils::performance_now;
 use crate::world::World;
 
-const WORLD_SIZE: UVec3 = UVec3::new(32, 2, 32);
+const WORLD_SIZE: UVec3 = UVec3::new(10, 10, 10);
 
 const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
 const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";
 const DIRT_TEXTURE_PATH: &str = "data/textures/blocks/dirt.png";
 const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 
+type WorldGenerator = TestGenerator;
+
+fn make_generator(rng: Rng) -> WorldGenerator {
+    TestGenerator { rng }
+}
+
 #[derive(Debug)]
 pub struct Game {
     texture_loader: TextureLoader,
-    world: World,
+    world: World<WorldGenerator>,
     camera: Camera,
 
     input_system: InputSystem,
@@ -41,9 +49,10 @@ pub struct Game {
 
 impl Game {
     pub fn new() -> Result<Self, JsValue> {
+        let rng = Rng::with_seed(0);
         let game = Game {
             texture_loader: TextureLoader::new(10)?,
-            world: World::random(WORLD_SIZE),
+            world: World::random(WORLD_SIZE, make_generator(rng)),
             loaded_textures: Vec::new(),
             camera: Camera::new(
                 Vec3 {
