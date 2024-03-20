@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::{collections::HashMap, convert::TryInto, rc::Rc};
 
 use crate::shader_def;
+use crate::time::Time;
 use crate::utils::GlState;
 use crate::{
     inputsystem::{HandleInputs, InputEventType, InputState},
@@ -51,6 +52,7 @@ pub struct EguiBackend {
     mesh_renderer: MeshRenderer,
     current_events: Vec<Event>,
     size: (usize, usize),
+    time: Time,
 }
 
 impl EguiBackend {
@@ -77,6 +79,7 @@ impl EguiBackend {
             textures: HashMap::new(),
             current_events: Vec::new(),
             size: (800, 600),
+            time: Time::default(),
         }
     }
 
@@ -249,6 +252,8 @@ impl EguiBackend {
                 max: egui::pos2(self.size.0 as f32, self.size.1 as f32),
             }),
             events: self.current_events.clone(),
+            time: Some(self.time.time()),
+            predicted_dt: self.time.delta_time() as _,
             ..Default::default()
         }
     }
@@ -266,6 +271,10 @@ impl EguiBackend {
                 },
             }
         }
+    }
+
+    pub fn set_time(&mut self, time: &Time) {
+        self.time = time.clone();
     }
 }
 

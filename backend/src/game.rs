@@ -72,7 +72,7 @@ impl Game {
                 },
             ),
             input_system: inputsystem::InputSystem::new()?,
-            time: Time::new(),
+            time: Time::default(),
             egui: None,
             show_menu: false,
             show_info: true,
@@ -154,6 +154,7 @@ impl Game {
             self.camera.handle_inputs(&inputs);
         } else {
             if let Some(egui) = &mut self.egui {
+                egui.set_time(&self.time);
                 egui.handle_inputs(&inputs);
             }
         }
