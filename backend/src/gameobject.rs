@@ -4,6 +4,7 @@ use glam::Mat4;
 use glam::Quat;
 use glam::Vec3;
 use glow::HasContext;
+use glow::WebTextureKey;
 
 use crate::camera::Camera;
 use crate::material::TextureDef;
@@ -80,13 +81,15 @@ impl GameObject {
             program.set_matrix(gl, UniformTypes::ModelMatrix, &self.transform);
 
             let (tex_type, key) = *self.texture;
-            let texture = Some(key);
-            match tex_type {
-                TextureType::Texture2D => gl.bind_texture(glow::TEXTURE_2D, texture),
-                TextureType::Texture2DArray(_depth) => {
-                    gl.bind_texture(glow::TEXTURE_2D_ARRAY, texture)
-                }
-            };
+            if key != WebTextureKey::default() {
+                let texture = Some(key);
+                match tex_type {
+                    TextureType::Texture2D => gl.bind_texture(glow::TEXTURE_2D, texture),
+                    TextureType::Texture2DArray(_depth) => {
+                        gl.bind_texture(glow::TEXTURE_2D_ARRAY, texture)
+                    }
+                };
+            }
 
             self.renderer.render(gl);
         }

@@ -8,6 +8,7 @@ use wasm_bindgen::JsValue;
 
 use crate::camera::Camera;
 use crate::eguibackend::EguiBackend;
+use crate::gizmo::Gizmo;
 use crate::inputsystem::{self, HandleInputs, InputEventType, InputSystem};
 use crate::material::{TextureDef, TextureType};
 use crate::testworldgenerator::TestGenerator;
@@ -43,6 +44,7 @@ pub struct Game {
     tick_times: [f64; 30],
     tick_time: f64,
     tick_index: usize,
+    gizmo: Gizmo,
 
     egui: Option<EguiBackend>,
 }
@@ -79,6 +81,7 @@ impl Game {
             tick_time: 0.0,
             tick_times: [0.0; 30],
             tick_index: 0,
+            gizmo: Gizmo::new(Vec3::ZERO, 10.0),
         };
 
         Ok(game)
@@ -129,6 +132,8 @@ impl Game {
 
         self.camera.update(&self.time);
 
+        self.gizmo.update();
+
         Ok(())
     }
 
@@ -166,11 +171,12 @@ impl Game {
         self.texture_loader.tick(&gl)?;
         unsafe {
             gl.clear_color(0.0, 0.0, 0.0, 1.0);
-            gl.clear(glow::COLOR_BUFFER_BIT);
+            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
         }
         self.world.render(gl, &self.camera);
 
         self.draw_ui(gl);
+        self.gizmo.render_lazy(gl, &self.camera);
 
         Ok(())
     }
