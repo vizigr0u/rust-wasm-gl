@@ -1,26 +1,14 @@
 use std::{cell::RefCell, rc::Rc};
 
 use cfg_if::cfg_if;
-use game::Game;
 use wasm_bindgen::prelude::*;
 
-mod basicmeshes;
-mod camera;
-mod chunk;
-mod eguibackend;
-mod game;
-mod gameobject;
-mod gizmo;
-mod inputsystem;
-mod lazygameobject;
-mod material;
-mod mesh;
-mod meshrenderer;
-mod shaders;
-mod testworldgenerator;
-mod textureloader;
-mod time;
-// mod trianglescene;
+use crate::core::Game;
+
+mod core;
+mod graphics;
+mod gui;
+mod objects;
 mod utils;
 mod world;
 

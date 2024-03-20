@@ -3,7 +3,7 @@
 
 use glam::Vec3;
 
-use crate::chunk::BlockSideTexture;
+use crate::world::BlockSideTexture;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VertexDataType {

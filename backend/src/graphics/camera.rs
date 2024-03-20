@@ -1,10 +1,7 @@
 use glam::{Mat4, Quat, Vec3};
 use log::info;
 
-use crate::{
-    inputsystem::{HandleInputs, InputEventType},
-    time::Time,
-};
+use crate::core::{HandleInputs, InputEventType, InputState, Time};
 
 // const DEBUG_INPUTS: bool = false;
 
@@ -67,7 +64,7 @@ impl Camera {
 }
 
 impl HandleInputs for Camera {
-    fn handle_inputs(&mut self, inputs: &crate::inputsystem::InputState) {
+    fn handle_inputs(&mut self, inputs: &InputState) {
         self.velocity = Vec3::ZERO;
         if inputs.is_key_down("KeyW") {
             self.velocity.z = -1.0;

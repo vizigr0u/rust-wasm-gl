@@ -8,17 +8,17 @@ const MAX_CHUNKS_GENERATED_PER_FRAME: usize = 32;
 const MAX_CHUNKS_LOADED_PER_FRAME: usize = 16;
 
 use crate::{
-    camera::Camera,
-    chunk::{Chunk, ChunkGenerator, CHUNK_SIZE},
-    material::TextureType,
+    core::Time,
+    graphics::Camera,
+    graphics::TextureType,
+    graphics::{ShaderDef, ShaderProgram, UniformTypes},
     shader_def,
-    shaders::{CompiledShader, ShaderDef, UniformTypes},
-    time::Time,
+    world::{Chunk, ChunkGenerator, CHUNK_SIZE},
 };
 
 #[derive(Debug)]
 struct GraphicContext {
-    program: Rc<CompiledShader>,
+    program: Rc<ShaderProgram>,
     texture: Rc<(TextureType, glow::WebTextureKey)>,
 }
 
@@ -190,7 +190,7 @@ impl LoadedChunkMesh {
     }
 }
 
-fn compile_shader(gl: &glow::Context) -> Result<Rc<CompiledShader>, String> {
+fn compile_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
     unsafe {
         let program = shader_def!(
             "chunk.vert",

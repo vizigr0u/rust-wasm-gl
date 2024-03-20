@@ -3,13 +3,11 @@ use std::rc::Rc;
 use glam::Vec3;
 use log::info;
 
+use super::{GameObject, LazyRenderGameObject, MakeRenderer};
+
 use crate::{
-    gameobject::GameObject,
-    lazygameobject::{LazyRenderGameObject, MakeRenderer},
-    mesh::{Mesh, VertexAttrType},
-    meshrenderer::MeshRenderer,
+    graphics::{Mesh, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
     shader_def,
-    shaders::{CompiledShader, ShaderDef, UniformTypes},
 };
 
 #[derive(Debug)]
@@ -66,7 +64,7 @@ const GIZMO_VERTICES: [f32; 36] = [
     0.0, 0.0, 1.0, 0.0, 0.0, 1.0, //
 ];
 
-fn compile_shader(gl: &glow::Context) -> Result<Rc<CompiledShader>, String> {
+fn compile_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
     unsafe {
         let program = shader_def!(
             "gizmo.vert",

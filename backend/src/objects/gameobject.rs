@@ -6,11 +6,11 @@ use glam::Vec3;
 use glow::HasContext;
 use glow::WebTextureKey;
 
-use crate::camera::Camera;
-use crate::material::TextureDef;
-use crate::material::TextureType;
-use crate::meshrenderer::MeshRenderer;
-use crate::shaders::UniformTypes;
+use crate::graphics::Camera;
+use crate::graphics::MeshRenderer;
+use crate::graphics::TextureDef;
+use crate::graphics::TextureType;
+use crate::graphics::UniformTypes;
 
 #[derive(Debug)]
 pub struct GameObject {

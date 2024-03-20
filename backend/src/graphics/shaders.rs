@@ -4,7 +4,7 @@ use glam::Mat4;
 use glow::{HasContext, WebProgramKey, WebShaderKey};
 use web_sys::WebGlUniformLocation;
 
-use crate::mesh::VertexAttrType;
+use super::VertexAttrType;
 
 #[macro_export]
 macro_rules! shader_def {
@@ -39,13 +39,13 @@ pub struct ShaderDef {
 }
 
 #[derive(Debug)]
-pub struct CompiledShader {
+pub struct ShaderProgram {
     program_key: WebProgramKey,
     attribute_locations: HashMap<VertexAttrType, u32>,
     uniform_locations: HashMap<UniformTypes, WebGlUniformLocation>,
 }
 
-impl CompiledShader {
+impl ShaderProgram {
     pub fn get_attr_location(&self, attr: VertexAttrType) -> Option<&u32> {
         self.attribute_locations.get(&attr)
     }
@@ -89,7 +89,7 @@ impl ShaderDef {
         }
     }
 
-    pub unsafe fn compile(&self, gl: &glow::Context) -> Result<CompiledShader, String> {
+    pub unsafe fn compile(&self, gl: &glow::Context) -> Result<ShaderProgram, String> {
         let vert = compile_shader(gl, glow::VERTEX_SHADER, self.vertex)?;
         let frag = compile_shader(gl, glow::FRAGMENT_SHADER, self.fragment)?;
 
@@ -112,7 +112,7 @@ impl ShaderDef {
             ))?;
             uniform_locations.insert(*u_type, location);
         }
-        Ok(CompiledShader {
+        Ok(ShaderProgram {
             attribute_locations,
             uniform_locations,
             program_key: program,

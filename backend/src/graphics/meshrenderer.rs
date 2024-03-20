@@ -3,8 +3,8 @@ use std::rc::Rc;
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 use log::warn;
 
-use crate::mesh::Mesh;
-use crate::shaders::CompiledShader;
+use super::Mesh;
+use super::ShaderProgram;
 
 #[derive(Debug)]
 enum DisplayData {
@@ -15,18 +15,18 @@ enum DisplayData {
 
 #[derive(Debug)]
 pub struct MeshRenderer {
-    program: Rc<CompiledShader>,
+    program: Rc<ShaderProgram>,
     primitive_type: u32,
     display_data: DisplayData,
     // vertex_count: i32,
 }
 
 impl MeshRenderer {
-    pub fn get_program(&self) -> &CompiledShader {
+    pub fn get_program(&self) -> &ShaderProgram {
         &self.program
     }
 
-    pub fn new(program: &Rc<CompiledShader>) -> Self {
+    pub fn new(program: &Rc<ShaderProgram>) -> Self {
         MeshRenderer {
             display_data: DisplayData::None,
             primitive_type: glow::TRIANGLES,

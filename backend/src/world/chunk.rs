@@ -1,7 +1,7 @@
 use fastrand::Rng;
 use glam::{U16Vec3, UVec3};
 
-use crate::mesh::Side;
+use crate::graphics::Side;
 
 pub const CHUNK_SIZE: usize = 8;
 pub const BLOCKS_PER_CHUNK: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;

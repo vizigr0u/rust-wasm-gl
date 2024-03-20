@@ -1,7 +1,7 @@
 use fastrand::Rng;
 use glam::{U16Vec3, UVec3};
 
-use crate::chunk::{BlockType, Chunk, ChunkGenerator, CHUNK_SIZE};
+use super::{BlockType, Chunk, ChunkGenerator, CHUNK_SIZE};
 
 #[derive(Debug)]
 pub struct TestGenerator {

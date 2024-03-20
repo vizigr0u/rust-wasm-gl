@@ -1,16 +1,11 @@
 use std::{collections::HashMap, convert::TryInto, rc::Rc};
 
+use crate::core::{HandleInputs, InputEventType, InputState};
 use crate::shader_def;
-use crate::time::Time;
 use crate::utils::GlState;
-use crate::{
-    inputsystem::{HandleInputs, InputEventType, InputState},
-    mesh::{Mesh, VertexAttrType},
-    meshrenderer::MeshRenderer,
-    shaders::UniformTypes,
-};
+use crate::{core::Time, graphics::MeshRenderer};
 
-use crate::shaders::ShaderDef;
+use crate::graphics::{Mesh, ShaderDef, UniformTypes, VertexAttrType};
 use egui::{epaint::Primitive, Event, Key, TextureFilter, TextureId, TextureWrapMode};
 use glow::{HasContext, WebTextureKey};
 use log::{info, warn};

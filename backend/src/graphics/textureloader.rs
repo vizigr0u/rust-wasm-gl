@@ -7,7 +7,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::{closure::Closure, JsValue};
 use web_sys::HtmlImageElement;
 
-use crate::material::TextureType;
+use super::TextureType;
 use crate::utils::{get_document, get_performance};
 
 #[derive(Debug)]

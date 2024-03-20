@@ -3,7 +3,12 @@ use std::rc::Rc;
 use glow::HasContext;
 use log::info;
 
-use crate::{gameobject::GameObject, meshrenderer::MeshRenderer, utils::GlState};
+use crate::{
+    graphics::{Camera, MeshRenderer},
+    utils::GlState,
+};
+
+use super::GameObject;
 
 pub trait MakeRenderer {
     fn make_renderer(&self, gl: &glow::Context) -> Result<Rc<MeshRenderer>, String>;
@@ -35,7 +40,7 @@ impl<R> LazyRenderGameObject<R>
 where
     R: MakeRenderer,
 {
-    pub fn render_lazy(&mut self, gl: &glow::Context, camera: &crate::camera::Camera) {
+    pub fn render_lazy(&mut self, gl: &glow::Context, camera: &Camera) {
         if self.gameobject.is_none() {
             self.load(gl);
             info!("Loaded gizmo");

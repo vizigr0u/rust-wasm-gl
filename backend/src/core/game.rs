@@ -5,16 +5,15 @@ use glam::{UVec3, Vec3};
 use glow::HasContext;
 use wasm_bindgen::JsValue;
 
-use crate::camera::Camera;
-use crate::eguibackend::EguiBackend;
-use crate::gizmo::Gizmo;
-use crate::inputsystem::{self, HandleInputs, InputEventType, InputSystem};
-use crate::material::{TextureDef, TextureType};
-use crate::testworldgenerator::TestGenerator;
-use crate::textureloader::TextureLoader;
-use crate::time::Time;
-use crate::utils::performance_now;
-use crate::world::World;
+use crate::{
+    graphics::{Camera, TextureDef, TextureLoader, TextureType},
+    gui::EguiBackend,
+    objects::Gizmo,
+    utils::performance_now,
+    world::{TestGenerator, World},
+};
+
+use super::{HandleInputs, InputEventType, InputSystem, Time};
 
 const WORLD_SIZE: UVec3 = UVec3::new(10, 10, 10);
 
@@ -72,7 +71,7 @@ impl Game {
                     z: 0.2,
                 },
             ),
-            input_system: inputsystem::InputSystem::new()?,
+            input_system: InputSystem::new()?,
             time: Time::default(),
             egui: None,
             show_menu: false,
