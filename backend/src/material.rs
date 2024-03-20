@@ -1,9 +1,4 @@
-use std::rc::Rc;
-
-use glam::Vec3;
 use glow::WebTextureKey;
-
-use crate::shaders::CompiledShader;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum TextureType {

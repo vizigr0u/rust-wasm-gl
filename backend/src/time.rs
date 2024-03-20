@@ -16,7 +16,7 @@ impl Time {
         self.delta_time
     }
 
-    pub fn time(&self) -> f64 {
-        self.previous_time.unwrap_or(0.0)
-    }
+    // pub fn time(&self) -> f64 {
+    //     self.previous_time.unwrap_or(0.0)
+    // }
 }

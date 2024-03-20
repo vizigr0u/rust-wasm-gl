@@ -2,7 +2,6 @@ use std::{cell::RefCell, rc::Rc};
 
 use cfg_if::cfg_if;
 use game::Game;
-use log::warn;
 use wasm_bindgen::prelude::*;
 
 mod basicmeshes;
@@ -21,7 +20,7 @@ mod shaders;
 mod testworldgenerator;
 mod textureloader;
 mod time;
-mod trianglescene;
+// mod trianglescene;
 mod utils;
 mod world;
 

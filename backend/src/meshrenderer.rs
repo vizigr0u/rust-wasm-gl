@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
-use log::{info, warn};
+use log::warn;
 
 use crate::mesh::Mesh;
 use crate::shaders::CompiledShader;
@@ -18,7 +18,7 @@ pub struct MeshRenderer {
     program: Rc<CompiledShader>,
     primitive_type: u32,
     display_data: DisplayData,
-    vertex_count: i32,
+    // vertex_count: i32,
 }
 
 impl MeshRenderer {
@@ -30,7 +30,7 @@ impl MeshRenderer {
         MeshRenderer {
             display_data: DisplayData::None,
             primitive_type: glow::TRIANGLES,
-            vertex_count: 0,
+            // vertex_count: 0,
             program: program.clone(),
         }
     }

@@ -1,5 +1,7 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+
 use glam::Vec3;
-use log::info;
 
 use crate::chunk::BlockSideTexture;
 

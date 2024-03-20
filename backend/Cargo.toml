@@ -3,6 +3,10 @@ name = "backend"
 version = "0.1.0"
 authors = ["Vladimir Nachbaur <vizigr0u@gmail.com>"]
 edition = "2021"
+description = "WebGL2 game/experiment"
+repository = "https://github.com/vizigr0u/rust-wasm-gl"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -67,6 +71,7 @@ features = [
     'KeyboardEvent',
 ]
 
+[profile.dev]
 opt-level = 0           # do not optimize for debug
 debug = true            # print debug info
 debug-assertions = true # enable debug assertions

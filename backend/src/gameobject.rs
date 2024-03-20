@@ -44,7 +44,7 @@ impl GameObject {
         }
     }
 
-    pub fn get_position(&self) -> Vec3 {
+    pub fn _get_position(&self) -> Vec3 {
         self.position
     }
 
@@ -53,11 +53,11 @@ impl GameObject {
         self.transform_dirty = true;
     }
 
-    pub fn get_rotation(&self) -> Quat {
+    pub fn _get_rotation(&self) -> Quat {
         self.rotation
     }
 
-    pub fn set_rotation(&mut self, rotation: Quat) {
+    pub fn _set_rotation(&mut self, rotation: Quat) {
         self.rotation = rotation;
         self.transform_dirty = true;
     }
@@ -67,7 +67,7 @@ impl GameObject {
         self.transform_dirty = true;
     }
 
-    pub fn get_renderer(&self) -> &Rc<MeshRenderer> {
+    pub fn _get_renderer(&self) -> &Rc<MeshRenderer> {
         &self.renderer
     }
 

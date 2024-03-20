@@ -6,7 +6,7 @@ use std::{
 };
 
 use glam::Vec2;
-use log::{info, warn};
+use log::warn;
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use web_sys::EventTarget;
 
@@ -54,7 +54,7 @@ impl InputState {
             current_events: Vec::new(),
         }
     }
-    pub fn get_mouse_pos(&self) -> Vec2 {
+    pub fn _get_mouse_pos(&self) -> Vec2 {
         self.mouse_pos
     }
     pub fn get_mouse_delta(&self) -> Vec2 {

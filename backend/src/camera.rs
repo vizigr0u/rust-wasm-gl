@@ -1,12 +1,12 @@
 use glam::{Mat4, Quat, Vec3};
-use log::{info, warn};
+use log::info;
 
 use crate::{
     inputsystem::{HandleInputs, InputEventType},
     time::Time,
 };
 
-const DEBUG_INPUTS: bool = false;
+// const DEBUG_INPUTS: bool = false;
 
 const DEFAULT_CAMERA_SPEED: f32 = 0.08;
 const MIN_CAMERA_SPEED: f32 = 0.001;
@@ -14,9 +14,9 @@ const MAX_CAMERA_SPEED: f32 = 1.0;
 const CAMERA_SPEED_FACTOR: f32 = 1.5;
 
 const DEFAULT_MOUSE_SENSITIVITY: f32 = 0.2;
-const MAX_MOUSE_SENSITIVITY: f32 = 1.0;
-const MIN_MOUSE_SENSITIVITY: f32 = 0.01;
-const MOUSE_SENSITIVITY_FACTOR: f32 = 0.5;
+// const MAX_MOUSE_SENSITIVITY: f32 = 1.0;
+// const MIN_MOUSE_SENSITIVITY: f32 = 0.01;
+// const MOUSE_SENSITIVITY_FACTOR: f32 = 0.5;
 
 const NEAR_VIEW: f32 = 0.1;
 const FAR_VIEW: f32 = 300.0;

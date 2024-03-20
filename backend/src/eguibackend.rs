@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::{collections::HashMap, convert::TryInto, rc::Rc};
 
 use crate::shader_def;
@@ -47,7 +46,7 @@ use web_sys::{KeyboardEvent, MouseEvent};
 #[derive(Debug)]
 pub struct EguiBackend {
     egui_ctx: egui::Context,
-    egui_once: bool,
+    // egui_once: bool,
     textures: HashMap<TextureId, WebTextureKey>,
     mesh_renderer: MeshRenderer,
     current_events: Vec<Event>,
@@ -74,7 +73,7 @@ impl EguiBackend {
         let program = Rc::new(program);
         Self {
             egui_ctx: egui::Context::default(),
-            egui_once: true,
+            // egui_once: true,
             mesh_renderer: MeshRenderer::new(&program),
             textures: HashMap::new(),
             current_events: Vec::new(),
@@ -227,21 +226,21 @@ impl EguiBackend {
         }
     }
 
-    fn debug_paint(
-        &mut self,
-        textures_delta: &egui::TexturesDelta,
-        clipped_primitives: &Vec<egui::ClippedPrimitive>,
-    ) {
-        if self.egui_once {
-            for (id, img_delta) in &textures_delta.set {
-                info!("{id:?}, {:?}", img_delta.options);
-            }
-            for p in clipped_primitives {
-                info!("prim: {:?}, {:?}", p.clip_rect, p.primitive);
-            }
-            self.egui_once = false;
-        }
-    }
+    // fn debug_paint(
+    //     &mut self,
+    //     textures_delta: &egui::TexturesDelta,
+    //     clipped_primitives: &Vec<egui::ClippedPrimitive>,
+    // ) {
+    //     if self.egui_once {
+    //         for (id, img_delta) in &textures_delta.set {
+    //             info!("{id:?}, {:?}", img_delta.options);
+    //         }
+    //         for p in clipped_primitives {
+    //             info!("prim: {:?}, {:?}", p.clip_rect, p.primitive);
+    //         }
+    //         self.egui_once = false;
+    //     }
+    // }
 
     fn handle_platform_output(&self, _platform_output: egui::PlatformOutput) {}
 

@@ -1,8 +1,5 @@
-use std::iter::repeat_with;
-
 use fastrand::Rng;
 use glam::{U16Vec3, UVec3};
-use log::info;
 
 use crate::mesh::Side;
 
@@ -107,27 +104,27 @@ impl Chunk {
         res
     }
 
-    pub fn at(&self, offset: U16Vec3) -> &BlockType {
-        &self.blocks[chunk_index_from_offset(&offset)]
-    }
+    // pub fn at(&self, offset: U16Vec3) -> &BlockType {
+    //     &self.blocks[chunk_index_from_offset(&offset)]
+    // }
 
     pub fn set(&mut self, offset: U16Vec3, block: BlockType) {
         self.blocks[chunk_index_from_offset(&offset)] = block;
     }
 
-    fn at_mut(&mut self, offset: U16Vec3) -> &mut BlockType {
-        &mut self.blocks[chunk_index_from_offset(&offset)]
-    }
+    // fn at_mut(&mut self, offset: U16Vec3) -> &mut BlockType {
+    //     &mut self.blocks[chunk_index_from_offset(&offset)]
+    // }
 
-    pub fn dirt_with_grass_on_top(world_position: UVec3) -> Chunk {
-        let mut res = Self::plain(world_position, BlockType::Dirt);
-        for x in 0..CHUNK_SIZE {
-            for z in 0..CHUNK_SIZE {
-                *res.at_mut(U16Vec3::new(x as _, CHUNK_SIZE as u16 - 1, z as _)) = BlockType::Grass;
-            }
-        }
-        res
-    }
+    // pub fn dirt_with_grass_on_top(world_position: UVec3) -> Chunk {
+    //     let mut res = Self::plain(world_position, BlockType::Dirt);
+    //     for x in 0..CHUNK_SIZE {
+    //         for z in 0..CHUNK_SIZE {
+    //             *res.at_mut(U16Vec3::new(x as _, CHUNK_SIZE as u16 - 1, z as _)) = BlockType::Grass;
+    //         }
+    //     }
+    //     res
+    // }
 
     pub fn get_block(&self, offset: U16Vec3) -> BlockType {
         self.blocks[chunk_index_from_offset(&offset)]
@@ -217,7 +214,7 @@ impl Into<BlockSideTextures> for BlockType {
             BlockType::Coal => three_of(BlockSideTexture::Coal),
             BlockType::Gold => three_of(BlockSideTexture::Gold),
             BlockType::Empty => three_of(BlockSideTexture::Unknown),
-            _ => three_of(BlockSideTexture::Pickaxe),
+            // _ => three_of(BlockSideTexture::Pickaxe),
         }
     }
 }

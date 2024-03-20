@@ -22,7 +22,7 @@ macro_rules! shader_def {
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum UniformTypes {
-    Texture,
+    // Texture,
     ModelMatrix,
     ViewMatrix,
     ProjMatrix,
@@ -54,9 +54,9 @@ impl CompiledShader {
         self.uniform_locations.get(&uniform)
     }
 
-    pub fn get_program(&self) -> WebProgramKey {
-        self.program_key
-    }
+    // pub fn get_program(&self) -> WebProgramKey {
+    //     self.program_key
+    // }
 
     pub fn set_matrix(&self, gl: &glow::Context, matrix_type: UniformTypes, value: &Mat4) {
         let location = self.get_uniform_location(matrix_type);

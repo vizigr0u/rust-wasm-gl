@@ -1,14 +1,10 @@
-use std::rc::Rc;
+use glow::HasContext;
 
-use gloo::events::EventListener;
-use glow::{HasContext, WebTextureKey};
-
-use log::{debug, info};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{
-    Document, HtmlImageElement, Performance, Request, RequestInit, RequestMode, Response,
-    WebGl2RenderingContext, Window,
+    Document, Performance, Request, RequestInit, RequestMode, Response, WebGl2RenderingContext,
+    Window,
 };
 
 pub fn set_panic_hook() {

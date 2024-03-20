@@ -56,13 +56,13 @@ impl TextureLoader {
         Ok(TextureLoader { pool })
     }
 
-    pub fn get_num_loading(&self) -> usize {
-        self.pool
-            .borrow()
-            .iter()
-            .filter(|tex| matches!(tex.status, TextureStatus::Busy(_, _)))
-            .count()
-    }
+    // pub fn get_num_loading(&self) -> usize {
+    //     self.pool
+    //         .borrow()
+    //         .iter()
+    //         .filter(|tex| matches!(tex.status, TextureStatus::Busy(_, _)))
+    //         .count()
+    // }
 
     pub fn load(
         &mut self,

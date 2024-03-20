@@ -3,7 +3,6 @@ use std::rc::Rc;
 use fastrand::Rng;
 use glam::{UVec3, Vec3};
 use glow::HasContext;
-use log::{info, warn};
 use wasm_bindgen::JsValue;
 
 use crate::camera::Camera;
