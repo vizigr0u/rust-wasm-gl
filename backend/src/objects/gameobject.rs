@@ -55,7 +55,6 @@ impl GameObject {
     pub fn update(&mut self, time: &Time) {
         if time.delta_time() > 0.0 {
             self.position += self.velocity * time.delta_time() as f32 * 0.001;
-            info!("Position: {:?}", self.position);
             self.transform_dirty = true;
         }
         if self.transform_dirty {

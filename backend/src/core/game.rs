@@ -146,7 +146,9 @@ impl Game {
     fn update(&mut self, gl: &glow::Context) -> Result<(), String> {
         if !self.is_paused {
             self.player.update(&self.time);
-            self.world.update(gl, &self.time);
+            if let Some(player) = self.player.get_gameobject() {
+                self.world.update(gl, &self.time, player.get_position())?;
+            }
         }
 
         if let Some(player) = self.player.get_gameobject() {

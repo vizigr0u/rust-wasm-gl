@@ -2,7 +2,7 @@ use std::{collections::HashMap, convert::TryInto, rc::Rc};
 
 use crate::core::{HandleInputs, InputEventType, InputState};
 use crate::shader_def;
-use crate::utils::GlState;
+use crate::utils::{GlRenderFlags, GlState};
 use crate::{core::Time, graphics::MeshRenderer};
 
 use crate::graphics::{Mesh, ShaderDef, UniformTypes, VertexAttrType};
@@ -49,6 +49,8 @@ pub struct EguiBackend {
     time: Time,
 }
 
+const RENDER_FLAGS: [GlRenderFlags; 1] = [GlRenderFlags::Blend];
+
 impl EguiBackend {
     pub fn new(gl: &glow::Context) -> Self {
         let program = unsafe {
@@ -69,7 +71,7 @@ impl EguiBackend {
         Self {
             egui_ctx: egui::Context::default(),
             // egui_once: true,
-            mesh_renderer: MeshRenderer::new(&program),
+            mesh_renderer: MeshRenderer::with_render_flags(&RENDER_FLAGS, &program),
             textures: HashMap::new(),
             current_events: Vec::new(),
             size: (800, 600),
@@ -92,22 +94,7 @@ impl EguiBackend {
             .tessellate(full_output.shapes, full_output.pixels_per_point);
 
         unsafe {
-            let state = GlState::save(gl);
-            gl.disable(glow::DEPTH_TEST);
-            gl.disable(glow::CULL_FACE);
-            gl.enable(glow::BLEND);
-            gl.blend_equation_separate(glow::FUNC_ADD, glow::FUNC_ADD);
-            gl.blend_func_separate(
-                // egui outputs colors with premultiplied alpha:
-                glow::ONE,
-                glow::ONE_MINUS_SRC_ALPHA,
-                // Less important, but this is technically the correct alpha blend function
-                // when you want to make use of the framebuffer alpha (for screenshots, compositing, etc).
-                glow::ONE_MINUS_DST_ALPHA,
-                glow::ONE,
-            );
             self.paint(gl, full_output.textures_delta, clipped_primitives);
-            state.restore(gl);
         }
     }
 
@@ -143,6 +130,19 @@ impl EguiBackend {
                         UniformTypes::ProjMatrix,
                         &self.make_projection(800.0, 600.0),
                     );
+                    unsafe {
+                        gl.enable(glow::BLEND);
+                        gl.blend_equation_separate(glow::FUNC_ADD, glow::FUNC_ADD);
+                        gl.blend_func_separate(
+                            // egui outputs colors with premultiplied alpha:
+                            glow::ONE,
+                            glow::ONE_MINUS_SRC_ALPHA,
+                            // Less important, but this is technically the correct alpha blend function
+                            // when you want to make use of the framebuffer alpha (for screenshots, compositing, etc).
+                            glow::ONE_MINUS_DST_ALPHA,
+                            glow::ONE,
+                        );
+                    }
                     self.mesh_renderer.render(gl);
                 }
                 _ => {
