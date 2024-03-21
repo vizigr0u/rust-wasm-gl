@@ -1,7 +1,7 @@
 mod game;
-mod inputsystem;
+mod inputs;
 mod time;
 
 pub use game::Game;
-pub use inputsystem::*;
+pub use inputs::*;
 pub use time::Time;

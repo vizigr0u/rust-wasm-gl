@@ -37,14 +37,26 @@ pub struct Game {
     input_system: InputSystem,
     loaded_textures: Vec<Rc<TextureDef>>,
     time: Time,
-    show_menu: bool,
-    show_info: bool,
+    is_paused: bool,
+    gui_state: GuiState,
     tick_times: [f64; 30],
     tick_time: f64,
     tick_index: usize,
     gizmo: Gizmo,
 
     egui: Option<EguiBackend>,
+}
+
+#[derive(Default, Debug)]
+struct GuiState {
+    show_pause_menu: bool,
+    show_info: bool,
+}
+
+impl GuiState {
+    pub fn eats_input(&self) -> bool {
+        self.show_pause_menu
+    }
 }
 
 impl Game {
@@ -72,10 +84,10 @@ impl Game {
                 },
             ),
             input_system: InputSystem::new()?,
+            is_paused: false,
             time: Time::default(),
             egui: None,
-            show_menu: false,
-            show_info: true,
+            gui_state: GuiState::default(),
             tick_time: 0.0,
             tick_times: [0.0; 30],
             tick_index: 0,
@@ -109,22 +121,40 @@ impl Game {
 
     pub fn tick(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
         let start = performance_now();
-        self.update(gl, time)?;
+
+        self.time.update(time);
+
+        self.handle_inputs();
+
+        self.update(gl)?;
+
+        self.update_gui();
+
         self.render(gl)?;
-        let dt = performance_now() - start;
-        self.tick_times[self.tick_index] = dt;
+
+        let frame_time = performance_now() - start;
+        self.update_fps_report(frame_time);
+
+        Ok(())
+    }
+
+    fn update_gui(&mut self) {
+        self.gui_state.show_pause_menu = self.is_paused;
+        if let Some(egui) = &mut self.egui {
+            egui.set_time(&self.time);
+        }
+    }
+
+    fn update_fps_report(&mut self, frame_time: f64) {
+        self.tick_times[self.tick_index] = frame_time;
         self.tick_index = (self.tick_index + 1) % self.tick_times.len();
         if self.tick_index == 0 {
             self.tick_time = self.tick_times.iter().sum::<f64>() / self.tick_times.len() as f64;
         }
-        Ok(())
     }
 
-    fn update(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
-        self.time.update(time);
-        self.handle_inputs();
-
-        if !self.show_menu {
+    fn update(&mut self, gl: &glow::Context) -> Result<(), String> {
+        if !self.is_paused {
             self.world.update(gl, &self.time);
         }
 
@@ -135,17 +165,17 @@ impl Game {
         Ok(())
     }
 
-    pub fn handle_inputs(&mut self) {
+    fn handle_inputs(&mut self) {
         let inputs = self.input_system.get_inputs();
 
         for event in inputs.get_events() {
             match event {
                 InputEventType::KeyDown(event) => {
                     if inputs.is_key_down("Escape") {
-                        self.show_menu = !self.show_menu;
+                        self.is_paused = !self.is_paused;
                     }
                     if inputs.is_key_down("F2") {
-                        self.show_info = !self.show_info;
+                        self.gui_state.show_info = !self.gui_state.show_info;
                         event.prevent_default();
                     }
                 }
@@ -153,13 +183,13 @@ impl Game {
             }
         }
 
-        if !self.show_menu {
-            self.camera.handle_inputs(&inputs);
-        } else {
-            if let Some(egui) = &mut self.egui {
-                egui.set_time(&self.time);
-                egui.handle_inputs(&inputs);
+        match self.gui_state.eats_input() {
+            true => {
+                if let Some(egui) = &mut self.egui {
+                    egui.handle_inputs(&inputs);
+                }
             }
+            false => self.camera.handle_inputs(&inputs),
         }
 
         self.input_system.clear_events();
@@ -173,8 +203,9 @@ impl Game {
         }
         self.world.render(gl, &self.camera);
 
-        self.draw_ui(gl);
         self.gizmo.render_lazy(gl, &self.camera);
+
+        self.draw_ui(gl);
 
         Ok(())
     }
@@ -182,12 +213,12 @@ impl Game {
     fn draw_ui(&mut self, gl: &glow::Context) {
         if let Some(egui) = &mut self.egui {
             egui.render_ui(gl, |ctx| {
-                if self.show_menu {
+                if self.is_paused {
                     egui::Window::new("PAUSE").show(ctx, |ui| {
                         ui.label("Game is paused");
                     });
                 }
-                if self.show_info {
+                if self.gui_state.show_info {
                     egui::Window::new("Game Info").show(ctx, |ui| {
                         ui.label(format!(
                             "FPS: {:.1}\nWorld: {}",
