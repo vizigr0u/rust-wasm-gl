@@ -3,6 +3,10 @@ use std::rc::Rc;
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 use log::warn;
 
+use crate::utils;
+use crate::utils::GlRenderFlags;
+use crate::utils::GlState;
+
 use super::Mesh;
 use super::ShaderProgram;
 
@@ -13,12 +17,18 @@ enum DisplayData {
     Elements(Option<WebVertexArrayKey>, Option<WebBufferKey>, usize),
 }
 
+const DEFAULT_FLAGS: [GlRenderFlags; 3] = [
+    GlRenderFlags::CullFace,
+    GlRenderFlags::Blend,
+    GlRenderFlags::DepthTest,
+];
+
 #[derive(Debug)]
 pub struct MeshRenderer {
     program: Rc<ShaderProgram>,
     primitive_type: u32,
     display_data: DisplayData,
-    // vertex_count: i32,
+    render_flags: &'static [GlRenderFlags], // vertex_count: i32,
 }
 
 impl MeshRenderer {
@@ -32,7 +42,17 @@ impl MeshRenderer {
             primitive_type: glow::TRIANGLES,
             // vertex_count: 0,
             program: program.clone(),
+            render_flags: &DEFAULT_FLAGS,
         }
+    }
+
+    pub fn with_render_flags(
+        render_flags: &'static [GlRenderFlags],
+        program: &Rc<ShaderProgram>,
+    ) -> Self {
+        let mut result = Self::new(program);
+        result.render_flags = render_flags;
+        result
     }
 
     pub fn set_mesh(&mut self, gl: &glow::Context, mesh: Rc<Mesh>) -> Result<(), String> {
@@ -111,6 +131,8 @@ impl MeshRenderer {
     }
 
     pub fn render(&self, gl: &glow::Context) {
+        let state = GlState::save(gl);
+        self.set_gl_flags(gl);
         match self.display_data {
             DisplayData::None => {}
             DisplayData::Array(vao, vertex_count) => unsafe {
@@ -125,5 +147,24 @@ impl MeshRenderer {
                 gl.draw_elements(self.primitive_type as _, count as _, glow::UNSIGNED_INT, 0);
             },
         }
+        state.restore(gl);
+    }
+
+    fn set_gl_flags(&self, gl: &glow::Context) {
+        GlState::set_flag(
+            gl,
+            GlRenderFlags::CullFace,
+            self.render_flags.contains(&utils::GlRenderFlags::CullFace),
+        );
+        GlState::set_flag(
+            gl,
+            GlRenderFlags::Blend,
+            self.render_flags.contains(&utils::GlRenderFlags::Blend),
+        );
+        GlState::set_flag(
+            gl,
+            GlRenderFlags::DepthTest,
+            self.render_flags.contains(&utils::GlRenderFlags::DepthTest),
+        )
     }
 }

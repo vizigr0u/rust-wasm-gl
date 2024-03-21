@@ -82,6 +82,13 @@ pub async fn run(repo: String) -> Result<JsValue, JsValue> {
     Ok(json)
 }
 
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub enum GlRenderFlags {
+    DepthTest = glow::DEPTH_TEST as isize,
+    CullFace = glow::CULL_FACE as isize,
+    Blend = glow::BLEND as isize,
+}
+
 pub struct GlState {
     pub depth_test: bool,
     pub cull_face: bool,
@@ -92,23 +99,23 @@ impl GlState {
     pub fn save(gl: &glow::Context) -> Self {
         unsafe {
             Self {
-                depth_test: gl.is_enabled(glow::DEPTH_TEST),
-                cull_face: gl.is_enabled(glow::CULL_FACE),
-                blend: gl.is_enabled(glow::BLEND),
+                depth_test: gl.is_enabled(GlRenderFlags::DepthTest as _),
+                cull_face: gl.is_enabled(GlRenderFlags::CullFace as _),
+                blend: gl.is_enabled(GlRenderFlags::Blend as _),
             }
         }
     }
     pub fn restore(&self, gl: &glow::Context) {
-        GlState::restore_parameter(gl, glow::DEPTH_TEST, self.depth_test);
-        GlState::restore_parameter(gl, glow::CULL_FACE, self.cull_face);
-        GlState::restore_parameter(gl, glow::BLEND, self.blend);
+        GlState::set_flag(gl, GlRenderFlags::DepthTest, self.depth_test);
+        GlState::set_flag(gl, GlRenderFlags::CullFace, self.cull_face);
+        GlState::set_flag(gl, GlRenderFlags::Blend, self.blend);
     }
 
-    fn restore_parameter(gl: &glow::Context, param: u32, value: bool) {
+    pub fn set_flag(gl: &glow::Context, param: GlRenderFlags, value: bool) {
         if value {
-            unsafe { gl.enable(param) };
+            unsafe { gl.enable(param as _) };
         } else {
-            unsafe { gl.disable(param) };
+            unsafe { gl.disable(param as _) };
         }
     }
 }

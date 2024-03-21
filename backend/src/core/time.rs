@@ -7,7 +7,7 @@ pub struct Time {
 impl Time {
     pub fn update(&mut self, time: f64) {
         if let Some(previous_time) = self.previous_time {
-            self.delta_time = previous_time - time;
+            self.delta_time = time - previous_time;
         }
         self.previous_time = Some(time);
     }

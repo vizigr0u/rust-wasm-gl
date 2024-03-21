@@ -6,8 +6,11 @@ use log::info;
 use super::{GameObject, LazyRenderGameObject, MakeRenderer};
 
 use crate::{
+    core::Time,
     graphics::{Mesh, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
+    objects::gameobject::Transform,
     shader_def,
+    utils::GlRenderFlags,
 };
 
 #[derive(Debug)]
@@ -19,7 +22,7 @@ pub struct CreateGizmoRenderer {
 impl MakeRenderer for CreateGizmoRenderer {
     fn make_renderer(&self, gl: &glow::Context) -> Result<Rc<MeshRenderer>, String> {
         let program = compile_shader(gl)?;
-        let mut renderer = MeshRenderer::new(&program);
+        let mut renderer = MeshRenderer::with_render_flags(&GIZMO_GL_PARAMS, &program);
         let mesh = Mesh {
             data: GIZMO_VERTICES.to_vec(),
             layout: vec![(VertexAttrType::Position, 3), (VertexAttrType::Color, 3)],
@@ -34,7 +37,6 @@ impl MakeRenderer for CreateGizmoRenderer {
         gameobject.set_position(self.origin);
         gameobject.set_scale(Vec3::ONE * self.size);
         info!("Created Gizmo at {:?}, size: {}", self.origin, self.size);
-        gameobject.update();
     }
 }
 
@@ -54,6 +56,8 @@ impl Gizmo {
         }
     }
 }
+
+const GIZMO_GL_PARAMS: [GlRenderFlags; 1] = [GlRenderFlags::DepthTest];
 
 const GIZMO_VERTICES: [f32; 36] = [
     0.0, 0.0, 0.0, 1.0, 0.0, 0.0, //

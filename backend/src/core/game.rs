@@ -1,14 +1,14 @@
 use std::rc::Rc;
 
 use fastrand::Rng;
-use glam::{UVec3, Vec3};
+use glam::{vec3, UVec3, Vec3};
 use glow::HasContext;
 use wasm_bindgen::JsValue;
 
 use crate::{
     graphics::{Camera, TextureDef, TextureLoader, TextureType},
     gui::EguiBackend,
-    objects::Gizmo,
+    objects::{Gizmo, Player, Transform},
     utils::performance_now,
     world::{TestGenerator, World},
 };
@@ -43,6 +43,7 @@ pub struct Game {
     tick_time: f64,
     tick_index: usize,
     gizmo: Gizmo,
+    player: Player,
 
     egui: Option<EguiBackend>,
 }
@@ -66,23 +67,11 @@ impl Game {
             texture_loader: TextureLoader::new(10)?,
             world: World::random(WORLD_SIZE, make_generator(rng)),
             loaded_textures: Vec::new(),
-            camera: Camera::new(
-                Vec3 {
-                    x: -10.0,
-                    y: 60.0,
-                    z: -30.0,
-                },
-                Vec3 {
-                    x: 0.5,
-                    y: -0.3,
-                    z: 0.8,
-                },
-                Vec3 {
-                    x: 0.2,
-                    y: 1.0,
-                    z: 0.2,
-                },
-            ),
+            camera: Camera::new(Vec3 {
+                x: -10.0,
+                y: 5.0,
+                z: 0.0,
+            }),
             input_system: InputSystem::new()?,
             is_paused: false,
             time: Time::default(),
@@ -92,6 +81,7 @@ impl Game {
             tick_times: [0.0; 30],
             tick_index: 0,
             gizmo: Gizmo::new(Vec3::ZERO, 10.0),
+            player: Player::new(vec3(0.0, 0.5, 0.0)),
         };
 
         Ok(game)
@@ -155,12 +145,16 @@ impl Game {
 
     fn update(&mut self, gl: &glow::Context) -> Result<(), String> {
         if !self.is_paused {
+            self.player.update(&self.time);
             self.world.update(gl, &self.time);
         }
 
+        if let Some(player) = self.player.get_gameobject() {
+            self.camera.target = player.get_position();
+        }
         self.camera.update(&self.time);
 
-        self.gizmo.update();
+        self.gizmo.update(&self.time);
 
         Ok(())
     }
@@ -189,7 +183,10 @@ impl Game {
                     egui.handle_inputs(&inputs);
                 }
             }
-            false => self.camera.handle_inputs(&inputs),
+            false => {
+                self.camera.handle_inputs(&inputs);
+                self.player.handle_inputs(&inputs);
+            }
         }
 
         self.input_system.clear_events();
@@ -203,6 +200,7 @@ impl Game {
         }
         self.world.render(gl, &self.camera);
 
+        self.player.render_lazy(gl, &self.camera);
         self.gizmo.render_lazy(gl, &self.camera);
 
         self.draw_ui(gl);

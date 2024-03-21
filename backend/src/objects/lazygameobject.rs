@@ -4,6 +4,7 @@ use glow::HasContext;
 use log::info;
 
 use crate::{
+    core::Time,
     graphics::{Camera, MeshRenderer},
     utils::GlState,
 };
@@ -24,22 +25,14 @@ where
     pub renderer_creator: R,
 }
 
-impl<R> AsRef<GameObject> for LazyRenderGameObject<R>
-where
-    R: MakeRenderer,
-{
-    fn as_ref(&self) -> &GameObject {
-        &self
-            .gameobject
-            .as_ref()
-            .expect("Cant get gameobject - call render_lazy or load first")
-    }
-}
-
 impl<R> LazyRenderGameObject<R>
 where
     R: MakeRenderer,
 {
+    pub fn get_gameobject(&self) -> Option<&GameObject> {
+        self.gameobject.as_ref()
+    }
+
     pub fn render_lazy(&mut self, gl: &glow::Context, camera: &Camera) {
         if self.gameobject.is_none() {
             self.load(gl);
@@ -64,9 +57,9 @@ where
         self.gameobject = Some(gameobject);
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, time: &Time) {
         if let Some(go) = self.gameobject.as_mut() {
-            go.update();
+            go.update(time);
         }
     }
 }
