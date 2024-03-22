@@ -112,7 +112,7 @@ impl HandleInputs for Camera {
                         MIN_CAMERA_DISTANCE,
                         MAX_CAMERA_DISTANCE,
                     );
-                    info!("Camera offset changed to: {}", self.target_offset);
+                    // info!("Camera offset changed to: {}", self.target_offset);
                 }
                 _ => (),
             }
