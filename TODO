@@ -5,6 +5,7 @@ Todo:
   ✔ show FPS @done(24-03-19 00:12)
   ✔ publish github page @done(24-03-10 00:12)
   ✔ Add gizmo @done(24-03-19 23:42)
+  ☐ dont generate/draw empty chunks ;D
   ☐ Optimize chunk - cull faces between other chunks
   ☐ MOAR chunk optimization ideas: https://www.youtube.com/watch?v=40JzyaOYJeY
   ☐ load mesh

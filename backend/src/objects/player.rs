@@ -54,6 +54,13 @@ impl Player {
             renderer_creator: CreatePlayerRenderer { origin },
         }
     }
+
+    pub fn get_position(&self) -> Vec3 {
+        match &self.gameobject {
+            Some(go) => go.get_position(),
+            None => Default::default(),
+        }
+    }
 }
 
 impl HandleInputs for Player {

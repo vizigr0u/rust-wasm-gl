@@ -37,13 +37,13 @@ impl Into<BlockType> for u8 {
 }
 
 pub trait ChunkGenerator {
-    fn generate(&mut self, pos: &IVec3) -> Chunk;
+    fn generate(&mut self, chunk_pos: &IVec3) -> Chunk;
 }
 
 pub struct EmptyChunkGenerator;
 
 impl ChunkGenerator for EmptyChunkGenerator {
-    fn generate(&mut self, _pos: &IVec3) -> Chunk {
+    fn generate(&mut self, _chunk_pos: &IVec3) -> Chunk {
         Chunk::default()
     }
 }
@@ -54,15 +54,15 @@ pub struct RandomChunkGenerator {
 }
 
 impl ChunkGenerator for RandomChunkGenerator {
-    fn generate(&mut self, pos: &IVec3) -> Chunk {
-        Chunk::random(*pos, &mut self.rng)
+    fn generate(&mut self, chunk_pos: &IVec3) -> Chunk {
+        Chunk::random(*chunk_pos, &mut self.rng)
     }
 }
 
 #[derive(Debug)]
 pub struct Chunk {
     pub blocks: [BlockType; BLOCKS_PER_CHUNK],
-    pub world_position: IVec3,
+    pub chunk_position: IVec3,
 }
 
 const OPTIMIZATION_LEVEL: usize = 1;
@@ -71,33 +71,33 @@ impl Default for Chunk {
     fn default() -> Self {
         Chunk {
             blocks: [BlockType::Empty; BLOCKS_PER_CHUNK],
-            world_position: IVec3::ZERO,
+            chunk_position: IVec3::ZERO,
         }
     }
 }
 
 impl Chunk {
-    pub fn new(world_position: IVec3) -> Chunk {
+    pub fn new(chunk_pos: IVec3) -> Chunk {
         Chunk {
-            world_position,
+            chunk_position: chunk_pos,
             ..Default::default()
         }
     }
 
-    pub fn random(world_position: IVec3, rng: &mut Rng) -> Chunk {
-        let mut res = Self::new(world_position);
+    pub fn random(chunk_pos: IVec3, rng: &mut Rng) -> Chunk {
+        let mut res = Self::new(chunk_pos);
         for i in 0..BLOCKS_PER_CHUNK {
             res.blocks[i] = Into::<BlockType>::into(rng.u8(..9));
         }
         res
     }
 
-    pub fn empty(world_position: IVec3) -> Chunk {
-        Self::plain(world_position, BlockType::Empty)
+    pub fn empty(chunk_pos: IVec3) -> Chunk {
+        Self::plain(chunk_pos, BlockType::Empty)
     }
 
-    pub fn plain(world_position: IVec3, block: BlockType) -> Chunk {
-        let mut res = Self::new(world_position);
+    pub fn plain(chunk_pos: IVec3, block: BlockType) -> Chunk {
+        let mut res = Self::new(chunk_pos);
         for i in 0..BLOCKS_PER_CHUNK {
             res.blocks[i] = block;
         }
@@ -116,8 +116,8 @@ impl Chunk {
     //     &mut self.blocks[chunk_index_from_offset(&offset)]
     // }
 
-    // pub fn dirt_with_grass_on_top(world_position: IVec3) -> Chunk {
-    //     let mut res = Self::plain(world_position, BlockType::Dirt);
+    // pub fn dirt_with_grass_on_top(chunk_pos: IVec3) -> Chunk {
+    //     let mut res = Self::plain(chunk_pos, BlockType::Dirt);
     //     for x in 0..CHUNK_SIZE {
     //         for z in 0..CHUNK_SIZE {
     //             *res.at_mut(U16Vec3::new(x as _, CHUNK_SIZE as u16 - 1, z as _)) = BlockType::Grass;

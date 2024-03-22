@@ -15,8 +15,6 @@ use crate::{
 
 use super::{HandleInputs, InputEventType, InputSystem, Time};
 
-const WORLD_SIZE: UVec3 = UVec3::new(10, 10, 10);
-
 const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
 const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";
 const DIRT_TEXTURE_PATH: &str = "data/textures/blocks/dirt.png";
@@ -48,7 +46,7 @@ pub struct Game {
     egui: Option<EguiBackend>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct GuiState {
     show_pause_menu: bool,
     show_info: bool,
@@ -60,12 +58,21 @@ impl GuiState {
     }
 }
 
+impl Default for GuiState {
+    fn default() -> Self {
+        Self {
+            show_pause_menu: false,
+            show_info: true,
+        }
+    }
+}
+
 impl Game {
     pub fn new() -> Result<Self, JsValue> {
         let rng = Rng::with_seed(0);
         let game = Game {
             texture_loader: TextureLoader::new(10)?,
-            world: World::random(WORLD_SIZE, make_generator(rng)),
+            world: World::new(make_generator(rng)),
             loaded_textures: Vec::new(),
             camera: Camera::new(Vec3 {
                 x: -10.0,
@@ -88,12 +95,7 @@ impl Game {
     }
 
     pub unsafe fn load(&mut self, gl: &glow::Context) -> Result<(), String> {
-        for (path, t) in [
-            (GRASS_TEXTURE_PATH, TextureType::Texture2D),
-            (SAND_TEXTURE_PATH, TextureType::Texture2D),
-            (DIRT_TEXTURE_PATH, TextureType::Texture2D),
-            (BLOCKS_ATLAS_PATH, TextureType::Texture2DArray(16)),
-        ] {
+        for (path, t) in [(BLOCKS_ATLAS_PATH, TextureType::Texture2DArray(16))] {
             let key = self.texture_loader.load(gl, path, t)?;
             self.loaded_textures.push(Rc::new((t, key)));
         }
@@ -103,7 +105,7 @@ impl Game {
         gl.enable(glow::CULL_FACE);
 
         self.world
-            .setup_graphics(gl, self.loaded_textures[3].clone())?;
+            .setup_graphics(gl, self.loaded_textures[0].clone())?;
         self.egui = Some(EguiBackend::new(gl));
 
         Ok(())
@@ -220,11 +222,21 @@ impl Game {
                 }
                 if self.gui_state.show_info {
                     egui::Window::new("Game Info").show(ctx, |ui| {
-                        ui.label(format!(
-                            "FPS: {:.1}\nWorld: {}",
-                            1000.0 / self.tick_time,
-                            self.world.get_info()
-                        ));
+                        if let Some(player) = self.player.get_gameobject() {
+                            let pos = player.get_position();
+                            let chunk_pos = player.get_chunk_position();
+                            ui.label(format!(
+                                "Player position: {:.1},{:.1},{:.1} (chunk {},{},{})\nFPS: {:.1}\nWorld: {}",
+                                pos.x,
+                                pos.y,
+                                pos.z,
+                                chunk_pos.x,
+                                chunk_pos.y,
+                                chunk_pos.z,
+                                1000.0 / self.tick_time,
+                                self.world.get_info()
+                            ));
+                        }
                     });
                 }
             });

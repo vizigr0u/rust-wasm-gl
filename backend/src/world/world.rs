@@ -4,12 +4,13 @@ use glam::{ivec3, uvec3, IVec3, UVec3, Vec3};
 use glow::{HasContext, WebVertexArrayKey};
 use log::info;
 
-const MAX_CHUNKS_GENERATED_PER_FRAME: usize = 32;
-const MAX_CHUNKS_LOADED_PER_FRAME: usize = 16;
+const MAX_LOAD_CHUNK_DISTANCE: i32 = 5;
+const MAX_LOAD_CHUNK_DISTANCE_SQUARED: i32 = MAX_LOAD_CHUNK_DISTANCE * MAX_LOAD_CHUNK_DISTANCE;
+const MAX_MESH_TO_KEEP: usize = 1000;
 
-const CHUNK_LOADING_WEIGHT: f32 = 1.0;
-const CHUNK_GENERATION_WEIGHT: f32 = 0.5;
-const MAX_LOAD_PER_FRAME: f32 = 16.0;
+// const CHUNK_LOADING_WEIGHT: f32 = 1.0;
+// const CHUNK_GENERATION_WEIGHT: f32 = 0.5;
+const MAX_LOADS_PER_FRAME: usize = 16;
 
 use crate::{
     core::Time,
@@ -19,6 +20,8 @@ use crate::{
     shader_def,
     world::{Chunk, ChunkGenerator, CHUNK_SIZE},
 };
+
+use super::chunk;
 
 #[derive(Debug)]
 struct GraphicContext {
@@ -38,49 +41,69 @@ struct CurrentChunk {
     mesh: Option<LoadedChunkMesh>,
 }
 
+type OffsetPriority = Vec<IVec3>;
+
+fn make_offset_priority(size: i32) -> OffsetPriority {
+    let total_offsets = size * size * size;
+    let mut offsets = Vec::with_capacity(total_offsets as _);
+    for z in -size + 1..size {
+        for y in -size + 1..size {
+            for x in -size + 1..size {
+                offsets.push(ivec3(x, y, z));
+            }
+        }
+    }
+    offsets.sort_by(|p, q| p.length_squared().cmp(&q.length_squared()));
+    info!(
+        "offset: {}, {}, ..., {}, {}",
+        offsets[0],
+        offsets[1],
+        offsets[total_offsets as usize - 2],
+        offsets[total_offsets as usize - 1]
+    );
+    offsets
+}
+
 #[derive(Debug)]
 pub struct World<G>
 where
     G: ChunkGenerator,
 {
     chunks: HashMap<IVec3, CurrentChunk>,
-    size: UVec3,
     loaded_vertices: usize,
     // loaded_meshes: Vec<LoadedChunkMesh>,
     graphics: Option<GraphicContext>,
     generator: G,
+    last_computed_chunk_pos: Option<IVec3>,
+    offset_priority: OffsetPriority,
+    chunks_to_load: Vec<IVec3>,
 }
 
 impl<G> World<G>
 where
     G: ChunkGenerator,
 {
-    pub fn random(size: UVec3, generator: G) -> Self {
-        let num_chunks = (size.x * size.y * size.z) as usize;
-        info!("Creating world with {} chunks", num_chunks);
+    pub fn new(generator: G) -> Self {
+        info!("Creating world");
+        let offset_priority = make_offset_priority(MAX_LOAD_CHUNK_DISTANCE);
 
         Self {
             chunks: HashMap::new(),
-            size,
             graphics: None,
             loaded_vertices: 0,
             generator,
+            offset_priority,
+            last_computed_chunk_pos: None,
+            chunks_to_load: Vec::with_capacity(1000),
         }
     }
 
     pub fn get_info(&self) -> String {
-        let max_chunks = (self.size.x * self.size.y * self.size.z) as usize;
-        if self.chunks.len() < max_chunks {
-            return format!("Loading...{}/{}", self.chunks.len(), max_chunks);
-        }
         let vertex_count = self.loaded_vertices;
         let memory_used = (vertex_count * size_of::<f32>()) as f32 / 1000000.0;
         let loaded_meshes = self.chunks.values().filter(|c| c.mesh.is_some()).count();
         format!(
-            "size: {}x{}x{} - {}/{} chunks\n{vertex_count} vertices - {memory_used:.3} MB",
-            self.size.x,
-            self.size.y,
-            self.size.z,
+            "{}/{} chunks\n{vertex_count} vertices - {memory_used:.3} MB",
             loaded_meshes,
             self.chunks.len(),
         )
@@ -138,55 +161,65 @@ where
         _time: &Time,
         player_pos: Vec3,
     ) -> Result<(), String> {
-        let player_pos = (player_pos / CHUNK_SIZE as f32).as_ivec3();
-        let max_dist = ivec3(15, 2, 15);
-        for c in self.chunks.values_mut() {
-            if let Some(_) = &c.mesh {
-                if (c.chunk.world_position.x - player_pos.x).abs() > max_dist.x
-                    || (c.chunk.world_position.y - player_pos.y).abs() > max_dist.y
-                    || (c.chunk.world_position.z - player_pos.z).abs() > max_dist.z
-                {
-                    c.mesh = None;
-                }
-            }
-        }
-        let mut loading_budget = MAX_LOAD_PER_FRAME;
-        for x in 0..=max_dist.x {
-            for y in 0..=max_dist.y {
-                for z in 0..=max_dist.z {
-                    for p in [player_pos - ivec3(x, y, z), player_pos + ivec3(x, y, z)] {
-                        if loading_budget <= 0.0 {
-                            info!("budget exhausted");
-                            return Ok(());
-                        }
-                        if self.chunks.get(&p).is_none() {
-                            info!("generating chunk {}", p);
-                            loading_budget -= CHUNK_GENERATION_WEIGHT;
-                            self.chunks.insert(
-                                p,
-                                CurrentChunk {
-                                    chunk: self.generator.generate(&p),
-                                    mesh: None,
-                                },
-                            );
-                        }
-                        if loading_budget > 0.0
-                            && self.chunks.get(&p).is_some_and(|c| c.mesh.is_none())
-                        {
-                            self.chunks.entry(p).and_modify(|c| {
-                                info!("loading chunk {}", p);
-                                loading_budget -= CHUNK_LOADING_WEIGHT;
-                                c.mesh = Some(
-                                    LoadedChunkMesh::load(gl, &c.chunk).expect("can't load mesh"),
-                                );
-                            });
-                        }
+        let player_block_pos = player_pos.as_ivec3();
+        let player_chunk_pos = player_block_pos / CHUNK_SIZE as i32;
 
-                        if z == 0 && y == 0 && x == 0 {
-                            break;
-                        }
+        if self.last_computed_chunk_pos != Some(player_chunk_pos) {
+            info!("Recompute for chunk pos: {player_chunk_pos:?}");
+
+            let mut chunks_we_can_unload = Vec::with_capacity(1000);
+            for c in self.chunks.values() {
+                if let Some(_) = &c.mesh {
+                    let chunk_pos = c.chunk.chunk_position;
+                    if player_chunk_pos.distance_squared(chunk_pos)
+                        > MAX_LOAD_CHUNK_DISTANCE_SQUARED
+                    {
+                        chunks_we_can_unload.push(chunk_pos);
                     }
                 }
+            }
+            chunks_we_can_unload.sort_by(|a, b| {
+                a.distance_squared(player_chunk_pos)
+                    .cmp(&b.distance_squared(player_chunk_pos))
+            });
+            if chunks_we_can_unload.len() > MAX_MESH_TO_KEEP {
+                info!(
+                    "Unloading {} chunks",
+                    chunks_we_can_unload.len() - MAX_MESH_TO_KEEP
+                );
+                for chunk_pos in chunks_we_can_unload.drain(MAX_MESH_TO_KEEP..) {
+                    self.chunks.get_mut(&chunk_pos).unwrap().mesh = None;
+                }
+            }
+
+            let player_chunk_pos = player_block_pos / CHUNK_SIZE as i32;
+            for offset in &self.offset_priority {
+                let chunk_pos = player_chunk_pos + *offset;
+                let chunk = self.chunks.get(&chunk_pos);
+                if chunk.is_none() || chunk.unwrap().mesh.is_none() {
+                    self.chunks_to_load.push(chunk_pos);
+                }
+            }
+            self.last_computed_chunk_pos = Some(player_chunk_pos);
+        }
+        let chunks_to_load = self.chunks_to_load.len();
+        if chunks_to_load > 0 {
+            let chunks_to_load = std::cmp::min(chunks_to_load, MAX_LOADS_PER_FRAME);
+            info!("Loading {chunks_to_load} chunks this frame");
+            for chunk_pos in self.chunks_to_load.drain(0..chunks_to_load) {
+                let chunk = self.chunks.get(&chunk_pos);
+                if !chunk.is_some() {
+                    self.chunks.insert(
+                        chunk_pos,
+                        CurrentChunk {
+                            chunk: self.generator.generate(&chunk_pos),
+                            mesh: None,
+                        },
+                    );
+                }
+                self.chunks.entry(chunk_pos).and_modify(|c| {
+                    c.mesh = Some(LoadedChunkMesh::load(gl, &c.chunk).expect("can't load mesh"));
+                });
             }
         }
         Ok(())
@@ -201,11 +234,13 @@ where
                 program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
                 program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
                 let world_pos_position = program.get_uniform_location(UniformTypes::WorldPosition);
-
+                gl.enable(glow::CULL_FACE);
+                gl.enable(glow::DEPTH_TEST);
+                gl.disable(glow::BLEND);
                 for c in self.chunks.values() {
                     let chunk = &c.chunk;
                     if let Some(mesh) = &c.mesh {
-                        let world_pos = chunk.world_position.as_vec3() * CHUNK_SIZE as f32;
+                        let world_pos = chunk.chunk_position.as_vec3() * CHUNK_SIZE as f32;
                         gl.uniform_3_f32(world_pos_position, world_pos.x, world_pos.y, world_pos.z);
 
                         gl.bind_vertex_array(Some(mesh.vertex_array));
@@ -219,7 +254,6 @@ where
 
 impl LoadedChunkMesh {
     fn load(gl: &glow::Context, chunk: &Chunk) -> Result<Self, String> {
-        info!("LoadedChunkMesh loading chunk {}", chunk.world_position);
         let vertex_data = chunk.to_vertex_data();
         unsafe {
             let vao = gl.create_vertex_array()?;

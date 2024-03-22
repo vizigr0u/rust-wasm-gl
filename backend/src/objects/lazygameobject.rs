@@ -36,15 +36,8 @@ where
     pub fn render_lazy(&mut self, gl: &glow::Context, camera: &Camera) {
         if self.gameobject.is_none() {
             self.load(gl);
-            info!("Loaded gizmo");
-        }
-        let state = GlState::save(gl);
-        unsafe {
-            gl.disable(glow::DEPTH_TEST);
-            gl.disable(glow::CULL_FACE);
         }
         self.gameobject.as_ref().unwrap().render(gl, camera);
-        state.restore(gl);
     }
 
     pub fn load(&mut self, gl: &glow::Context) {

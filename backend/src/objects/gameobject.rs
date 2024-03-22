@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use glam::IVec3;
 use glam::Mat4;
 use glam::Quat;
 use glam::Vec3;
@@ -13,6 +14,7 @@ use crate::graphics::MeshRenderer;
 use crate::graphics::TextureDef;
 use crate::graphics::TextureType;
 use crate::graphics::UniformTypes;
+use crate::world::CHUNK_SIZE;
 
 pub trait Transform {
     fn get_position(&self) -> Vec3;
@@ -23,6 +25,14 @@ pub trait Transform {
     fn set_scale(&mut self, scale: Vec3);
     fn get_velocity(&self) -> Vec3;
     fn set_velocity(&mut self, velocity: Vec3);
+
+    fn get_block_position(&self) -> IVec3 {
+        self.get_position().as_ivec3()
+    }
+
+    fn get_chunk_position(&self) -> IVec3 {
+        self.get_block_position() / CHUNK_SIZE as i32
+    }
 }
 
 #[derive(Debug)]

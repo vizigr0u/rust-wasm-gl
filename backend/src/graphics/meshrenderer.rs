@@ -131,7 +131,6 @@ impl MeshRenderer {
     }
 
     pub fn render(&self, gl: &glow::Context) {
-        let state = GlState::save(gl);
         self.set_gl_flags(gl);
         match self.display_data {
             DisplayData::None => {}
@@ -147,7 +146,6 @@ impl MeshRenderer {
                 gl.draw_elements(self.primitive_type as _, count as _, glow::UNSIGNED_INT, 0);
             },
         }
-        state.restore(gl);
     }
 
     fn set_gl_flags(&self, gl: &glow::Context) {

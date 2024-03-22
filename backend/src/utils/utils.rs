@@ -96,20 +96,20 @@ pub struct GlState {
 }
 
 impl GlState {
-    pub fn save(gl: &glow::Context) -> Self {
-        unsafe {
-            Self {
-                depth_test: gl.is_enabled(GlRenderFlags::DepthTest as _),
-                cull_face: gl.is_enabled(GlRenderFlags::CullFace as _),
-                blend: gl.is_enabled(GlRenderFlags::Blend as _),
-            }
-        }
-    }
-    pub fn restore(&self, gl: &glow::Context) {
-        GlState::set_flag(gl, GlRenderFlags::DepthTest, self.depth_test);
-        GlState::set_flag(gl, GlRenderFlags::CullFace, self.cull_face);
-        GlState::set_flag(gl, GlRenderFlags::Blend, self.blend);
-    }
+    // pub fn save(gl: &glow::Context) -> Self {
+    //     unsafe {
+    //         Self {
+    //             depth_test: gl.is_enabled(GlRenderFlags::DepthTest as _),
+    //             cull_face: gl.is_enabled(GlRenderFlags::CullFace as _),
+    //             blend: gl.is_enabled(GlRenderFlags::Blend as _),
+    //         }
+    //     }
+    // }
+    // pub fn restore(&self, gl: &glow::Context) {
+    //     GlState::set_flag(gl, GlRenderFlags::DepthTest, self.depth_test);
+    //     GlState::set_flag(gl, GlRenderFlags::CullFace, self.cull_face);
+    //     GlState::set_flag(gl, GlRenderFlags::Blend, self.blend);
+    // }
 
     pub fn set_flag(gl: &glow::Context, param: GlRenderFlags, value: bool) {
         if value {

@@ -13,7 +13,7 @@ use crate::core::{HandleInputs, InputEventType, InputState, Time};
 // const CAMERA_SPEED_FACTOR: f32 = 1.5;
 
 const DEFAULT_MOUSE_SENSITIVITY: f32 = 0.2;
-const MAX_CAMERA_DISTANCE: f32 = 100.0;
+const MAX_CAMERA_DISTANCE: f32 = 500.0;
 const MIN_CAMERA_DISTANCE: f32 = 1.1;
 const WHEEL_ZOOM_FACTOR: f32 = 1.15;
 // const MAX_MOUSE_SENSITIVITY: f32 = 1.0;
@@ -21,7 +21,7 @@ const WHEEL_ZOOM_FACTOR: f32 = 1.15;
 // const MOUSE_SENSITIVITY_FACTOR: f32 = 0.5;
 
 const NEAR_VIEW: f32 = 0.1;
-const FAR_VIEW: f32 = 300.0;
+const FAR_VIEW: f32 = 800.0;
 
 #[derive(Debug)]
 pub struct Camera {

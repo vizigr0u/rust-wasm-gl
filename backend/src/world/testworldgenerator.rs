@@ -30,15 +30,16 @@ fn dirt_with_grass_on_top(world_position: IVec3, rng: &mut Rng) -> Chunk {
 }
 
 impl ChunkGenerator for TestGenerator {
-    fn generate(&mut self, world_position: &IVec3) -> Chunk {
-        info!("Generating chunk at {:?}", world_position);
-        let world_position = *world_position;
-        match world_position.y {
-            -6 => Chunk::random(world_position, &mut self.rng),
-            -2 | -5 | -3 => Chunk::plain(world_position, BlockType::Stone),
-            -4 => Chunk::plain(world_position, BlockType::Lava),
-            -1 => dirt_with_grass_on_top(world_position, &mut self.rng),
-            _ => Chunk::empty(world_position),
+    fn generate(&mut self, chunk_position: &IVec3) -> Chunk {
+        let chunk_position = *chunk_position;
+        // info!("Generating chunk {:?}", chunk_position);
+        let block_height = (chunk_position).y * CHUNK_SIZE as i32;
+        match block_height {
+            -5 => Chunk::random(chunk_position, &mut self.rng),
+            -1 | -4 | -2 => Chunk::plain(chunk_position, BlockType::Stone),
+            -3 => Chunk::plain(chunk_position, BlockType::Lava),
+            0 => dirt_with_grass_on_top(chunk_position, &mut self.rng),
+            _ => Chunk::empty(chunk_position),
         }
     }
 }
