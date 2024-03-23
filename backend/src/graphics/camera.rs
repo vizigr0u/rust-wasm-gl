@@ -13,7 +13,7 @@ use crate::core::{HandleInputs, InputEventType, InputState, Time};
 // const CAMERA_SPEED_FACTOR: f32 = 1.5;
 
 const DEFAULT_MOUSE_SENSITIVITY: f32 = 0.2;
-const MAX_CAMERA_DISTANCE: f32 = 500.0;
+const MAX_CAMERA_DISTANCE: f32 = 800.0;
 const MIN_CAMERA_DISTANCE: f32 = 1.1;
 const WHEEL_ZOOM_FACTOR: f32 = 1.15;
 // const MAX_MOUSE_SENSITIVITY: f32 = 1.0;
@@ -21,7 +21,7 @@ const WHEEL_ZOOM_FACTOR: f32 = 1.15;
 // const MOUSE_SENSITIVITY_FACTOR: f32 = 0.5;
 
 const NEAR_VIEW: f32 = 0.1;
-const FAR_VIEW: f32 = 800.0;
+const FAR_VIEW: f32 = 1000.0;
 
 #[derive(Debug)]
 pub struct Camera {
@@ -32,7 +32,7 @@ pub struct Camera {
     pub target: Vec3,
     pub projection: Mat4,
     pub look_at: Mat4,
-    // mouse_sensitivity: f32,
+    mouse_sensitivity: f32,
 }
 
 impl Default for Camera {
@@ -57,7 +57,7 @@ impl Camera {
                 FAR_VIEW,
             ),
             look_at: Mat4::IDENTITY,
-            // mouse_sensitivity: DEFAULT_MOUSE_SENSITIVITY,
+            mouse_sensitivity: DEFAULT_MOUSE_SENSITIVITY,
         }
     }
 
@@ -87,13 +87,16 @@ impl HandleInputs for Camera {
         for e in inputs.get_events() {
             match e {
                 InputEventType::MouseMove(e) => {
-                    if e.buttons() % 1 == 1 {
-                        // let speed = self.mouse_sensitivity;
-                        // let d = inputs.get_mouse_delta();
-                        // let yaw = -d.x * speed.to_radians();
-                        // let pitch = -d.y * speed.to_radians();
+                    if e.buttons() % 2 == 1 {
+                        let speed = self.mouse_sensitivity;
+                        let d = inputs.get_mouse_delta();
+                        let yaw = -d.x * speed.to_radians();
+                        let pitch = -d.y * speed.to_radians();
 
-                        // let yaw_rotation = Quat::from_rotation_y(yaw);
+                        let yaw_rotation = Quat::from_rotation_y(yaw);
+                        let pitch_rotation = Quat::from_rotation_x(pitch);
+                        self.target_offset = pitch_rotation * yaw_rotation * self.target_offset;
+
                         // let forward = yaw_rotation.mul_vec3(self.forward).normalize();
                         // let right = yaw_rotation.mul_vec3(self.right).normalize();
 
