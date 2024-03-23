@@ -1,5 +1,6 @@
 use std::rc::Rc;
 
+use egui::{Label, RichText};
 use fastrand::Rng;
 use glam::{vec3, UVec3, Vec3};
 use glow::HasContext;
@@ -221,23 +222,31 @@ impl Game {
                     });
                 }
                 if self.gui_state.show_info {
-                    egui::Window::new("Game Info").show(ctx, |ui| {
-                        if let Some(player) = self.player.get_gameobject() {
-                            let pos = player.get_position();
-                            let chunk_pos = player.get_chunk_position();
-                            ui.label(format!(
-                                "Player position: {:.1},{:.1},{:.1} (chunk {},{},{})\nFPS: {:.1}\nWorld: {}",
-                                pos.x,
-                                pos.y,
-                                pos.z,
-                                chunk_pos.x,
-                                chunk_pos.y,
-                                chunk_pos.z,
-                                1000.0 / self.tick_time,
-                                self.world.get_info()
-                            ));
-                        }
-                    });
+                    // egui::Window::new("Game Info").show(ctx, |ui| {
+                        egui::Area::new("my_area")
+                            .show(ctx, |ui| {
+                                egui::Frame::none()
+                                .fill(egui::Color32::from_rgba_unmultiplied(20, 20, 20, 100))
+                                .show(ui, |ui| {
+
+                                    if let Some(player) = self.player.get_gameobject() {
+                                        let pos = player.get_position();
+                                        let chunk_pos = player.get_chunk_position();
+                                        ui.colored_label(egui::Color32::WHITE,RichText::new(format!(
+                                            "git rev: {}\nPlayer position: {:.1},{:.1},{:.1} (chunk {},{},{})\nFPS: {:.1}\nWorld: {}",
+                                            env!("GIT_HASH"),
+                                            pos.x,
+                                            pos.y,
+                                            pos.z,
+                                            chunk_pos.x,
+                                            chunk_pos.y,
+                                            chunk_pos.z,
+                                            1000.0 / self.tick_time,
+                                            self.world.get_info()
+                                        )).monospace());
+                                    }
+                                });
+                        });
                 }
             });
         }
