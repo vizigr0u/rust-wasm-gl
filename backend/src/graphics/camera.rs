@@ -95,8 +95,10 @@ impl HandleInputs for Camera {
 
                         let yaw_rotation = Quat::from_rotation_y(yaw);
                         let forward = self.target_offset.normalize();
-                        let pitch_rotation = if forward.dot(Vec3::Y).abs() > 0.9999 {
-                            Quat::IDENTITY
+                        let pitch_rotation = if forward.dot(Vec3::Y).abs() > 0.99 {
+                            let right = Vec3::Y.cross(forward).normalize();
+                            let pitch = pitch.clamp(-0.1, 0.1);
+                            Quat::from_axis_angle(right, pitch)
                         } else {
                             let right = Vec3::Y.cross(forward).normalize();
                             Quat::from_axis_angle(right, pitch)
