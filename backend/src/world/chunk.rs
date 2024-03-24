@@ -3,8 +3,7 @@ use glam::{IVec3, U16Vec3};
 
 use crate::graphics::Side;
 
-pub const CHUNK_SIZE: usize = 8;
-pub const BLOCKS_PER_CHUNK: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
+use super::{BLOCKS_PER_CHUNK, CHUNK_SIZE};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum BlockType {
@@ -36,33 +35,10 @@ impl Into<BlockType> for u8 {
     }
 }
 
-pub trait ChunkGenerator {
-    fn generate(&mut self, chunk_pos: &IVec3) -> Chunk;
-}
-
-pub struct EmptyChunkGenerator;
-
-impl ChunkGenerator for EmptyChunkGenerator {
-    fn generate(&mut self, _chunk_pos: &IVec3) -> Chunk {
-        Chunk::default()
-    }
-}
-
-#[derive(Debug)]
-pub struct RandomChunkGenerator {
-    pub rng: Rng,
-}
-
-impl ChunkGenerator for RandomChunkGenerator {
-    fn generate(&mut self, chunk_pos: &IVec3) -> Chunk {
-        Chunk::random(*chunk_pos, &mut self.rng)
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Chunk {
     pub blocks: [BlockType; BLOCKS_PER_CHUNK],
-    pub chunk_position: IVec3,
+    is_emtpy: bool,
 }
 
 const OPTIMIZATION_LEVEL: usize = 1;
@@ -71,33 +47,37 @@ impl Default for Chunk {
     fn default() -> Self {
         Chunk {
             blocks: [BlockType::Empty; BLOCKS_PER_CHUNK],
-            chunk_position: IVec3::ZERO,
+            is_emtpy: true,
         }
     }
 }
 
 impl Chunk {
-    pub fn new(chunk_pos: IVec3) -> Chunk {
+    pub fn new(is_emtpy: bool) -> Chunk {
         Chunk {
-            chunk_position: chunk_pos,
+            is_emtpy,
             ..Default::default()
         }
     }
 
-    pub fn random(chunk_pos: IVec3, rng: &mut Rng) -> Chunk {
-        let mut res = Self::new(chunk_pos);
+    pub fn is_empty(&self) -> bool {
+        self.is_emtpy
+    }
+
+    pub fn random(rng: &mut Rng) -> Chunk {
+        let mut res = Self::new(false);
         for i in 0..BLOCKS_PER_CHUNK {
             res.blocks[i] = Into::<BlockType>::into(rng.u8(..9));
         }
         res
     }
 
-    pub fn empty(chunk_pos: IVec3) -> Chunk {
-        Self::plain(chunk_pos, BlockType::Empty)
+    pub fn empty() -> Chunk {
+        Default::default()
     }
 
-    pub fn plain(chunk_pos: IVec3, block: BlockType) -> Chunk {
-        let mut res = Self::new(chunk_pos);
+    pub fn plain(block: BlockType) -> Chunk {
+        let mut res = Self::new(block == BlockType::Empty);
         for i in 0..BLOCKS_PER_CHUNK {
             res.blocks[i] = block;
         }
@@ -131,6 +111,9 @@ impl Chunk {
     }
 
     pub fn to_vertex_data(&self) -> Vec<i32> {
+        if self.is_empty() {
+            return Vec::new();
+        }
         let mut sides: Vec<ChunkSideData> = Vec::new();
         for x in 0..CHUNK_SIZE {
             for y in 0..CHUNK_SIZE {

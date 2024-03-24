@@ -8,12 +8,10 @@ use crate::core::Game;
 mod core;
 mod graphics;
 mod gui;
+pub mod math;
 mod objects;
 mod utils;
 mod world;
-
-#[cfg(not(any(target_arch = "wasm32")))]
-compile_error!("This project is for wasm only");
 
 cfg_if! {
     if #[cfg(feature = "console_log")] {
