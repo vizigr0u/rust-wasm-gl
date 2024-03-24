@@ -94,14 +94,14 @@ impl HandleInputs for Camera {
                         let pitch = -d.y * speed.to_radians();
 
                         let yaw_rotation = Quat::from_rotation_y(yaw);
-                        let pitch_rotation = Quat::from_rotation_x(pitch);
+                        let forward = self.target_offset.normalize();
+                        let pitch_rotation = if forward.dot(Vec3::Y).abs() > 0.9999 {
+                            Quat::IDENTITY
+                        } else {
+                            let right = Vec3::Y.cross(forward).normalize();
+                            Quat::from_axis_angle(right, pitch)
+                        };
                         self.target_offset = pitch_rotation * yaw_rotation * self.target_offset;
-
-                        // let forward = yaw_rotation.mul_vec3(self.forward).normalize();
-                        // let right = yaw_rotation.mul_vec3(self.right).normalize();
-
-                        // let pitch_rotation = Quat::from_axis_angle(right, pitch);
-                        // let forward = pitch_rotation.mul_vec3(forward).normalize();
                     }
                 }
                 InputEventType::MouseWheel(e) => {
