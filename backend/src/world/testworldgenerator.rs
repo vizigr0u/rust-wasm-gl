@@ -2,7 +2,7 @@ use fastrand::Rng;
 use glam::{IVec3, U16Vec3};
 use log::info;
 
-use super::{BlockType, Chunk, WorldGenerator, CHUNK_SIZE};
+use super::{BlockType, Chunk, ChunkPos, WorldGenerator, CHUNK_SIZE};
 
 #[derive(Debug)]
 pub struct TestGenerator {
@@ -30,8 +30,8 @@ fn dirt_with_grass_on_top(rng: &mut Rng) -> Chunk {
 }
 
 impl WorldGenerator for TestGenerator {
-    fn generate(&mut self, chunk_position: IVec3) -> Chunk {
-        match chunk_position.y {
+    fn generate(&mut self, chunk_position: ChunkPos) -> Chunk {
+        match chunk_position.as_vec().y {
             // -5 => Chunk::random(&mut self.rng),
             // -1 | -4 | -2 => Chunk::plain(BlockType::Stone),
             // -3 => Chunk::plain(BlockType::Lava),

@@ -1,11 +1,14 @@
 use glam::{ivec2, ivec3, IVec2, IVec3};
 use log::{info, warn};
 
-use crate::{math::AABB, world::ChunkPos};
+use crate::{
+    math::AABB,
+    world::{ChunkPos, PageChunkOffset, MAX_CHUNK_Y},
+};
 
 use super::{
     position::{PagePos, CHUNK_PAGE_SIZE, NUM_CHUNKS_PER_PAGE},
-    Chunk, WorldGenerator,
+    Chunk, WorldGenerator, MIN_CHUNK_Y,
 };
 
 const PAGE_LOAD_PER_FRAME: usize = 2;
@@ -30,19 +33,15 @@ impl Default for ChunkPage {
 
 impl ChunkPage {
     fn get_chunk(&self, chunk_pos: ChunkPos) -> Option<&Chunk> {
-        let index = Self::get_chunk_index(chunk_pos);
+        let offset: PageChunkOffset = chunk_pos.into();
+        let index = offset.as_index_in_page();
         self.chunks.get(index)
-    }
-
-    fn get_chunk_index(chunk_pos: ChunkPos) -> usize {
-        let p = chunk_pos.as_vec();
-        (p.x + CHUNK_PAGE_SIZE.x * (p.y + CHUNK_PAGE_SIZE.y * p.z)) as usize
     }
 
     fn get_pos_at_index(index: usize) -> ChunkPos {
         ivec3(
             index as i32 % CHUNK_PAGE_SIZE.x,
-            index as i32 / CHUNK_PAGE_SIZE.x % CHUNK_PAGE_SIZE.y,
+            index as i32 / CHUNK_PAGE_SIZE.x % CHUNK_PAGE_SIZE.y + MIN_CHUNK_Y,
             index as i32 / CHUNK_PAGE_SIZE.x / CHUNK_PAGE_SIZE.y,
         )
         .into()
@@ -82,17 +81,13 @@ impl ChunkPage {
     {
         self.position = page_pos;
         info!("Streaming: Filling chunk page {page_pos:?}");
-        let page_chunk_world_offset = Into::<ChunkPos>::into(page_pos).as_vec();
+        // let page_chunk_world_offset = Into::<ChunkPos>::into(page_pos).as_vec();
         for i in 0..NUM_CHUNKS_PER_PAGE {
-            let chunk_offset = Self::get_pos_at_index(i).as_vec();
-            let world_chunk_pos = ivec3(
-                page_chunk_world_offset.x + chunk_offset.x,
-                chunk_offset.y as i32,
-                page_chunk_world_offset.y + chunk_offset.z,
-            );
-            let chunk = generator.generate(world_chunk_pos);
+            let chunk_offset = PageChunkOffset::from_page_index(i);
+            let chunk_world_pos: ChunkPos = chunk_offset.to_chunk_pos(page_pos);
+            let chunk = generator.generate(chunk_world_pos);
             if !chunk.is_empty() {
-                self.content_bounds.add(world_chunk_pos);
+                self.content_bounds.add(chunk_world_pos.as_vec());
             }
             self.chunks[i] = chunk;
         }

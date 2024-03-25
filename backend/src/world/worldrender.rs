@@ -111,7 +111,7 @@ impl WorldRenderData {
                 gl.enable(glow::DEPTH_TEST);
                 gl.disable(glow::BLEND);
                 for (pos, vao) in self.chunks_to_draw.iter() {
-                    let block_pos: BlockPos = (*pos).into();
+                    let block_pos: BlockPos = (*pos).get_first_block();
                     let world_pos = block_pos.as_vec3();
                     gl.uniform_3_f32(world_pos_position, world_pos.x, world_pos.y, world_pos.z);
 
