@@ -12,16 +12,16 @@ pub const MIN_BLOCK_Y: i32 = MIN_CHUNK_Y * CHUNK_SIZE as i32;
 pub const MAX_BLOCK_Y: i32 = MAX_CHUNK_Y * CHUNK_SIZE as i32;
 pub const TOTAL_BLOCK_HEIGHT: i32 = TOTAL_CHUNK_HEIGHT * CHUNK_SIZE as i32;
 
-pub const CHUNK_PAGE_SIZE: IVec3 = IVec3 {
-    x: 4,
-    y: TOTAL_CHUNK_HEIGHT,
-    z: 4,
+pub const MIN_CHUNK_PAGE_OFFSET: IVec3 = IVec3 {
+    x: -3,
+    y: MIN_CHUNK_Y,
+    z: -3,
 };
 
-pub const MIN_CHUNK_PAGE_OFFSET: IVec3 = IVec3 {
-    x: -CHUNK_PAGE_SIZE.x / 2,
-    y: MIN_CHUNK_Y,
-    z: -CHUNK_PAGE_SIZE.z / 2,
+pub const CHUNK_PAGE_SIZE: IVec3 = IVec3 {
+    x: -MIN_CHUNK_PAGE_OFFSET.x * 2,
+    y: TOTAL_CHUNK_HEIGHT,
+    z: -MIN_CHUNK_PAGE_OFFSET.x * 2,
 };
 
 pub const NUM_CHUNKS_PER_PAGE: usize =

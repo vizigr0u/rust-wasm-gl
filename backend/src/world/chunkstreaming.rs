@@ -1,4 +1,7 @@
+use std::cmp::Ordering;
+
 use glam::{ivec2, ivec3, IVec2, IVec3};
+use itertools::Itertools;
 use log::{info, warn};
 
 use crate::{
@@ -161,7 +164,7 @@ where
         if self.pages_to_load.len() > 0 {
             if self.chunk_page_pool.len() < self.pages_to_load.len() {
                 info!("Streaming: Pool size too small - trying to free some pages");
-                self.free_some_pages(player_page_index);
+                self.free_some_pages(PAGE_LOAD_PER_FRAME, player_chunk_pos);
             }
             for _ in 0..PAGE_LOAD_PER_FRAME {
                 if let Some(page) = self.pages_to_load.pop() {
@@ -175,7 +178,7 @@ where
 
     fn on_new_page_index(&mut self, page_index: PagePos, player_chunk_pos: ChunkPos) {
         let page_offsets: &[IVec2] = &PAGE_OFFSETS_PRIORITY;
-        let page_offsets: &[IVec2] = &[ivec2(0, 0)];
+        // let page_offsets: &[IVec2] = &[ivec2(0, 0)];
         let new_pages_to_load: Vec<PagePos> = page_offsets
             .iter()
             .map(|offset| {
@@ -196,30 +199,38 @@ where
         });
     }
 
-    fn free_some_pages(&mut self, player_page_index: PagePos) {
-        let max_dist_sq = (2 * CHUNK_PAGE_SIZE).length_squared();
-
+    fn free_some_pages(&mut self, num_pages: usize, player_chunk_pos: ChunkPos) {
         // Iterate over the loaded_chunk_pages vector in reverse to remove items while iterating
-        let mut i = 0;
-        let mut changed = false;
-        while i < self.loaded_chunk_pages.len() {
-            let page = &self.loaded_chunk_pages[i];
-            let page_distance_sq = player_page_index
-                .as_vec()
-                .distance_squared(page.position.as_vec());
-
-            // If the distance exceeds the threshold, move the ChunkPage to the pool
-            if page_distance_sq > max_dist_sq {
-                // Remove the ChunkPage from loaded_chunk_pages and insert it into chunk_page_pool
+        let player_chunk_pos_vec = player_chunk_pos.as_vec();
+        let indices: Vec<usize> = self
+            .loaded_chunk_pages
+            .iter()
+            .map(|page| {
+                page.position
+                    .get_center_chunk_pos()
+                    .get_center_block_pos()
+                    .as_vec()
+                    .distance_squared(player_chunk_pos_vec)
+            })
+            .enumerate()
+            .sorted_by_key(|(_, pos_a)| *pos_a)
+            .take(num_pages)
+            .map(|(index, _)| index)
+            .sorted_by_key(|i| -(*i as i32))
+            .collect();
+        if indices.len() < num_pages {
+            warn!("Not enough pages to free");
+        } else {
+            debug_assert!(
+                indices.len() < 2 || indices[0] > indices[1],
+                "Pages should be in descending order"
+            );
+            for i in indices {
+                info!("Freeing page {:?}", self.loaded_chunk_pages[i].position);
                 let removed_page = self.loaded_chunk_pages.remove(i);
+                // TODO: free stuff in uloaded page
                 self.chunk_page_pool.push(removed_page);
-                changed = true;
-            } else {
-                // Move to the next ChunkPage
-                i += 1;
             }
-        }
-        if changed {
             self.update_bounds();
         }
     }

@@ -12,7 +12,11 @@ const MAX_MESH_TO_KEEP: usize = 1024;
 // const CHUNK_GENERATION_WEIGHT: f32 = 0.5;
 const MAX_LOADS_PER_FRAME: usize = 32;
 
-use crate::{core::Time, graphics::Camera, graphics::TextureType, world::WorldGenerator};
+use crate::{
+    core::Time,
+    graphics::{Camera, TextureType},
+    world::{WorldGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y},
+};
 
 use super::{BlockPos, ChunkPos, ChunkStreamer, ChunkVao, WorldRenderData};
 
@@ -29,13 +33,13 @@ fn make_offset_priority(size: i32) -> OffsetPriority {
         }
     }
     offsets.sort_by(|p, q| p.length_squared().cmp(&q.length_squared()));
-    info!(
-        "offset: {}, {}, ..., {}, {}",
-        offsets[0],
-        offsets[1],
-        offsets[total_offsets as usize - 2],
-        offsets[total_offsets as usize - 1]
-    );
+    // info!(
+    //     "offset: {}, {}, ..., {}, {}",
+    //     offsets[0],
+    //     offsets[1],
+    //     offsets[total_offsets as usize - 2],
+    //     offsets[total_offsets as usize - 1]
+    // );
     offsets
 }
 
@@ -199,10 +203,14 @@ where
         // add new chunks
         {
             for offset in &self.offset_priority {
-                let chunk_pos: ChunkPos = (new_chunk_pos.as_vec() + *offset).into();
+                let chunk_vec_pos = new_chunk_pos.as_vec() + *offset;
+                if chunk_vec_pos.y < MIN_CHUNK_Y || chunk_vec_pos.y >= MAX_CHUNK_Y {
+                    continue;
+                }
+                let chunk_pos: ChunkPos = chunk_vec_pos.into();
                 if !self.chunks.contains_key(&chunk_pos)
-                    // && self.streamer.is_chunked_streamed(chunk_pos)
-                    && self.streamer.get_chunk(chunk_pos).is_some()
+                    && self.streamer.is_chunked_streamed(chunk_pos)
+                // && self.streamer.get_chunk(chunk_pos).is_some()
                 {
                     self.chunks_to_load.push(chunk_pos);
                 }
