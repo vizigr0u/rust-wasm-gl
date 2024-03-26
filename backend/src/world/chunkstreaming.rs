@@ -33,20 +33,20 @@ impl Default for ChunkPage {
 
 impl ChunkPage {
     fn get_chunk(&self, chunk_pos: ChunkPos) -> Option<&Chunk> {
-        let (page_pos, offset) = chunk_pos.get_page_pos();
+        let (page_pos, offset) = chunk_pos.get_page_pos_with_offset();
         debug_assert!(page_pos == self.position);
         let index: usize = offset.as_page_index().into();
         self.chunks.get(index)
     }
 
-    fn get_pos_at_index(index: usize) -> ChunkPos {
-        ivec3(
-            index as i32 % CHUNK_PAGE_SIZE.x,
-            index as i32 / CHUNK_PAGE_SIZE.x % CHUNK_PAGE_SIZE.y + MIN_CHUNK_Y,
-            index as i32 / CHUNK_PAGE_SIZE.x / CHUNK_PAGE_SIZE.y,
-        )
-        .into()
-    }
+    // fn get_pos_at_index(index: usize) -> ChunkPos {
+    //     ivec3(
+    //         index as i32 % CHUNK_PAGE_SIZE.x,
+    //         index as i32 / CHUNK_PAGE_SIZE.x % CHUNK_PAGE_SIZE.y + MIN_CHUNK_Y,
+    //         index as i32 / CHUNK_PAGE_SIZE.x / CHUNK_PAGE_SIZE.y,
+    //     )
+    //     .into()
+    // }
 
     // fn fill_from<G>(&mut self, generator: &mut G, page_index: PagePos)
     // where

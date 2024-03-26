@@ -9,8 +9,8 @@ mod tests {
     use glam::{ivec2, ivec3};
 
     use crate::{
-        proper_modulo_i32, BlockPos, ChunkPos, PageChunkOffset, PagePos, CHUNK_PAGE_SIZE,
-        CHUNK_SIZE, MAX_CHUNK_Y, MIN_CHUNK_Y, NUM_CHUNKS_PER_PAGE,
+        BlockPos, ChunkPos, PageChunkOffset, PagePos, CHUNK_PAGE_SIZE, CHUNK_SIZE, MAX_BLOCK_Y,
+        MAX_CHUNK_Y, MIN_BLOCK_Y, MIN_CHUNK_Y, NUM_CHUNKS_PER_PAGE,
     };
 
     #[test]
@@ -48,14 +48,50 @@ mod tests {
 
     #[test]
     #[should_panic]
+    fn test_very_low_chunk_pos() {
+        let _: ChunkPos = ivec3(0, MIN_CHUNK_Y - 100, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
     fn test_high_chunk_pos() {
         let _: ChunkPos = ivec3(0, MAX_CHUNK_Y, 0).into();
     }
 
     #[test]
+    #[should_panic]
+    fn test_very_high_chunk_pos() {
+        let _: ChunkPos = ivec3(0, MAX_CHUNK_Y + 100, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_low_block_pos() {
+        let _: BlockPos = ivec3(0, MIN_BLOCK_Y - 1, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_very_low_block_pos() {
+        let _: BlockPos = ivec3(0, MIN_BLOCK_Y - 100, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_high_block_pos() {
+        let _: BlockPos = ivec3(0, MAX_BLOCK_Y, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_very_high_block_pos() {
+        let _: BlockPos = ivec3(0, MAX_BLOCK_Y + 100, 0).into();
+    }
+
+    #[test]
     fn test_page_pos_into_chunk_pos() {
         let convert = |v| Into::<PagePos>::into(v).get_center_chunk_pos();
-        let invert = |c: ChunkPos| c.get_page_pos().0;
+        let invert = |c: ChunkPos| c.get_page_pos_with_offset().0;
 
         let tests = [
             (ivec2(0, 0), ivec3(0, 0, 0)),
@@ -77,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_chunk_page_pos_and_offset() {
-        let convert = |v| Into::<ChunkPos>::into(v).get_page_pos();
+        let convert = |v| Into::<ChunkPos>::into(v).get_page_pos_with_offset();
         let max = CHUNK_PAGE_SIZE.x / 2;
 
         let tests = [
@@ -110,64 +146,44 @@ mod tests {
     #[test]
     fn test_block_pos_into_chunk_pos() {
         let convert = |v| Into::<ChunkPos>::into(Into::<BlockPos>::into(v));
+        let max = CHUNK_SIZE as i32;
         assert_eq!(convert(ivec3(0, 0, 0)), ivec3(0, 0, 0).into());
 
         assert_eq!(convert(ivec3(1, 0, 0)), ivec3(0, 0, 0).into());
 
-        assert_eq!(
-            convert(ivec3(CHUNK_SIZE as i32, 0, 0)),
-            ivec3(1, 0, 0).into()
-        );
+        assert_eq!(convert(ivec3(max, 0, 0)), ivec3(1, 0, 0).into());
 
-        assert_eq!(
-            convert(ivec3(CHUNK_SIZE as i32 + 1, 0, 0)),
-            ivec3(1, 0, 0).into()
-        );
+        assert_eq!(convert(ivec3(max + 1, 0, 0)), ivec3(1, 0, 0).into());
 
-        assert_eq!(
-            convert(ivec3(CHUNK_SIZE as i32 * 2, 0, 0)),
-            ivec3(2, 0, 0).into()
-        );
+        assert_eq!(convert(ivec3(max * 2, 0, 0)), ivec3(2, 0, 0).into());
 
-        assert_eq!(
-            convert(ivec3(CHUNK_SIZE as i32 * 2, 0, -1)),
-            ivec3(2, 0, -1).into()
-        );
+        assert_eq!(convert(ivec3(max * 2, 0, -1)), ivec3(2, 0, -1).into());
 
-        assert_eq!(
-            convert(ivec3(CHUNK_SIZE as i32 * 2, 0, -(CHUNK_SIZE as i32))),
-            ivec3(2, 0, -1).into()
-        );
+        assert_eq!(convert(ivec3(max * 2, 0, -max)), ivec3(2, 0, -1).into());
 
-        assert_eq!(
-            convert(ivec3(CHUNK_SIZE as i32 * 2, 0, -(CHUNK_SIZE as i32) - 1)),
-            ivec3(2, 0, -2).into()
-        );
+        assert_eq!(convert(ivec3(max * 2, 0, -max - 1)), ivec3(2, 0, -2).into());
 
+        assert_eq!(convert(ivec3(max * 2, 0, -max * 2)), ivec3(2, 0, -2).into());
         assert_eq!(
-            convert(ivec3(
-                CHUNK_SIZE as i32 * 2,
-                0,
-                -(CHUNK_SIZE as i32) * 2 - 1
-            )),
+            convert(ivec3(max * 2, 0, -max * 2 - 2)),
             ivec3(2, 0, -3).into()
         );
     }
 
-    #[test]
-    fn test_proper_modulo() {
-        assert_eq!(4, proper_modulo_i32(-6, 5));
-        assert_eq!(0, proper_modulo_i32(-5, 5));
-        assert_eq!(1, proper_modulo_i32(-4, 5));
-        assert_eq!(2, proper_modulo_i32(-3, 5));
-        assert_eq!(3, proper_modulo_i32(-2, 5));
-        assert_eq!(4, proper_modulo_i32(-1, 5));
-        assert_eq!(0, proper_modulo_i32(0, 5));
-        assert_eq!(1, proper_modulo_i32(1, 5));
-        assert_eq!(2, proper_modulo_i32(2, 5));
-        assert_eq!(3, proper_modulo_i32(3, 5));
-        assert_eq!(4, proper_modulo_i32(4, 5));
-        assert_eq!(0, proper_modulo_i32(5, 5));
-        assert_eq!(1, proper_modulo_i32(6, 5));
-    }
+    // #[test]
+    // fn test_proper_modulo() {
+    //     assert_eq!(4, proper_modulo_i32(-6, 5));
+    //     assert_eq!(0, proper_modulo_i32(-5, 5));
+    //     assert_eq!(1, proper_modulo_i32(-4, 5));
+    //     assert_eq!(2, proper_modulo_i32(-3, 5));
+    //     assert_eq!(3, proper_modulo_i32(-2, 5));
+    //     assert_eq!(4, proper_modulo_i32(-1, 5));
+    //     assert_eq!(0, proper_modulo_i32(0, 5));
+    //     assert_eq!(1, proper_modulo_i32(1, 5));
+    //     assert_eq!(2, proper_modulo_i32(2, 5));
+    //     assert_eq!(3, proper_modulo_i32(3, 5));
+    //     assert_eq!(4, proper_modulo_i32(4, 5));
+    //     assert_eq!(0, proper_modulo_i32(5, 5));
+    //     assert_eq!(1, proper_modulo_i32(6, 5));
+    // }
 }

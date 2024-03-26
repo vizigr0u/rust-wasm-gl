@@ -46,7 +46,7 @@ impl ChunkPos {
     pub fn get_center_block_pos(&self) -> BlockPos {
         BlockPos(self.0 * CHUNK_SIZE as i32)
     }
-    pub fn get_page_pos(&self) -> (PagePos, PageChunkOffset) {
+    pub fn get_page_pos_with_offset(&self) -> (PagePos, PageChunkOffset) {
         let page_pos: PagePos = (*self).into();
         let page_center_chunk = page_pos.get_center_chunk_pos();
         let my_offset = self.0 - page_center_chunk.0;
@@ -58,12 +58,12 @@ impl ChunkPos {
     pub fn as_vec(&self) -> IVec3 {
         self.0
     }
-    pub fn iter_block_pos(&self) -> impl Iterator<Item = ChunkPos> {
-        let center_pos = self.get_center_block_pos();
-        let first_pos = center_pos.0 - IVec3::ONE * (CHUNK_SIZE as i32 / 2);
+    pub fn iter_block_pos(&self) -> impl Iterator<Item = BlockPos> {
+        let center_pos = self.get_center_block_pos().0;
+        let first_pos = center_pos - IVec3::ONE * (CHUNK_SIZE as i32 / 2);
         iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE)
             .map(move |(x, y, z)| first_pos + ivec3(x as _, y as _, z as _))
-            .map(|v| ChunkPos(v))
+            .map(|v| BlockPos(v))
     }
 }
 
@@ -134,6 +134,14 @@ impl PagePos {
     pub fn as_vec(&self) -> IVec2 {
         self.0
     }
+
+    pub fn iter_chunk_offsets(&self) -> impl Iterator<Item = PageChunkOffset> {
+        (0..NUM_CHUNKS_PER_PAGE).map(|i| PageChunkOffset::from_page_index(PageIndex(i)))
+    }
+
+    pub fn iter_chunk_pos(&self) -> impl Iterator<Item = ChunkPos> + '_ {
+        self.iter_chunk_offsets().map(|o| self.get_chunk_pos_at(o))
+    }
 }
 
 impl Into<PagePos> for ChunkPos {
@@ -200,13 +208,15 @@ impl Into<IVec3> for BlockPos {
 
 impl Into<BlockPos> for IVec3 {
     fn into(self) -> BlockPos {
+        debug_assert!(self.y >= MIN_BLOCK_Y);
+        debug_assert!(self.y < MAX_BLOCK_Y);
         BlockPos(self)
     }
 }
 
-pub fn proper_modulo_i32(n: i32, f: i32) -> i32 {
-    (n % f + f) % f
-}
+// pub fn proper_modulo_i32(n: i32, f: i32) -> i32 {
+//     (n % f + f) % f
+// }
 
 pub fn proper_rescale_i32(n: i32, f: i32) -> i32 {
     if n < 0 {
