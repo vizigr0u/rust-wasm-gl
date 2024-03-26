@@ -24,12 +24,6 @@ pub const MIN_CHUNK_PAGE_OFFSET: IVec3 = IVec3 {
     z: -CHUNK_PAGE_SIZE.z / 2,
 };
 
-// pub const HALF_CHUNK_PAGE_SIZE: IVec3 = IVec3 {
-//     x: CHUNK_PAGE_SIZE.x / 2,
-//     y: CHUNK_PAGE_SIZE.y / 2,
-//     z: CHUNK_PAGE_SIZE.z / 2,
-// };
-
 pub const NUM_CHUNKS_PER_PAGE: usize =
     (CHUNK_PAGE_SIZE.x * CHUNK_PAGE_SIZE.y * CHUNK_PAGE_SIZE.y) as usize;
 
@@ -113,22 +107,7 @@ impl PageChunkOffset {
             ) + MIN_CHUNK_PAGE_OFFSET,
         )
     }
-    // pub fn to_chunk_pos(&self, page_pos: PagePos) -> ChunkPos {
-    //     let page_block_position: ChunkPos = page_pos.into();
-    //     let chunk_offset = self.as_vec();
-    //     ChunkPos(page_block_position.0 + chunk_offset)
-    // }
 }
-
-// impl Into<PageChunkOffset> for ChunkPos {
-//     fn into(self) -> PageChunkOffset {
-//         PageChunkOffset(ivec3(
-//             proper_modulo_i32(self.0.x, CHUNK_PAGE_SIZE.x),
-//             proper_modulo_i32(self.0.y - MIN_CHUNK_Y, CHUNK_PAGE_SIZE.y),
-//             proper_modulo_i32(self.0.z, CHUNK_PAGE_SIZE.z),
-//         ))
-//     }
-// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct PagePos(IVec2);
