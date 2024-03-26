@@ -33,8 +33,9 @@ impl Default for ChunkPage {
 
 impl ChunkPage {
     fn get_chunk(&self, chunk_pos: ChunkPos) -> Option<&Chunk> {
-        let offset: PageChunkOffset = chunk_pos.into();
-        let index = offset.as_index_in_page();
+        let (page_pos, offset) = chunk_pos.get_page_pos();
+        debug_assert!(page_pos == self.position);
+        let index: usize = offset.as_page_index().into();
         self.chunks.get(index)
     }
 
@@ -83,8 +84,8 @@ impl ChunkPage {
         info!("Streaming: Filling chunk page {page_pos:?}");
         // let page_chunk_world_offset = Into::<ChunkPos>::into(page_pos).as_vec();
         for i in 0..NUM_CHUNKS_PER_PAGE {
-            let chunk_offset = PageChunkOffset::from_page_index(i);
-            let chunk_world_pos: ChunkPos = chunk_offset.to_chunk_pos(page_pos);
+            let chunk_offset = PageChunkOffset::from_page_index(i.into());
+            let chunk_world_pos: ChunkPos = page_pos.get_chunk_pos_at(chunk_offset);
             let chunk = generator.generate(chunk_world_pos);
             if !chunk.is_empty() {
                 self.content_bounds.add(chunk_world_pos.as_vec());
@@ -189,9 +190,9 @@ where
         self.pages_to_load.extend(new_pages_to_load);
         // sort with best last so that we can pop
         self.pages_to_load.sort_by(|a, b| {
-            b.get_center_chunk()
+            b.get_center_chunk_pos()
                 .distance_squared(player_chunk_pos)
-                .cmp(&a.get_center_chunk().distance_squared(player_chunk_pos))
+                .cmp(&a.get_center_chunk_pos().distance_squared(player_chunk_pos))
         });
     }
 

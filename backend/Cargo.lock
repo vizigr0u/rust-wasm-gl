@@ -50,6 +50,7 @@ dependencies = [
  "glam",
  "gloo",
  "glow",
+ "itertools",
  "js-sys",
  "log",
  "tracing",
@@ -159,6 +160,12 @@ dependencies = [
  "log",
  "nohash-hasher",
 ]
+
+[[package]]
+name = "either"
+version = "1.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "11157ac094ffbdde99aa67b23417ebdd801842852b500e395a45a9c0aac03e4a"
 
 [[package]]
 name = "emath"
@@ -308,9 +315,9 @@ dependencies = [
 
 [[package]]
 name = "glam"
-version = "0.26.0"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bebe52f2c58f1eea4d6fd3307058cf818c74181435a3620502d1651db07ff018"
+checksum = "9e05e7e6723e3455f4818c7b26e855439f7546cf617ef669d1adedb8669e5cb9"
 
 [[package]]
 name = "gloo"
@@ -530,6 +537,15 @@ checksum = "7b0b929d511467233429c45a44ac1dcaa21ba0f5ba11e4879e6ed28ddb4f9df4"
 dependencies = [
  "equivalent",
  "hashbrown",
+]
+
+[[package]]
+name = "itertools"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba291022dbbd398a455acf126c1e341954079855bc60dfdda641363bd6922569"
+dependencies = [
+ "either",
 ]
 
 [[package]]

@@ -110,9 +110,9 @@ impl WorldRenderData {
                 gl.enable(glow::CULL_FACE);
                 gl.enable(glow::DEPTH_TEST);
                 gl.disable(glow::BLEND);
-                for (pos, vao) in self.chunks_to_draw.iter() {
-                    let block_pos: BlockPos = (*pos).get_first_block();
-                    let world_pos = block_pos.as_vec3();
+                for (chunk_pos, vao) in self.chunks_to_draw.iter() {
+                    let block_pos = chunk_pos.get_center_block_pos();
+                    let world_pos = block_pos.as_vec().as_vec3();
                     gl.uniform_3_f32(world_pos_position, world_pos.x, world_pos.y, world_pos.z);
 
                     gl.bind_vertex_array(Some(vao.vertex_array));
