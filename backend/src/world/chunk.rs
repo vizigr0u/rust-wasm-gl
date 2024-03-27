@@ -1,5 +1,6 @@
 use fastrand::Rng;
 use glam::{IVec3, U16Vec3};
+use itertools::iproduct;
 
 use crate::graphics::Side;
 
@@ -114,54 +115,36 @@ impl Chunk {
         if self.is_empty() {
             return Vec::new();
         }
-        let mut sides: Vec<ChunkSideData> = Vec::new();
-        for x in 0..CHUNK_SIZE {
-            for y in 0..CHUNK_SIZE {
-                for z in 0..CHUNK_SIZE {
-                    let offset = U16Vec3::new(x as _, y as _, z as _);
-                    let (top, side, bottom) = match self.get_block(offset) {
-                        BlockType::Empty => continue,
-                        t => t.into(),
-                    };
+        let mut data: Vec<i32> = Vec::with_capacity(BLOCKS_PER_CHUNK * 6);
+        for (x, y, z) in iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE) {
+            let offset = U16Vec3::new(x as _, y as _, z as _);
+            let (top, side, bottom) = match self.get_block(offset) {
+                BlockType::Empty => continue,
+                t => t.into(),
+            };
 
-                    if OPTIMIZATION_LEVEL < 1 {
-                        // todo: don't generate hidden sides
-                        sides.push((Side::Top, top, offset));
-                        sides.push((Side::Bottom, bottom, offset));
-                        sides.push((Side::Front, side, offset));
-                        sides.push((Side::Back, side, offset));
-                        sides.push((Side::Left, side, offset));
-                        sides.push((Side::Right, side, offset));
-                    } else {
-                        if y == CHUNK_SIZE - 1
-                            || self.get_block(offset + U16Vec3::Y) == BlockType::Empty
-                        {
-                            sides.push((Side::Top, top, offset));
-                        }
-                        if y == 0 || self.get_block(offset - U16Vec3::Y) == BlockType::Empty {
-                            sides.push((Side::Bottom, bottom, offset));
-                        }
-                        if x == CHUNK_SIZE - 1
-                            || self.get_block(offset + U16Vec3::X) == BlockType::Empty
-                        {
-                            sides.push((Side::Right, side, offset));
-                        }
-                        if x == 0 || self.get_block(offset - U16Vec3::X) == BlockType::Empty {
-                            sides.push((Side::Left, side, offset));
-                        }
-                        if z == CHUNK_SIZE - 1
-                            || self.get_block(offset + U16Vec3::Z) == BlockType::Empty
-                        {
-                            sides.push((Side::Front, side, offset));
-                        }
-                        if z == 0 || self.get_block(offset - U16Vec3::Z) == BlockType::Empty {
-                            sides.push((Side::Back, side, offset));
-                        }
-                    }
+            {
+                if y == CHUNK_SIZE - 1 || self.get_block(offset + U16Vec3::Y) == BlockType::Empty {
+                    data.push(make_side_quad_data(Side::Top, top, offset));
+                }
+                if y == 0 || self.get_block(offset - U16Vec3::Y) == BlockType::Empty {
+                    data.push(make_side_quad_data(Side::Bottom, bottom, offset));
+                }
+                if x == CHUNK_SIZE - 1 || self.get_block(offset + U16Vec3::X) == BlockType::Empty {
+                    data.push(make_side_quad_data(Side::Right, side, offset));
+                }
+                if x == 0 || self.get_block(offset - U16Vec3::X) == BlockType::Empty {
+                    data.push(make_side_quad_data(Side::Left, side, offset));
+                }
+                if z == CHUNK_SIZE - 1 || self.get_block(offset + U16Vec3::Z) == BlockType::Empty {
+                    data.push(make_side_quad_data(Side::Front, side, offset));
+                }
+                if z == 0 || self.get_block(offset - U16Vec3::Z) == BlockType::Empty {
+                    data.push(make_side_quad_data(Side::Back, side, offset));
                 }
             }
         }
-        generate_mesh(sides)
+        data
     }
 }
 
@@ -228,7 +211,25 @@ pub enum BlockSideTexture {
 
 pub type ChunkSideData = (Side, BlockSideTexture, U16Vec3);
 
-pub fn generate_mesh<I>(sides: I) -> Vec<i32>
+pub fn make_base_quad_data() -> [U16Vec3; 4] {
+    SIDE_VERTICES[Side::Top as usize].get_quad_triangles_strip()
+}
+
+pub fn make_side_quad_data(side: Side, texture: BlockSideTexture, offset: U16Vec3) -> i32 {
+    let norm = side as i32;
+    let pos = offset;
+    let mut result: i32 = 0;
+    // 32 bit layout
+    // -----ttt tttnnnzz zzzzyyyy yyxxxxxx
+    result |= (pos.x & 63) as i32;
+    result |= (pos.y as i32 & 63) << 6;
+    result |= (pos.z as i32 & 63) << 12;
+    result |= (norm & 7) << 18;
+    result |= (texture as i32 & 63) << 21;
+    result
+}
+
+pub fn _generate_mesh_old<I>(sides: I) -> Vec<i32>
 where
     I: IntoIterator<Item = ChunkSideData>,
     I::IntoIter: ExactSizeIterator,
@@ -237,10 +238,12 @@ where
     let size = iterator.len();
     let mut data = Vec::<i32>::with_capacity(size);
     for (side, texture, offset) in iterator {
-        for vert in SIDE_VERTICES[side as usize].get_quad_triangles() {
+        for vert in SIDE_VERTICES[side as usize].get_quad_triangles_strip() {
             let norm = side as i32;
             let pos = vert + offset;
             let mut result: i32 = 0;
+            // 32 bit layout
+            // -----ttt tttnnnzz zzzzyyyy yyxxxxxx
             result |= (pos.x & 63) as i32;
             result |= (pos.y as i32 & 63) << 6;
             result |= (pos.z as i32 & 63) << 12;
@@ -297,6 +300,10 @@ pub struct SideVertices {
 impl SideVertices {
     fn get_quad_triangles(&self) -> [U16Vec3; 6] {
         [self.a, self.b, self.c, self.a, self.c, self.d]
+    }
+
+    fn get_quad_triangles_strip(&self) -> [U16Vec3; 4] {
+        [self.c, self.a, self.b, self.d]
     }
 }
 

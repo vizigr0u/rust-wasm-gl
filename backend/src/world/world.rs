@@ -18,7 +18,7 @@ use crate::{
     world::{WorldGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y},
 };
 
-use super::{BlockPos, ChunkPos, ChunkStreamer, ChunkVao, WorldRenderData};
+use super::{BlockPos, ChunkDrawData, ChunkPos, ChunkStreamer, WorldRenderData};
 
 type OffsetPriority = Vec<IVec3>;
 
@@ -48,7 +48,7 @@ pub struct World<G>
 where
     G: WorldGenerator,
 {
-    chunks: HashMap<ChunkPos, Option<ChunkVao>>,
+    chunks: HashMap<ChunkPos, Option<ChunkDrawData>>,
     loaded_vertices: usize,
     // loaded_meshes: Vec<LoadedChunkMesh>,
     streamer: ChunkStreamer<G>,
@@ -122,7 +122,8 @@ where
         }
 
         if geom_changed {
-            self.render_data.compile(gl, player_chunk_pos, &self.chunks);
+            self.render_data
+                .gather_draw_data(gl, player_chunk_pos, &self.chunks);
         }
 
         Ok(())
@@ -150,9 +151,10 @@ where
                     let chunk = match self.streamer.get_chunk(chunk_pos) {
                         None => None,
                         Some(chunk) => {
-                            let mesh = ChunkVao::load(gl, chunk).expect("can't load mesh");
-                            self.loaded_vertices += mesh.vertex_count;
-                            Some(mesh)
+                            let draw_data =
+                                ChunkDrawData::load(gl, chunk, chunk_pos).expect("can't load mesh");
+                            self.loaded_vertices += draw_data.vertex_data.len();
+                            Some(draw_data)
                         }
                     };
                     self.chunks.insert(chunk_pos, chunk);
@@ -187,15 +189,12 @@ where
                     chunks_we_can_unload.len() - MAX_MESH_TO_KEEP
                 );
                 for chunk_pos in chunks_we_can_unload.drain(MAX_MESH_TO_KEEP..) {
-                    let vao = self
+                    let draw_data = self
                         .chunks
                         .remove(&chunk_pos)
                         .expect("added inexistent chunk")
                         .expect("added empty chunk");
-                    unsafe {
-                        gl.delete_vertex_array(vao.vertex_array);
-                    }
-                    self.loaded_vertices -= vao.vertex_count;
+                    self.loaded_vertices -= draw_data.vertex_data.len();
                 }
             }
         }

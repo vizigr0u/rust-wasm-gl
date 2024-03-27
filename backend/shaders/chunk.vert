@@ -1,8 +1,9 @@
 #version 300 es
 
-layout (location = 0) in int data;
+layout (location = 0) in vec3 mesh_pos;
+layout (location = 1) in int data;
+layout (location = 2) in vec3 world_pos;
 
-uniform vec3 world_pos;
 uniform mat4 view;
 uniform mat4 projection;
 
@@ -45,7 +46,7 @@ void main() {
     }
 
     o_normal = normal;
-    gl_Position = projection * view * vec4(position + world_pos, 1.0f);
+    gl_Position = projection * view * vec4(mesh_pos + position + world_pos, 1.0f);
     v_texcoord = uvs;
     v_depth = depth;
 }

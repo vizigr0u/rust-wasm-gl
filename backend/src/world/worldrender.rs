@@ -1,18 +1,16 @@
 use std::{collections::HashMap, rc::Rc};
 
 use glam::IVec3;
-use glow::{HasContext, WebVertexArrayKey};
+use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 use log::info;
 
 use crate::{
-    graphics::Camera,
-    graphics::TextureType,
-    graphics::{ShaderDef, ShaderProgram, UniformTypes},
+    graphics::{Camera, ShaderDef, ShaderProgram, TextureType, UniformTypes, VertexAttrType},
     shader_def,
     world::{Chunk, CHUNK_SIZE},
 };
 
-use super::{BlockPos, ChunkPos};
+use super::{make_base_quad_data, BlockPos, ChunkPos};
 
 const MAX_MESH_TO_KEEP: usize = 1024;
 
@@ -22,69 +20,51 @@ struct GraphicContext {
     texture: Rc<(TextureType, glow::WebTextureKey)>,
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct ChunkVao {
-    pub vertex_array: WebVertexArrayKey,
-    pub vertex_count: usize,
+#[derive(Debug, Clone)]
+pub struct ChunkDrawData {
+    pub vertex_data: Vec<i32>,
+    pub chunk_pos: ChunkPos,
 }
 
 #[derive(Debug)]
 pub struct WorldRenderData {
     graphics: Option<GraphicContext>,
-    chunks_to_draw: Vec<(ChunkPos, ChunkVao)>,
+    vertex_array: Option<WebVertexArrayKey>,
+    num_verts_to_draw: i32,
 }
 
-impl ChunkVao {
-    pub fn load(gl: &glow::Context, chunk: &Chunk) -> Result<Self, String> {
+impl ChunkDrawData {
+    pub fn load(gl: &glow::Context, chunk: &Chunk, chunk_pos: ChunkPos) -> Result<Self, String> {
         let vertex_data = chunk.to_vertex_data();
-        unsafe {
-            let vao = gl.create_vertex_array()?;
-            gl.bind_vertex_array(Some(vao));
-            let vbo = gl.create_buffer()?;
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-            gl.buffer_data_u8_slice(
-                glow::ARRAY_BUFFER,
-                vertex_data.align_to::<u8>().1,
-                glow::STATIC_DRAW,
-            );
-
-            let location = 0;
-            let size = 1;
-            gl.vertex_attrib_pointer_i32(location, size, glow::INT, 0, 0);
-            gl.enable_vertex_attrib_array(location);
-
-            gl.bind_vertex_array(None);
-            gl.bind_buffer(glow::ARRAY_BUFFER, None);
-
-            Ok(Self {
-                vertex_array: vao,
-                vertex_count: vertex_data.len(),
-            })
-        }
+        Ok(Self {
+            vertex_data,
+            chunk_pos,
+        })
     }
 }
 
 impl WorldRenderData {
     pub fn new() -> Self {
         Self {
-            chunks_to_draw: Vec::with_capacity(MAX_MESH_TO_KEEP),
             graphics: None,
+            vertex_array: None,
+            num_verts_to_draw: 0,
         }
     }
 
-    pub fn compile(
+    pub fn gather_draw_data(
         &mut self,
         gl: &glow::Context,
         player_chunk_pos: ChunkPos,
-        loaded_chunks: &HashMap<ChunkPos, Option<ChunkVao>>,
+        loaded_chunks: &HashMap<ChunkPos, Option<ChunkDrawData>>,
     ) {
-        self.chunks_to_draw.clear();
-        for data in loaded_chunks
+        for (pos, draw_data) in loaded_chunks
             .iter()
-            .filter(|(_, c)| c.is_some())
-            .map(|(pos, c)| (*pos, c.unwrap()))
+            .filter(|(_, d)| d.is_some())
+            .filter(|(pos, _)| (**pos).as_vec() == IVec3::ZERO)
+            .map(|(pos, d)| (*pos, d))
         {
-            self.chunks_to_draw.push(data);
+            self.chunks_to_draw.push(draw_data);
         }
     }
 
@@ -94,6 +74,46 @@ impl WorldRenderData {
         texture: Rc<(TextureType, glow::WebTextureKey)>,
     ) -> Result<(), String> {
         let program = compile_shader(gl)?;
+
+        unsafe {
+            program.gl_use(gl);
+
+            let vao = Some(gl.create_vertex_array()?);
+            gl.bind_vertex_array(vao);
+
+            // upload quad data
+            let vertices = make_base_quad_data();
+            let vbo = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                vertices.align_to::<u8>().1,
+                glow::STATIC_DRAW,
+            );
+
+            // setup vertex data attributes
+            let vertex_data = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vertex_data));
+
+            let data_attr_pos = 1;
+            gl.enable_vertex_attrib_array(data_attr_pos);
+            gl.vertex_attrib_pointer_f32(data_attr_pos, 1, glow::INT, false, 0, 0);
+            gl.vertex_attrib_divisor(data_attr_pos, 1);
+
+            // setup vertex location attributes
+            let chunk_location_data = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(chunk_location_data));
+
+            let location_attr_pos = 2;
+            gl.enable_vertex_attrib_array(location_attr_pos);
+            gl.vertex_attrib_pointer_f32(location_attr_pos, 3, glow::FLOAT, false, 0, 0);
+            gl.vertex_attrib_divisor(location_attr_pos, 1);
+
+            gl.bind_vertex_array(None);
+            gl.bind_buffer(glow::ARRAY_BUFFER, None);
+
+            self.vertex_array = vao;
+        }
         self.graphics = Some(GraphicContext { program, texture });
         Ok(())
     }
@@ -106,18 +126,11 @@ impl WorldRenderData {
                 gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(graphics.texture.1));
                 program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
                 program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
-                let world_pos_position = program.get_uniform_location(UniformTypes::WorldPosition);
                 gl.enable(glow::CULL_FACE);
                 gl.enable(glow::DEPTH_TEST);
                 gl.disable(glow::BLEND);
-                for (chunk_pos, vao) in self.chunks_to_draw.iter() {
-                    let block_pos = chunk_pos.get_center_block_pos();
-                    let world_pos = block_pos.as_vec().as_vec3();
-                    gl.uniform_3_f32(world_pos_position, world_pos.x, world_pos.y, world_pos.z);
-
-                    gl.bind_vertex_array(Some(vao.vertex_array));
-                    gl.draw_arrays(glow::TRIANGLES, 0, vao.vertex_count as _);
-                }
+                gl.bind_vertex_array(self.vertex_array);
+                gl.draw_arrays_instanced(glow::TRIANGLE_STRIP, 0, 4, self.num_verts_to_draw as i32);
             }
         }
     }
@@ -130,7 +143,6 @@ fn compile_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
             "chunk.frag",
             vec!(),
             vec!(
-                (UniformTypes::WorldPosition, "world_pos"),
                 (UniformTypes::ViewMatrix, "view"),
                 (UniformTypes::ProjMatrix, "projection"),
             )
