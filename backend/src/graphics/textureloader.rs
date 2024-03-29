@@ -29,12 +29,19 @@ pub struct TextureLoader {
     pool: Rc<RefCell<Vec<LoadingTexture>>>,
 }
 
+const TEXTURE_CONTAINER_ID: &str = "textures_container";
 const EMPTY_TEXTURE: [u8; 4] = [255, 0, 255, 255];
 
 impl TextureLoader {
     pub fn new(pool_size: usize) -> Result<Self, JsValue> {
         let document = get_document()?;
-        let body = document.body().ok_or("document should have a body")?;
+        // let body = document.body().ok_or("document should have a body")?;
+        let container = document
+            .get_element_by_id(TEXTURE_CONTAINER_ID)
+            .ok_or(format!(
+                "document should have an element with id {}",
+                TEXTURE_CONTAINER_ID
+            ))?;
         let pool = (0..pool_size)
             .map(|_| {
                 let img = document
@@ -42,7 +49,7 @@ impl TextureLoader {
                     .unwrap()
                     .dyn_into::<HtmlImageElement>()
                     .unwrap();
-                let _ = body.append_child(&img);
+                let _ = container.append_child(&img);
                 LoadingTexture {
                     img,
                     status: TextureStatus::Idle,
@@ -161,8 +168,8 @@ impl TextureLoader {
                         info!(
                             "Texture loaded: {} ({}x{}) in {}ms",
                             img.src(),
-                            img.client_width(),
-                            img.client_height(),
+                            img.natural_width(),
+                            img.natural_height(),
                             total_time.round()
                         );
 
@@ -202,8 +209,8 @@ impl TextureLoader {
                                         texture_type,
                                         lod,
                                         internal_format as _,
-                                        img.client_width(),
-                                        img.client_height() / depth as i32,
+                                        img.natural_width() as _,
+                                        (img.natural_height() / depth) as _,
                                         depth as _,
                                         0,
                                         src_format,

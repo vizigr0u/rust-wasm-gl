@@ -20,6 +20,7 @@ const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
 const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";
 const DIRT_TEXTURE_PATH: &str = "data/textures/blocks/dirt.png";
 const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
+const UV_CHECKER_PATH: &str = "data/textures/UV_checker_Map_byValle.jpg";
 
 type WorldGenerator = TestGenerator;
 
@@ -96,7 +97,10 @@ impl Game {
     }
 
     pub unsafe fn load(&mut self, gl: &glow::Context) -> Result<(), String> {
-        for (path, t) in [(BLOCKS_ATLAS_PATH, TextureType::Texture2DArray(16))] {
+        for (path, t) in [
+            (BLOCKS_ATLAS_PATH, TextureType::Texture2DArray(16)),
+            (UV_CHECKER_PATH, TextureType::Texture2D),
+        ] {
             let key = self.texture_loader.load(gl, path, t)?;
             self.loaded_textures.push(Rc::new((t, key)));
         }

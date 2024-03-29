@@ -1,5 +1,5 @@
 use fastrand::Rng;
-use glam::{IVec3, U16Vec3};
+use glam::{IVec3, U16Vec3, Vec3};
 use itertools::iproduct;
 
 use crate::graphics::Side;
@@ -111,36 +111,54 @@ impl Chunk {
         self.blocks[chunk_index_from_offset(&offset)]
     }
 
+    const TEST_ONE_CUBE: bool = true;
+
     pub fn to_vertex_data(&self) -> Vec<i32> {
         if self.is_empty() {
             return Vec::new();
         }
         let mut data: Vec<i32> = Vec::with_capacity(BLOCKS_PER_CHUNK * 6);
-        for (x, y, z) in iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE) {
-            let offset = U16Vec3::new(x as _, y as _, z as _);
-            let (top, side, bottom) = match self.get_block(offset) {
-                BlockType::Empty => continue,
-                t => t.into(),
-            };
-
-            {
-                if y == CHUNK_SIZE - 1 || self.get_block(offset + U16Vec3::Y) == BlockType::Empty {
-                    data.push(make_side_quad_data(Side::Top, top, offset));
-                }
-                if y == 0 || self.get_block(offset - U16Vec3::Y) == BlockType::Empty {
-                    data.push(make_side_quad_data(Side::Bottom, bottom, offset));
-                }
-                if x == CHUNK_SIZE - 1 || self.get_block(offset + U16Vec3::X) == BlockType::Empty {
-                    data.push(make_side_quad_data(Side::Right, side, offset));
-                }
-                if x == 0 || self.get_block(offset - U16Vec3::X) == BlockType::Empty {
-                    data.push(make_side_quad_data(Side::Left, side, offset));
-                }
-                if z == CHUNK_SIZE - 1 || self.get_block(offset + U16Vec3::Z) == BlockType::Empty {
-                    data.push(make_side_quad_data(Side::Front, side, offset));
-                }
-                if z == 0 || self.get_block(offset - U16Vec3::Z) == BlockType::Empty {
-                    data.push(make_side_quad_data(Side::Back, side, offset));
+        if Self::TEST_ONE_CUBE {
+            let (top, side, bottom) = BlockType::Grass.into();
+            let offset = U16Vec3::new(0, 0, 0);
+            data.push(make_side_quad_data(Side::Top, top, offset));
+            data.push(make_side_quad_data(Side::Bottom, bottom, offset));
+            data.push(make_side_quad_data(Side::Right, side, offset));
+            data.push(make_side_quad_data(Side::Left, side, offset));
+            data.push(make_side_quad_data(Side::Front, side, offset));
+            data.push(make_side_quad_data(Side::Back, side, offset));
+        } else {
+            for (x, y, z) in iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE) {
+                let offset = U16Vec3::new(x as _, y as _, z as _);
+                let (top, side, bottom) = match self.get_block(offset) {
+                    BlockType::Empty => continue,
+                    t => t.into(),
+                };
+                {
+                    if y == CHUNK_SIZE - 1
+                        || self.get_block(offset + U16Vec3::Y) == BlockType::Empty
+                    {
+                        data.push(make_side_quad_data(Side::Top, top, offset));
+                    }
+                    if y == 0 || self.get_block(offset - U16Vec3::Y) == BlockType::Empty {
+                        data.push(make_side_quad_data(Side::Bottom, bottom, offset));
+                    }
+                    if x == CHUNK_SIZE - 1
+                        || self.get_block(offset + U16Vec3::X) == BlockType::Empty
+                    {
+                        data.push(make_side_quad_data(Side::Right, side, offset));
+                    }
+                    if x == 0 || self.get_block(offset - U16Vec3::X) == BlockType::Empty {
+                        data.push(make_side_quad_data(Side::Left, side, offset));
+                    }
+                    if z == CHUNK_SIZE - 1
+                        || self.get_block(offset + U16Vec3::Z) == BlockType::Empty
+                    {
+                        data.push(make_side_quad_data(Side::Front, side, offset));
+                    }
+                    if z == 0 || self.get_block(offset - U16Vec3::Z) == BlockType::Empty {
+                        data.push(make_side_quad_data(Side::Back, side, offset));
+                    }
                 }
             }
         }
@@ -211,8 +229,8 @@ pub enum BlockSideTexture {
 
 pub type ChunkSideData = (Side, BlockSideTexture, U16Vec3);
 
-pub fn make_base_quad_data() -> [U16Vec3; 4] {
-    SIDE_VERTICES[Side::Top as usize].get_quad_triangles_strip()
+pub fn make_base_quad_data() -> [Vec3; 4] {
+    SIDE_VERTICES[Side::Bottom as usize].get_quad_triangles_strip()
 }
 
 pub fn make_side_quad_data(side: Side, texture: BlockSideTexture, offset: U16Vec3) -> i32 {
@@ -240,7 +258,7 @@ where
     for (side, texture, offset) in iterator {
         for vert in SIDE_VERTICES[side as usize].get_quad_triangles_strip() {
             let norm = side as i32;
-            let pos = vert + offset;
+            let pos = vert.as_ivec3() + offset.as_ivec3();
             let mut result: i32 = 0;
             // 32 bit layout
             // -----ttt tttnnnzz zzzzyyyy yyxxxxxx
@@ -274,20 +292,52 @@ where
 //   G        H
 // E        F
 
-const A: U16Vec3 = U16Vec3 { x: 0, y: 1, z: 1 };
-const B: U16Vec3 = U16Vec3 { x: 1, y: 1, z: 1 };
-const C: U16Vec3 = U16Vec3 { x: 0, y: 1, z: 0 };
-const D: U16Vec3 = U16Vec3 { x: 1, y: 1, z: 0 };
-const E: U16Vec3 = U16Vec3 { x: 0, y: 0, z: 1 };
-const F: U16Vec3 = U16Vec3 { x: 1, y: 0, z: 1 };
-const G: U16Vec3 = U16Vec3 { x: 0, y: 0, z: 0 };
-const H: U16Vec3 = U16Vec3 { x: 1, y: 0, z: 0 };
+const A: Vec3 = Vec3 {
+    x: 0.0,
+    y: 1.0,
+    z: 1.0,
+};
+const B: Vec3 = Vec3 {
+    x: 1.0,
+    y: 1.0,
+    z: 1.0,
+};
+const C: Vec3 = Vec3 {
+    x: 0.0,
+    y: 1.0,
+    z: 0.0,
+};
+const D: Vec3 = Vec3 {
+    x: 1.0,
+    y: 1.0,
+    z: 0.0,
+};
+const E: Vec3 = Vec3 {
+    x: 0.0,
+    y: 0.0,
+    z: 1.0,
+};
+const F: Vec3 = Vec3 {
+    x: 1.0,
+    y: 0.0,
+    z: 1.0,
+};
+const G: Vec3 = Vec3 {
+    x: 0.0,
+    y: 0.0,
+    z: 0.0,
+};
+const H: Vec3 = Vec3 {
+    x: 1.0,
+    y: 0.0,
+    z: 0.0,
+};
 
 pub struct SideVertices {
-    pub a: U16Vec3,
-    pub b: U16Vec3,
-    pub c: U16Vec3,
-    pub d: U16Vec3,
+    pub a: Vec3,
+    pub b: Vec3,
+    pub c: Vec3,
+    pub d: Vec3,
 }
 
 // enum Corner {
@@ -298,12 +348,12 @@ pub struct SideVertices {
 // }
 
 impl SideVertices {
-    fn get_quad_triangles(&self) -> [U16Vec3; 6] {
+    fn get_quad_triangles(&self) -> [Vec3; 6] {
         [self.a, self.b, self.c, self.a, self.c, self.d]
     }
 
-    fn get_quad_triangles_strip(&self) -> [U16Vec3; 4] {
-        [self.c, self.a, self.b, self.d]
+    fn get_quad_triangles_strip(&self) -> [Vec3; 4] {
+        [self.a, self.b, self.d, self.c]
     }
 }
 

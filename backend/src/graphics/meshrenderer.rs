@@ -61,7 +61,6 @@ impl MeshRenderer {
             gl.bind_vertex_array(vao);
             let buffer = gl.create_buffer()?;
             gl.bind_buffer(glow::ARRAY_BUFFER, Some(buffer));
-            gl.bind_vertex_array(vao);
             gl.buffer_data_u8_slice(
                 glow::ARRAY_BUFFER,
                 mesh.get_data().align_to::<u8>().1,
@@ -138,12 +137,14 @@ impl MeshRenderer {
                 self.get_program().gl_use(gl);
                 gl.bind_vertex_array(vao);
                 gl.draw_arrays(self.primitive_type as _, 0, vertex_count as _);
+                gl.bind_vertex_array(None);
             },
             DisplayData::Elements(vao, vbo, count) => unsafe {
                 self.get_program().gl_use(gl);
                 gl.bind_vertex_array(vao);
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, vbo);
                 gl.draw_elements(self.primitive_type as _, count as _, glow::UNSIGNED_INT, 0);
+                gl.bind_vertex_array(None);
             },
         }
     }

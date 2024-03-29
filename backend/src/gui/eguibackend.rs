@@ -131,7 +131,6 @@ impl EguiBackend {
                         &self.make_projection(800.0, 600.0),
                     );
                     unsafe {
-                        gl.enable(glow::BLEND);
                         gl.blend_equation_separate(glow::FUNC_ADD, glow::FUNC_ADD);
                         gl.blend_func_separate(
                             // egui outputs colors with premultiplied alpha:
