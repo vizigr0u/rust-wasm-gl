@@ -4,7 +4,7 @@ use itertools::iproduct;
 pub const CHUNK_SIZE: usize = 16;
 pub const BLOCKS_PER_CHUNK: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 
-pub const TOTAL_CHUNK_HEIGHT: i32 = 20;
+pub const TOTAL_CHUNK_HEIGHT: i32 = 320 / CHUNK_SIZE as i32;
 pub const MIN_CHUNK_Y: i32 = -16;
 pub const MAX_CHUNK_Y: i32 = TOTAL_CHUNK_HEIGHT + MIN_CHUNK_Y;
 

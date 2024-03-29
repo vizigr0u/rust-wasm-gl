@@ -1,14 +1,14 @@
 use std::rc::Rc;
 
-use egui::{Label, RichText};
+use egui::RichText;
 use fastrand::Rng;
-use glam::{vec3, UVec3, Vec3};
+use glam::{vec3, Vec3};
 use glow::HasContext;
 use wasm_bindgen::JsValue;
 
 use crate::{
     graphics::{Camera, TextureDef, TextureLoader, TextureType},
-    gui::EguiBackend,
+    gui::{EguiBackend, FpsDisplay},
     objects::{Gizmo, Player, Transform},
     utils::performance_now,
     world::{TestGenerator, World},
@@ -16,9 +16,6 @@ use crate::{
 
 use super::{HandleInputs, InputEventType, InputSystem, Time};
 
-const GRASS_TEXTURE_PATH: &str = "data/textures/blocks/grass_block_side.png";
-const SAND_TEXTURE_PATH: &str = "data/textures/blocks/sand.png";
-const DIRT_TEXTURE_PATH: &str = "data/textures/blocks/dirt.png";
 const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 const UV_CHECKER_PATH: &str = "data/textures/UV_checker_Map_byValle.jpg";
 
@@ -39,13 +36,11 @@ pub struct Game {
     time: Time,
     is_paused: bool,
     gui_state: GuiState,
-    tick_times: [f64; 30],
-    tick_time: f64,
-    tick_index: usize,
     gizmo: Gizmo,
     player: Player,
 
     egui: Option<EguiBackend>,
+    fps_display: FpsDisplay,
 }
 
 #[derive(Debug)]
@@ -86,11 +81,9 @@ impl Game {
             time: Time::default(),
             egui: None,
             gui_state: GuiState::default(),
-            tick_time: 0.0,
-            tick_times: [0.0; 30],
-            tick_index: 0,
             gizmo: Gizmo::new(Vec3::ZERO, 10.0),
             player: Player::new(vec3(0.0, 0.5, 0.0)),
+            fps_display: FpsDisplay::new(),
         };
 
         Ok(game)
@@ -126,11 +119,16 @@ impl Game {
         self.update(gl)?;
 
         self.update_gui();
+        let update_time = performance_now();
 
         self.render(gl)?;
+        let render_time = performance_now();
 
-        let frame_time = performance_now() - start;
-        self.update_fps_report(frame_time);
+        self.draw_ui(gl);
+
+        let frame_time = performance_now();
+        self.fps_display
+            .update_fps_report(start, update_time, render_time, frame_time);
 
         Ok(())
     }
@@ -139,14 +137,6 @@ impl Game {
         self.gui_state.show_pause_menu = self.is_paused;
         if let Some(egui) = &mut self.egui {
             egui.set_time(&self.time);
-        }
-    }
-
-    fn update_fps_report(&mut self, frame_time: f64) {
-        self.tick_times[self.tick_index] = frame_time;
-        self.tick_index = (self.tick_index + 1) % self.tick_times.len();
-        if self.tick_index == 0 {
-            self.tick_time = self.tick_times.iter().sum::<f64>() / self.tick_times.len() as f64;
         }
     }
 
@@ -212,8 +202,6 @@ impl Game {
         self.player.render_lazy(gl, &self.camera);
         self.gizmo.render_lazy(gl, &self.camera);
 
-        self.draw_ui(gl);
-
         Ok(())
     }
 
@@ -227,17 +215,18 @@ impl Game {
                 }
                 if self.gui_state.show_info {
                     // egui::Window::new("Game Info").show(ctx, |ui| {
-                        egui::Area::new("my_area")
+                        egui::Area::new("my_area".into())
                             .show(ctx, |ui| {
                                 egui::Frame::none()
                                 .fill(egui::Color32::from_rgba_unmultiplied(20, 20, 20, 100))
                                 .show(ui, |ui| {
+                                    self.fps_display.display(ui);
 
                                     if let Some(player) = self.player.get_gameobject() {
                                         let pos = player.get_position();
                                         let chunk_pos = player.get_chunk_position();
                                         ui.colored_label(egui::Color32::WHITE,RichText::new(format!(
-                                            "git rev: {}\nPlayer position: {:.1},{:.1},{:.1} (chunk {},{},{})\nFPS: {:.1}\nWorld: {}",
+                                            "git rev: {}\nPlayer position: {:.1},{:.1},{:.1} (chunk {},{},{})\nWorld: {}",
                                             env!("GIT_HASH"),
                                             pos.x,
                                             pos.y,
@@ -245,7 +234,6 @@ impl Game {
                                             chunk_pos.x,
                                             chunk_pos.y,
                                             chunk_pos.z,
-                                            1000.0 / self.tick_time,
                                             self.world.get_info()
                                         )).monospace());
                                     }
