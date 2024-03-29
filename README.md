@@ -8,11 +8,14 @@ Game (in the backend directory): Rust compiled to WASM
 
 uses glam for maths and web-sys for JS bindings. I still have gloo in my dependencies but not sure I'll end up using it.
 
-Github page: https://vizigr0u.github.io/rust-wasm-gl/
+Github page: <https://vizigr0u.github.io/rust-wasm-gl/>
 
-As of 2024-03-10:
+As of 2024-03-29:
+
 - basic game engine structure (not final): Game, GameObject, Mesh, Shader, Renderer, Time, Camera, InputSystem.
-- Textured cube rotating and camera moving with WASD (Or equivalent keys).
+- voxel world with "streaming" and "generation".
+
+![alt text](image.png)
 
 For now as a proof of concept, I'm using textures extracted from a very famous game. I will change these very soon, please don't sue me.
 
