@@ -4,6 +4,8 @@ use glam::{ivec3, IVec3, Vec3};
 use glow::HasContext;
 use log::info;
 
+const FRAME_RENDER_DELAY: usize = 8;
+
 const MAX_LOAD_CHUNK_DISTANCE: i32 = 15;
 const MAX_LOAD_CHUNK_DISTANCE_SQUARED: i32 = MAX_LOAD_CHUNK_DISTANCE * MAX_LOAD_CHUNK_DISTANCE;
 const MAX_MESH_TO_KEEP: usize = 1024;
@@ -56,6 +58,7 @@ where
     offset_priority: OffsetPriority,
     chunks_to_load: Vec<ChunkPos>,
     render_data: WorldRenderData,
+    render_frame_delay: usize,
 }
 
 impl<G> World<G>
@@ -74,6 +77,7 @@ where
             last_computed_chunk_pos: None,
             chunks_to_load: Vec::with_capacity(MAX_MESH_TO_KEEP * 2),
             render_data: WorldRenderData::new(),
+            render_frame_delay: 0,
         }
     }
 
@@ -121,9 +125,13 @@ where
             geom_changed = true;
         }
 
-        if geom_changed {
+        if self.render_frame_delay > 0 {
+            self.render_frame_delay -= 1;
+        }
+        if geom_changed && self.render_frame_delay == 0 {
             self.render_data
                 .gather_draw_data(gl, player_chunk_pos, &self.chunks);
+            self.render_frame_delay = FRAME_RENDER_DELAY;
         }
 
         Ok(())

@@ -111,7 +111,7 @@ impl Chunk {
         self.blocks[chunk_index_from_offset(&offset)]
     }
 
-    const TEST_ONE_CUBE: bool = true;
+    const TEST_ONE_CUBE: bool = false;
 
     pub fn to_vertex_data(&self) -> Vec<i32> {
         if self.is_empty() {
