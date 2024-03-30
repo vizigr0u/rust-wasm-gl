@@ -200,7 +200,7 @@ impl WorldRenderData {
                 gl.bind_texture(graphics.texture.0.into(), Some(graphics.texture.1));
                 program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
                 program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
-                gl.disable(glow::CULL_FACE);
+                gl.enable(glow::CULL_FACE);
                 gl.enable(glow::DEPTH_TEST);
                 gl.disable(glow::BLEND);
                 gl.bind_vertex_array(self.vertex_array);
