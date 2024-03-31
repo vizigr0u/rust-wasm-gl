@@ -44,10 +44,6 @@ fn start() -> Result<(), JsValue> {
 
     let mut game = Game::new()?;
 
-    unsafe {
-        game.load(&gl)?;
-    }
-
     main_loop(game, gl)?;
 
     Ok(())

@@ -25,8 +25,15 @@ fn make_generator(rng: Rng) -> WorldGenerator {
     TestGenerator { rng }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum State {
+    Loading,
+    Running,
+}
+
 #[derive(Debug)]
 pub struct Game {
+    current_state: State,
     texture_loader: TextureLoader,
     world: World<WorldGenerator>,
     camera: Camera,
@@ -68,6 +75,7 @@ impl Game {
     pub fn new() -> Result<Self, JsValue> {
         let rng = Rng::with_seed(0);
         let game = Game {
+            current_state: State::Loading,
             texture_loader: TextureLoader::new(10)?,
             world: World::new(make_generator(rng)),
             loaded_textures: Vec::new(),
@@ -89,7 +97,7 @@ impl Game {
         Ok(game)
     }
 
-    pub unsafe fn load(&mut self, gl: &glow::Context) -> Result<(), String> {
+    fn tick_loading(&mut self, gl: &glow::Context) -> Result<State, String> {
         for (path, t) in [
             (BLOCKS_ATLAS_PATH, TextureType::Texture2DArray(16)),
             (UV_CHECKER_PATH, TextureType::Texture2D),
@@ -98,18 +106,33 @@ impl Game {
             self.loaded_textures.push(Rc::new((t, key)));
         }
 
-        gl.enable(glow::DEPTH_TEST);
-        gl.depth_func(glow::LESS);
-        gl.enable(glow::CULL_FACE);
+        unsafe {
+            gl.enable(glow::DEPTH_TEST);
+            gl.depth_func(glow::LESS);
+            gl.enable(glow::CULL_FACE);
+        }
 
         self.world
             .setup_graphics(gl, self.loaded_textures[0].clone())?;
         self.egui = Some(EguiBackend::new(gl));
 
-        Ok(())
+        Ok(State::Running)
     }
 
     pub fn tick(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
+        match self.current_state {
+            State::Loading => {
+                let load_state = self.tick_loading(gl)?;
+                self.current_state = load_state;
+            }
+            State::Running => {
+                self.tick_running(gl, time)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn tick_running(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
         let start = performance_now();
 
         self.time.update(time);
