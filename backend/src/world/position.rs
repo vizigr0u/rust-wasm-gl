@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use glam::{ivec2, ivec3, IVec2, IVec3, Vec3};
 use itertools::iproduct;
 
@@ -5,7 +7,7 @@ pub const CHUNK_SIZE: usize = 16;
 pub const BLOCKS_PER_CHUNK: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 
 pub const TOTAL_CHUNK_HEIGHT: i32 = 320 / CHUNK_SIZE as i32;
-pub const MIN_CHUNK_Y: i32 = -16;
+pub const MIN_CHUNK_Y: i32 = -256 / CHUNK_SIZE as i32;
 pub const MAX_CHUNK_Y: i32 = TOTAL_CHUNK_HEIGHT + MIN_CHUNK_Y;
 
 pub const MIN_BLOCK_Y: i32 = MIN_CHUNK_Y * CHUNK_SIZE as i32;
@@ -39,7 +41,7 @@ impl BlockPos {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ChunkPos(IVec3);
 
 impl ChunkPos {
@@ -64,6 +66,12 @@ impl ChunkPos {
         iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE)
             .map(move |(x, y, z)| first_pos + ivec3(x as _, y as _, z as _))
             .map(|v| BlockPos(v))
+    }
+}
+
+impl Hash for ChunkPos {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        ((self.0.x & 0xfff) << 20 | (self.0.y & 0xfff) << 10 | (self.0.z & 0xfff)).hash(state);
     }
 }
 

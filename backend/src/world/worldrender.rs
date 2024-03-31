@@ -1,6 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use glam::IVec3;
+use glam::{IVec3, Vec3};
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 use log::info;
 
@@ -35,7 +35,7 @@ pub struct WorldRenderData {
     vertex_data_buffer: Option<WebBufferKey>,
     location_data_buffer: Option<WebBufferKey>,
     vertex_data_cache: Vec<i32>,
-    location_data_cache: Vec<f32>,
+    location_data_cache: Vec<Vec3>,
 }
 
 impl ChunkDrawData {
@@ -77,11 +77,8 @@ impl WorldRenderData {
                 self.vertex_data_cache
                     .extend_from_slice(&draw_data.vertex_data);
                 let block_pos_f3 = draw_data.chunk_pos.get_center_block_pos().as_vec3();
-                self.location_data_cache.extend(
-                    std::iter::repeat(block_pos_f3.to_array())
-                        .take(quad_count)
-                        .flat_map(|v| v),
-                );
+                self.location_data_cache
+                    .extend(std::iter::repeat(block_pos_f3).take(quad_count));
             }
         }
 

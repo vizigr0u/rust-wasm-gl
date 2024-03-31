@@ -12,7 +12,7 @@ const MAX_MESH_TO_KEEP: usize = 1024;
 
 // const CHUNK_LOADING_WEIGHT: f32 = 1.0;
 // const CHUNK_GENERATION_WEIGHT: f32 = 0.5;
-const MAX_LOADS_PER_FRAME: usize = 32;
+const MAX_LOADS_PER_FRAME: usize = 8;
 
 use crate::{
     core::Time,
