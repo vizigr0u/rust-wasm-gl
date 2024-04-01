@@ -1,7 +1,7 @@
 use std::{
     fmt::Debug,
     hash::{Hash, Hasher},
-    ops::Add,
+    ops::{Add, AddAssign},
 };
 
 use glam::{ivec2, ivec3, IVec2, IVec3, Vec3};
@@ -105,6 +105,10 @@ impl Debug for WorldPos {
 }
 
 impl WorldPos {
+    pub const ZERO: Self = Self {
+        chunk_pos: ChunkPos(IVec3::ZERO),
+        offset: Vec3::ZERO,
+    };
     pub fn new(chunk_pos: ChunkPos, offset: Vec3) -> Self {
         Into::<WorldPos>::into(chunk_pos) + offset
     }
@@ -114,6 +118,9 @@ impl WorldPos {
     pub fn offset(&self) -> Vec3 {
         self.offset
     }
+    pub fn to_screen_pos(&self, player_chunk: ChunkPos) -> Vec3 {
+        (self.chunk_pos.0 - player_chunk.0).as_vec3() * CHUNK_SIZE as f32 + self.offset
+    }
 }
 
 impl Into<WorldPos> for ChunkPos {
@@ -122,6 +129,18 @@ impl Into<WorldPos> for ChunkPos {
             chunk_pos: self,
             offset: Vec3::ZERO,
         }
+    }
+}
+
+impl AddAssign<WorldPos> for WorldPos {
+    fn add_assign(&mut self, rhs: WorldPos) {
+        *self = *self + rhs;
+    }
+}
+
+impl AddAssign<Vec3> for WorldPos {
+    fn add_assign(&mut self, rhs: Vec3) {
+        *self = *self + rhs;
     }
 }
 

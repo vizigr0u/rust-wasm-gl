@@ -233,4 +233,32 @@ mod tests {
             assert_eq!(a + b, expected);
         }
     }
+
+    #[test]
+    fn test_world_pos_to_screen_pos() {
+        let c = CHUNK_SIZE as f32;
+        let tests = [
+            (
+                (ivec3(2, 3, 4), vec3(1.0, 2.0, 3.0)),
+                ivec3(2, 3, 4),
+                vec3(1.0, 2.0, 3.0),
+            ),
+            (
+                (ivec3(2, 3, 4), vec3(1.0, 2.0, 3.0)),
+                ivec3(0, 0, 0),
+                vec3(1.0, 2.0, 3.0) + ivec3(2, 3, 4).as_vec3() * c,
+            ),
+            (
+                (ivec3(0, 0, 0), vec3(1.0, 2.0, 3.0)),
+                ivec3(2, 3, 4),
+                vec3(1.0, 2.0, 3.0) - ivec3(2, 3, 4).as_vec3() * c,
+            ),
+        ];
+        let to_pos = |(chunk_pos, offset)| WorldPos::new(Into::<ChunkPos>::into(chunk_pos), offset);
+        for (a, b, expected) in tests {
+            let a = to_pos(a);
+            let player_chunk: ChunkPos = b.into();
+            assert_eq!(a.to_screen_pos(player_chunk), expected);
+        }
+    }
 }
