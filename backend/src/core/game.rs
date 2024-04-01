@@ -11,7 +11,7 @@ use crate::{
     gui::{EguiBackend, FpsDisplay},
     objects::{Gizmo, Player, Transform},
     utils::performance_now,
-    world::{TestGenerator, World},
+    world::{GeneratorV0, TestGenerator, World},
 };
 
 use super::{HandleInputs, InputEventType, InputSystem, Time};
@@ -19,10 +19,10 @@ use super::{HandleInputs, InputEventType, InputSystem, Time};
 const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 const UV_CHECKER_PATH: &str = "data/textures/UV_checker_Map_byValle.jpg";
 
-type WorldGenerator = TestGenerator;
+type WorldGenerator = GeneratorV0;
 
 fn make_generator(rng: Rng) -> WorldGenerator {
-    TestGenerator { rng }
+    GeneratorV0::new(rng)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -33,6 +33,7 @@ enum State {
 
 #[derive(Debug)]
 pub struct Game {
+    seed: u64,
     current_state: State,
     texture_loader: TextureLoader,
     world: World<WorldGenerator>,
@@ -73,8 +74,10 @@ impl Default for GuiState {
 
 impl Game {
     pub fn new() -> Result<Self, JsValue> {
-        let rng = Rng::with_seed(0);
+        let seed = 0;
+        let rng = Rng::with_seed(seed);
         let game = Game {
+            seed,
             current_state: State::Loading,
             texture_loader: TextureLoader::new(10)?,
             world: World::new(make_generator(rng)),
@@ -90,7 +93,7 @@ impl Game {
             egui: None,
             gui_state: GuiState::default(),
             gizmo: Gizmo::new(Vec3::ZERO, 10.0),
-            player: Player::new(vec3(0.0, 0.5, 0.0)),
+            player: Player::new(vec3(0.0, 10.5, 0.0)),
             fps_display: FpsDisplay::new(),
         };
 
@@ -249,7 +252,8 @@ impl Game {
                                         let pos = player.get_position();
                                         let chunk_pos = player.get_chunk_position();
                                         ui.colored_label(egui::Color32::WHITE,RichText::new(format!(
-                                            "git rev: {}\nPlayer position: {:.1},{:.1},{:.1} (chunk {},{},{})\nWorld: {}",
+                                            "RNG seed: {}\ngit rev: {}\nPlayer position: {:.1},{:.1},{:.1} (chunk {},{},{})\nWorld: {}",
+                                            self.seed,
                                             env!("GIT_HASH"),
                                             pos.x,
                                             pos.y,

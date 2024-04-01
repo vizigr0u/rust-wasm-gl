@@ -14,7 +14,7 @@ use super::{
     Chunk, WorldGenerator, MIN_CHUNK_Y,
 };
 
-const PAGE_LOAD_PER_FRAME: usize = 2;
+const PAGE_LOAD_PER_FRAME: usize = 1;
 const MAX_NUM_PAGES: usize = 16;
 
 #[derive(Debug, Clone)]
@@ -41,43 +41,6 @@ impl ChunkPage {
         let index: usize = offset.as_page_index().into();
         self.chunks.get(index)
     }
-
-    // fn get_pos_at_index(index: usize) -> ChunkPos {
-    //     ivec3(
-    //         index as i32 % CHUNK_PAGE_SIZE.x,
-    //         index as i32 / CHUNK_PAGE_SIZE.x % CHUNK_PAGE_SIZE.y + MIN_CHUNK_Y,
-    //         index as i32 / CHUNK_PAGE_SIZE.x / CHUNK_PAGE_SIZE.y,
-    //     )
-    //     .into()
-    // }
-
-    // fn fill_from<G>(&mut self, generator: &mut G, page_index: PagePos)
-    // where
-    //     G: WorldGenerator,
-    // {
-    //     info!("Streaming: Filling chunk page {page_index:?}");
-    //     let page_chunk_pos = page_index.0 * CHUNK_PAGE_SIZE as i32;
-    //     self.position = page_index;
-    //     for x in 0..CHUNK_PAGE_SIZE {
-    //         for y in 0..CHUNK_PAGE_SIZE {
-    //             for z in 0..CHUNK_PAGE_SIZE {
-    //                 let chunk_index = self.get_chunk_index(ivec3(x as i32, y as i32, z as i32));
-    //                 let world_chunk_pos = ivec3(
-    //                     page_chunk_pos.x + x as i32,
-    //                     y as i32,
-    //                     page_chunk_pos.y + z as i32,
-    //                 );
-    //                 let chunk = generator.generate(&world_chunk_pos);
-
-    //                 if !chunk.is_empty() {
-    //                     self.content_bounds.add(world_chunk_pos);
-    //                 }
-
-    //                 self.chunks[chunk_index] = chunk;
-    //             }
-    //         }
-    //     }
-    // }
 
     fn fill_from<G>(&mut self, generator: &mut G, page_pos: PagePos)
     where

@@ -90,6 +90,9 @@ impl Chunk {
     // }
 
     pub fn set(&mut self, offset: U16Vec3, block: BlockType) {
+        debug_assert!(offset.x < CHUNK_SIZE as u16);
+        debug_assert!(offset.y < CHUNK_SIZE as u16);
+        debug_assert!(offset.z < CHUNK_SIZE as u16);
         self.blocks[chunk_index_from_offset(&offset)] = block;
     }
 
@@ -113,20 +116,30 @@ impl Chunk {
 
     const TEST_ONE_CUBE: bool = false;
 
-    pub fn to_vertex_data(&self) -> Vec<i32> {
+    const NO_DATA: [Vec<i32>; 6] = [
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    ];
+
+    pub fn to_vertex_data(&self) -> [Vec<i32>; 6] {
+        let mut result = Self::NO_DATA.clone();
         if self.is_empty() {
-            return Vec::new();
+            return result;
         }
         let mut data: Vec<i32> = Vec::with_capacity(BLOCKS_PER_CHUNK * 6);
         if Self::TEST_ONE_CUBE {
             let (top, side, bottom) = BlockType::Grass.into();
             let offset = U16Vec3::new(0, 0, 0);
-            data.push(make_side_quad_data(Side::Top, top, offset));
-            data.push(make_side_quad_data(Side::Bottom, bottom, offset));
-            data.push(make_side_quad_data(Side::Right, side, offset));
-            data.push(make_side_quad_data(Side::Left, side, offset));
-            data.push(make_side_quad_data(Side::Front, side, offset));
-            data.push(make_side_quad_data(Side::Back, side, offset));
+            add_side_data(&mut result, Side::Top, top, offset);
+            add_side_data(&mut result, Side::Bottom, bottom, offset);
+            add_side_data(&mut result, Side::Right, side, offset);
+            add_side_data(&mut result, Side::Left, side, offset);
+            add_side_data(&mut result, Side::Front, side, offset);
+            add_side_data(&mut result, Side::Back, side, offset);
         } else {
             for (x, y, z) in iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE) {
                 let offset = U16Vec3::new(x as _, y as _, z as _);
@@ -138,31 +151,31 @@ impl Chunk {
                     if y == CHUNK_SIZE - 1
                         || self.get_block(offset + U16Vec3::Y) == BlockType::Empty
                     {
-                        data.push(make_side_quad_data(Side::Top, top, offset));
+                        add_side_data(&mut result, Side::Top, top, offset);
                     }
                     if y == 0 || self.get_block(offset - U16Vec3::Y) == BlockType::Empty {
-                        data.push(make_side_quad_data(Side::Bottom, bottom, offset));
+                        add_side_data(&mut result, Side::Bottom, bottom, offset);
                     }
                     if x == CHUNK_SIZE - 1
                         || self.get_block(offset + U16Vec3::X) == BlockType::Empty
                     {
-                        data.push(make_side_quad_data(Side::Right, side, offset));
+                        add_side_data(&mut result, Side::Right, side, offset);
                     }
                     if x == 0 || self.get_block(offset - U16Vec3::X) == BlockType::Empty {
-                        data.push(make_side_quad_data(Side::Left, side, offset));
+                        add_side_data(&mut result, Side::Left, side, offset);
                     }
                     if z == CHUNK_SIZE - 1
                         || self.get_block(offset + U16Vec3::Z) == BlockType::Empty
                     {
-                        data.push(make_side_quad_data(Side::Front, side, offset));
+                        add_side_data(&mut result, Side::Front, side, offset);
                     }
                     if z == 0 || self.get_block(offset - U16Vec3::Z) == BlockType::Empty {
-                        data.push(make_side_quad_data(Side::Back, side, offset));
+                        add_side_data(&mut result, Side::Back, side, offset);
                     }
                 }
             }
         }
-        data
+        result
     }
 }
 
@@ -233,7 +246,16 @@ pub fn make_base_quad_data() -> [Vec3; 4] {
     SIDE_VERTICES[Side::Bottom as usize].get_quad_triangles_strip()
 }
 
-pub fn make_side_quad_data(side: Side, texture: BlockSideTexture, offset: U16Vec3) -> i32 {
+fn add_side_data(
+    result: &mut [Vec<i32>; 6],
+    side: Side,
+    texture: BlockSideTexture,
+    offset: U16Vec3,
+) {
+    result[side as usize].push(make_side_quad_data(side, texture, offset));
+}
+
+fn make_side_quad_data(side: Side, texture: BlockSideTexture, offset: U16Vec3) -> i32 {
     let norm = side as i32;
     let pos = offset;
     let mut result: i32 = 0;

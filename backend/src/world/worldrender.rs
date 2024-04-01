@@ -5,7 +5,7 @@ use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 use log::info;
 
 use crate::{
-    graphics::{Camera, ShaderDef, ShaderProgram, TextureType, UniformTypes, VertexAttrType},
+    graphics::{Camera, ShaderDef, ShaderProgram, Side, TextureType, UniformTypes, VertexAttrType},
     shader_def,
     utils::make_quad,
     world::{Chunk, CHUNK_SIZE},
@@ -23,8 +23,7 @@ struct GraphicContext {
 
 #[derive(Debug, Clone)]
 pub struct ChunkDrawData {
-    pub vertex_data: Vec<i32>,
-    pub chunk_pos: ChunkPos,
+    pub vertex_data: [Vec<i32>; 6],
 }
 
 #[derive(Debug)]
@@ -39,12 +38,9 @@ pub struct WorldRenderData {
 }
 
 impl ChunkDrawData {
-    pub fn load(gl: &glow::Context, chunk: &Chunk, chunk_pos: ChunkPos) -> Result<Self, String> {
+    pub fn load(chunk: &Chunk) -> Result<Self, String> {
         let vertex_data = chunk.to_vertex_data();
-        Ok(Self {
-            vertex_data,
-            chunk_pos,
-        })
+        Ok(Self { vertex_data })
     }
 }
 
@@ -61,6 +57,36 @@ impl WorldRenderData {
         }
     }
 
+    fn is_visible(player_chunk_pos: ChunkPos, data_pos: ChunkPos, side: Side) -> bool {
+        match side {
+            Side::Front => player_chunk_pos.as_vec().z >= data_pos.as_vec().z,
+            Side::Back => player_chunk_pos.as_vec().z <= data_pos.as_vec().z,
+            Side::Left => player_chunk_pos.as_vec().x <= data_pos.as_vec().x,
+            Side::Right => player_chunk_pos.as_vec().x >= data_pos.as_vec().x,
+            Side::Top => player_chunk_pos.as_vec().y >= data_pos.as_vec().y,
+            Side::Bottom => player_chunk_pos.as_vec().y <= data_pos.as_vec().y,
+            _ => unreachable!(),
+        }
+    }
+
+    fn add_if_visible(
+        &mut self,
+        data: &ChunkDrawData,
+        side: Side,
+        player_chunk_pos: ChunkPos,
+        data_pos: ChunkPos,
+    ) -> usize {
+        if !Self::is_visible(player_chunk_pos, data_pos, side) {
+            return 0;
+        }
+        let data = &data.vertex_data[side as usize];
+        self.vertex_data_cache.extend_from_slice(data);
+        let block_pos_f3 = data_pos.get_center_block_pos().as_vec3();
+        self.location_data_cache
+            .extend(std::iter::repeat(block_pos_f3).take(data.len()));
+        data.len()
+    }
+
     pub fn gather_draw_data(
         &mut self,
         gl: &glow::Context,
@@ -70,15 +96,22 @@ impl WorldRenderData {
         self.num_quads_to_draw = 0;
         self.vertex_data_cache.clear();
         self.location_data_cache.clear();
-        for draw_data in loaded_chunks.values().filter(|d| d.is_some()) {
+        for (chunk_pos, draw_data) in loaded_chunks {
             if let Some(draw_data) = draw_data {
-                let quad_count = draw_data.vertex_data.len();
+                let mut quad_count: usize = 0;
+                quad_count +=
+                    self.add_if_visible(&draw_data, Side::Front, player_chunk_pos, *chunk_pos);
+                quad_count +=
+                    self.add_if_visible(&draw_data, Side::Back, player_chunk_pos, *chunk_pos);
+                quad_count +=
+                    self.add_if_visible(&draw_data, Side::Left, player_chunk_pos, *chunk_pos);
+                quad_count +=
+                    self.add_if_visible(&draw_data, Side::Right, player_chunk_pos, *chunk_pos);
+                quad_count +=
+                    self.add_if_visible(&draw_data, Side::Top, player_chunk_pos, *chunk_pos);
+                quad_count +=
+                    self.add_if_visible(&draw_data, Side::Bottom, player_chunk_pos, *chunk_pos);
                 self.num_quads_to_draw += quad_count as i32;
-                self.vertex_data_cache
-                    .extend_from_slice(&draw_data.vertex_data);
-                let block_pos_f3 = draw_data.chunk_pos.get_center_block_pos().as_vec3();
-                self.location_data_cache
-                    .extend(std::iter::repeat(block_pos_f3).take(quad_count));
             }
         }
 

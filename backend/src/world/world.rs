@@ -1,7 +1,6 @@
 use std::{collections::HashMap, mem::size_of, rc::Rc};
 
 use glam::{ivec3, IVec3, Vec3};
-use glow::HasContext;
 use log::info;
 
 const FRAME_RENDER_DELAY: usize = 8;
@@ -86,7 +85,7 @@ where
         let memory_used = (vertex_count * size_of::<f32>()) as f32 / 1000000.0;
         let loaded_meshes = self.chunks.values().map(|c| c.is_some()).count();
         format!(
-            "World: Loaded {}/{} chunks\nStreaming: {}\n{vertex_count} vertices - {memory_used:.3} MB",
+            "Loaded {}/{} chunks\nStreaming: {}\n{vertex_count} vertices - {memory_used:.3} MB",
             loaded_meshes,
             self.chunks.len(),
             self.streamer.get_info(),
@@ -121,7 +120,7 @@ where
             geom_changed = true;
         }
 
-        if self.load_some_chunks(gl) > 0 {
+        if self.load_some_chunks() > 0 {
             geom_changed = true;
         }
 
@@ -137,7 +136,7 @@ where
         Ok(())
     }
 
-    fn load_some_chunks(&mut self, gl: &glow::Context) -> usize {
+    fn load_some_chunks(&mut self) -> usize {
         if self.chunks_to_load.len() == 0 {
             return 0;
         }
@@ -159,8 +158,7 @@ where
                     let chunk = match self.streamer.get_chunk(chunk_pos) {
                         None => None,
                         Some(chunk) => {
-                            let draw_data =
-                                ChunkDrawData::load(gl, chunk, chunk_pos).expect("can't load mesh");
+                            let draw_data = ChunkDrawData::load(chunk).expect("can't load mesh");
                             self.loaded_vertices += draw_data.vertex_data.len();
                             Some(draw_data)
                         }
@@ -174,7 +172,7 @@ where
         chunks_count_to_load
     }
 
-    pub fn on_chunk_changed(&mut self, new_chunk_pos: ChunkPos, gl: &glow::Context) {
+    pub fn on_chunk_changed(&mut self, new_chunk_pos: ChunkPos, _gl: &glow::Context) {
         info!("World: recompute for chunk pos: {new_chunk_pos:?}");
 
         // delete some chunks

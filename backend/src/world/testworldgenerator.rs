@@ -17,11 +17,11 @@ fn dirt_with_grass_on_top(rng: &mut Rng) -> Chunk {
     let mut res = Chunk::new(false);
     for x in 0..CHUNK_SIZE {
         for z in 0..CHUNK_SIZE {
-            let max_y = rng.u8(min_grass_y..max_grass_y as u8) as u16;
+            let max_y = rng.u8(min_grass_y..=max_grass_y as u8) as u16;
             let dirt_height = rng.u8(min_dirt_height..max_dirt_height as u8) as u16;
             let min_dirt_y = max_y - 1 - dirt_height;
             for y in 0..max_y {
-                let block = if y >= max_y - 1 {
+                let block = if y == max_y - 1 {
                     BlockType::Grass
                 } else if y >= min_dirt_y {
                     BlockType::Dirt
