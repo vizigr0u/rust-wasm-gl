@@ -6,11 +6,11 @@ use position::*;
 mod tests {
     use std::collections::HashMap;
 
-    use glam::{ivec2, ivec3};
+    use glam::{ivec2, ivec3, vec3, IVec3};
 
     use crate::{
-        BlockPos, ChunkPos, PageChunkOffset, PagePos, CHUNK_PAGE_SIZE, CHUNK_SIZE, MAX_BLOCK_Y,
-        MAX_CHUNK_Y, MIN_BLOCK_Y, MIN_CHUNK_Y, NUM_CHUNKS_PER_PAGE,
+        BlockPos, ChunkPos, PageChunkOffset, PagePos, WorldPos, CHUNK_PAGE_SIZE, CHUNK_SIZE,
+        MAX_BLOCK_Y, MAX_CHUNK_Y, MIN_BLOCK_Y, MIN_CHUNK_Y, NUM_CHUNKS_PER_PAGE,
     };
 
     #[test]
@@ -186,4 +186,51 @@ mod tests {
     //     assert_eq!(0, proper_modulo_i32(5, 5));
     //     assert_eq!(1, proper_modulo_i32(6, 5));
     // }
+
+    #[test]
+    fn test_add_world_pos() {
+        let c = CHUNK_SIZE as f32;
+        let tests = [
+            (
+                (ivec3(0, 0, 0), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, 0, 0), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, 0, 0), vec3(2.0, 4.0, 6.0)),
+            ),
+            (
+                (ivec3(0, 0, 0), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, 0, 0), vec3(-1.0, -2.0, -3.0)),
+                (ivec3(0, 0, 0), vec3(0.0, 0.0, 0.0)),
+            ),
+            (
+                (ivec3(1, 2, 3), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, 0, 3), vec3(-1.0, -2.0, -3.0)),
+                (ivec3(1, 2, 6), vec3(0.0, 0.0, 0.0)),
+            ),
+            (
+                (ivec3(1, 2, 3), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, 0, 3), vec3(c, -2.0, -3.0 - 3.0 * c)),
+                (ivec3(2, 2, 3), vec3(1.0, 0.0, 0.0)),
+            ),
+            (
+                (ivec3(1, 2, 3), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, MAX_CHUNK_Y - 1, 0), vec3(-1.0, -2.0, -3.0)),
+                (ivec3(1, MAX_CHUNK_Y - 1, 3), vec3(0.0, 2.0 * c, 0.0)),
+            ),
+            (
+                (ivec3(1, 2, 3), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, MIN_CHUNK_Y, 0), vec3(-2.0, 2.0, -5.0)),
+                (ivec3(1, MIN_CHUNK_Y + 2, 3), vec3(-1.0, 4.0, -2.0)),
+            ),
+            (
+                (ivec3(1, -1, 3), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, MIN_CHUNK_Y, 0), vec3(-2.0, 2.0, -5.0)),
+                (ivec3(1, MIN_CHUNK_Y, 3), vec3(-1.0, 4.0 - c, -2.0)),
+            ),
+        ];
+        let to_pos = |(chunk_pos, offset)| WorldPos::new(Into::<ChunkPos>::into(chunk_pos), offset);
+        for (a, b, expected) in tests {
+            let (a, b, expected) = (to_pos(a), to_pos(b), to_pos(expected));
+            assert_eq!(a + b, expected);
+        }
+    }
 }

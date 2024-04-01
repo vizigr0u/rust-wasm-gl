@@ -1,11 +1,17 @@
+use std::{
+    fmt::Debug,
+    hash::{Hash, Hasher},
+    ops::Add,
+};
+
 use glam::{ivec2, ivec3, IVec2, IVec3, Vec3};
 use itertools::iproduct;
 
 pub const CHUNK_SIZE: usize = 16;
 pub const BLOCKS_PER_CHUNK: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 
-pub const TOTAL_CHUNK_HEIGHT: i32 = 20;
-pub const MIN_CHUNK_Y: i32 = -16;
+pub const TOTAL_CHUNK_HEIGHT: i32 = 320 / CHUNK_SIZE as i32;
+pub const MIN_CHUNK_Y: i32 = -256 / CHUNK_SIZE as i32;
 pub const MAX_CHUNK_Y: i32 = TOTAL_CHUNK_HEIGHT + MIN_CHUNK_Y;
 
 pub const MIN_BLOCK_Y: i32 = MIN_CHUNK_Y * CHUNK_SIZE as i32;
@@ -39,7 +45,7 @@ impl BlockPos {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ChunkPos(IVec3);
 
 impl ChunkPos {
@@ -64,6 +70,85 @@ impl ChunkPos {
         iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE)
             .map(move |(x, y, z)| first_pos + ivec3(x as _, y as _, z as _))
             .map(|v| BlockPos(v))
+    }
+    pub fn safe_add(&self, other: ChunkPos) -> ChunkPos {
+        let v = self.0 + other.0;
+        ChunkPos(ivec3(v.x, v.y.clamp(MIN_CHUNK_Y, MAX_CHUNK_Y - 1), v.z))
+    }
+}
+
+impl Hash for ChunkPos {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        ((self.0.x & 0xfff) << 20 | (self.0.y & 0xfff) << 10 | (self.0.z & 0xfff)).hash(state);
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Default)]
+pub struct WorldPos {
+    chunk_pos: ChunkPos,
+    offset: Vec3,
+}
+
+impl Debug for WorldPos {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "WorldPos{{ ({:?}, {:?}, {:?})+({:?}, {:?}, {:?}) }}",
+            self.chunk_pos.0.x,
+            self.chunk_pos.0.y,
+            self.chunk_pos.0.z,
+            self.offset.x,
+            self.offset.y,
+            self.offset.z
+        )
+    }
+}
+
+impl WorldPos {
+    pub fn new(chunk_pos: ChunkPos, offset: Vec3) -> Self {
+        Into::<WorldPos>::into(chunk_pos) + offset
+    }
+    pub fn chunk_pos(&self) -> ChunkPos {
+        self.chunk_pos
+    }
+    pub fn offset(&self) -> Vec3 {
+        self.offset
+    }
+}
+
+impl Into<WorldPos> for ChunkPos {
+    fn into(self) -> WorldPos {
+        WorldPos {
+            chunk_pos: self,
+            offset: Vec3::ZERO,
+        }
+    }
+}
+
+impl Add<Vec3> for WorldPos {
+    type Output = WorldPos;
+    fn add(self, rhs: Vec3) -> Self::Output {
+        let offset = self.offset + rhs;
+        let chunks_to_add = offset.round().as_ivec3() / CHUNK_SIZE as i32;
+        let expected_offset = offset - chunks_to_add.as_vec3() * CHUNK_SIZE as f32;
+        let chunk_pos = self.chunk_pos.safe_add(ChunkPos(chunks_to_add));
+        let chunks_added = chunk_pos.0 - self.chunk_pos.0;
+        let dv = chunks_to_add - chunks_added;
+        let offset = expected_offset + (dv.as_vec3() * CHUNK_SIZE as f32);
+        let res = WorldPos { chunk_pos, offset };
+        res
+    }
+}
+
+impl Add<WorldPos> for WorldPos {
+    type Output = WorldPos;
+    fn add(self, rhs: WorldPos) -> Self::Output {
+        let offset = self.offset + rhs.offset;
+        let new_chunk_pos = self.chunk_pos.safe_add(rhs.chunk_pos);
+        let dv = (self.chunk_pos.0 + rhs.chunk_pos.0) - new_chunk_pos.0;
+        let world_pos: WorldPos = new_chunk_pos.into();
+        let res = world_pos + (offset + (dv.as_vec3() * CHUNK_SIZE as f32));
+        res
     }
 }
 
