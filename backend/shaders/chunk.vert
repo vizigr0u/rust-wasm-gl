@@ -30,11 +30,11 @@ const int SideRight = 4;
 const int SideLeft = 5;
 
 void main() {
-    int x = data & 63;
-    int y = (data >> 6) & 63;
-    int z = (data >> 12) & 63;
-    int face = (data >> 18) & 7;
-    int depth = (data >> 21) & 63;
+    int x = data & 15;
+    int y = (data >> 4) & 15;
+    int z = (data >> 8) & 15;
+    int face = (data >> 12) & 7;
+    int depth = (data >> 15) & 63;
 
     vec3 position = vec3(x, y, z) - vec3(player_chunk_pos) * 16.0f;
     // vec3 normal = NORMALS[face];

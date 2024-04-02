@@ -50,7 +50,7 @@ where
     G: WorldGenerator,
 {
     chunks: HashMap<ChunkPos, Option<ChunkDrawData>>,
-    loaded_vertices: usize,
+    loaded_quads: usize,
     // loaded_meshes: Vec<LoadedChunkMesh>,
     streamer: ChunkStreamer<G>,
     last_computed_chunk_pos: Option<ChunkPos>,
@@ -60,6 +60,8 @@ where
     render_frame_delay: usize,
     player_chunk_pos: ChunkPos,
 }
+
+const QUAD_DATA_SIZE: usize = size_of::<f32>() + size_of::<Vec3>();
 
 impl<G> World<G>
 where
@@ -71,7 +73,7 @@ where
 
         Self {
             chunks: HashMap::new(),
-            loaded_vertices: 0,
+            loaded_quads: 0,
             streamer: ChunkStreamer::new(generator),
             offset_priority,
             last_computed_chunk_pos: None,
@@ -83,12 +85,11 @@ where
     }
 
     pub fn get_info(&self) -> String {
-        let vertex_count = self.loaded_vertices;
-        let memory_used = (vertex_count * size_of::<f32>()) as f32 / 1000000.0;
+        let quad_count = self.loaded_quads;
+        let memory_used = (quad_count * QUAD_DATA_SIZE) as f32 / 1000000.0;
         let loaded_meshes = self.chunks.values().map(|c| c.is_some()).count();
         format!(
-            "Loaded {}/{} chunks\nStreaming: {}\n{vertex_count} vertices - {memory_used:.3} MB",
-            loaded_meshes,
+            "Loaded {loaded_meshes}/{} chunks\nStreaming: {}\n{quad_count} vertices - {memory_used:.3} MB",
             self.chunks.len(),
             self.streamer.get_info(),
         )
@@ -162,7 +163,7 @@ where
                         None => None,
                         Some(chunk) => {
                             let draw_data = ChunkDrawData::load(chunk).expect("can't load mesh");
-                            self.loaded_vertices += draw_data.vertex_data.len();
+                            self.loaded_quads += draw_data.vertex_data.len();
                             Some(draw_data)
                         }
                     };
@@ -203,7 +204,7 @@ where
                         .remove(&chunk_pos)
                         .expect("added inexistent chunk")
                         .expect("added empty chunk");
-                    self.loaded_vertices -= draw_data.vertex_data.len();
+                    self.loaded_quads -= draw_data.vertex_data.len();
                 }
             }
         }

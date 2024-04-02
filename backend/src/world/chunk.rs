@@ -255,17 +255,33 @@ fn add_side_data(
     result[side as usize].push(make_side_quad_data(side, texture, offset));
 }
 
+struct FiveBitsPerInt;
+struct FourBitsPerInt;
+
+fn pack_ivec_4bits(v: U16Vec3) -> i32 {
+    debug_assert!(v.x < 16);
+    debug_assert!(v.y < 16);
+    debug_assert!(v.z < 16);
+    (v.x | v.y << 4 | v.z << 8) as i32
+}
+
+fn pack_ivec_5bits(v: U16Vec3) -> i32 {
+    debug_assert!(v.x < 32);
+    debug_assert!(v.y < 32);
+    debug_assert!(v.z < 32);
+    (v.x | v.y << 5 | v.z << 10) as i32
+}
+
 fn make_side_quad_data(side: Side, texture: BlockSideTexture, offset: U16Vec3) -> i32 {
-    let norm = side as i32;
+    let side = side as i32;
+    let texture = texture as i32;
     let pos = offset;
     let mut result: i32 = 0;
     // 32 bit layout
-    // -----ttt tttnnnzz zzzzyyyy yyxxxxxx
-    result |= (pos.x & 63) as i32;
-    result |= (pos.y as i32 & 63) << 6;
-    result |= (pos.z as i32 & 63) << 12;
-    result |= (norm & 7) << 18;
-    result |= (texture as i32 & 63) << 21;
+    // -------- ---ttttt tssszzzz yyyyxxxx
+    result |= pack_ivec_4bits(pos); // 12 bits zzzz yyyy xxxx
+    result |= (side & 7) << 12; // 3 bits sss
+    result |= (texture & 63) << 15; // 6 bits tttttt
     result
 }
 
