@@ -150,10 +150,10 @@ where
             .copied()
             .collect();
         let chunks_count_to_load = chunks_to_load.len();
-        info!(
-            "World Graphics: gl loading {} chunks this frame",
-            chunks_count_to_load
-        );
+        // info!(
+        //     "World Graphics: gl loading {} chunks this frame",
+        //     chunks_count_to_load
+        // );
 
         if chunks_count_to_load > 0 {
             for chunk_pos in chunks_to_load {

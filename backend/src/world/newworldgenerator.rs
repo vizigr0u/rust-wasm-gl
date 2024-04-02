@@ -26,7 +26,6 @@ impl WorldGenerator for GeneratorV0 {
 
         let first_block =
             chunk_position.get_center_block_pos().as_vec() - (CHUNK_SIZE as i32 / 2) * IVec3::ONE;
-        let mut log_count = 5;
         for block_pos in chunk_position.iter_block_pos() {
             let pos = block_pos.as_vec();
             let offset: U16Vec3 = (pos - first_block).as_u16vec3();
@@ -34,10 +33,6 @@ impl WorldGenerator for GeneratorV0 {
             let h = (amplitude
                 * ((frequency * pos.x as f32).sin() + (frequency * pos.z as f32).sin()))
             .max(-3.0);
-            if log_count > 0 {
-                log_count -= 1;
-                info!("{}, {} :H = {:.3}", pos.x, pos.z, h);
-            }
             let yf = block_pos.as_vec3().y;
             if yf <= h {
                 let block = if h - yf <= 1.0 {
