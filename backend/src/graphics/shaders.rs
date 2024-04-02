@@ -4,6 +4,8 @@ use glam::Mat4;
 use glow::{HasContext, WebProgramKey, WebShaderKey};
 use web_sys::WebGlUniformLocation;
 
+use crate::world::ChunkPos;
+
 use super::VertexAttrType;
 
 #[macro_export]
@@ -27,6 +29,7 @@ pub enum UniformTypes {
     ViewMatrix,
     ProjMatrix,
     WorldPosition,
+    PlayerChunkPos,
 }
 
 pub struct ShaderDef {
@@ -57,6 +60,11 @@ impl ShaderProgram {
     // pub fn get_program(&self) -> WebProgramKey {
     //     self.program_key
     // }
+    pub fn set_current_player_chunk(&self, gl: &glow::Context, chunk: ChunkPos) {
+        let location = self.get_uniform_location(UniformTypes::PlayerChunkPos);
+        let v = chunk.as_vec();
+        unsafe { gl.uniform_3_i32(location, v.x, v.y, v.z) }
+    }
 
     pub fn set_matrix(&self, gl: &glow::Context, matrix_type: UniformTypes, value: &Mat4) {
         let location = self.get_uniform_location(matrix_type);

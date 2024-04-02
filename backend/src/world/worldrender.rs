@@ -222,12 +222,13 @@ impl WorldRenderData {
         Ok(())
     }
 
-    pub fn render(&self, gl: &glow::Context, camera: &Camera) {
+    pub fn render(&self, gl: &glow::Context, camera: &Camera, player_chunk_pos: ChunkPos) {
         if let Some(graphics) = &self.graphics {
             unsafe {
                 let program = &graphics.program;
                 program.gl_use(gl);
                 gl.bind_texture(graphics.texture.0.into(), Some(graphics.texture.1));
+                program.set_current_player_chunk(gl, player_chunk_pos);
                 program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
                 program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
                 gl.enable(glow::CULL_FACE);
@@ -245,6 +246,10 @@ impl WorldRenderData {
 }
 
 fn compile_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
+    debug_assert!(
+        CHUNK_SIZE == 16,
+        "make sure to update shaders for new chunk size"
+    );
     unsafe {
         let program = shader_def!(
             "chunk.vert",
@@ -253,6 +258,7 @@ fn compile_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
             vec!(
                 (UniformTypes::ViewMatrix, "view"),
                 (UniformTypes::ProjMatrix, "projection"),
+                (UniformTypes::PlayerChunkPos, "player_chunk_pos")
             )
         )
         .compile(gl)?;

@@ -6,7 +6,6 @@ use glam::Quat;
 use glam::Vec3;
 use glow::HasContext;
 use glow::WebTextureKey;
-use log::info;
 
 use crate::core::Time;
 use crate::graphics::Camera;
@@ -14,11 +13,13 @@ use crate::graphics::MeshRenderer;
 use crate::graphics::TextureDef;
 use crate::graphics::TextureType;
 use crate::graphics::UniformTypes;
+use crate::world::ChunkPos;
+use crate::world::WorldPos;
 use crate::world::CHUNK_SIZE;
 
 pub trait Transform {
-    fn get_position(&self) -> Vec3;
-    fn set_position(&mut self, position: Vec3);
+    fn get_position(&self) -> WorldPos;
+    fn set_position(&mut self, position: WorldPos);
     fn get_rotation(&self) -> Quat;
     fn set_rotation(&mut self, rotation: Quat);
     fn get_scale(&self) -> Vec3;
@@ -27,7 +28,8 @@ pub trait Transform {
     fn set_velocity(&mut self, velocity: Vec3);
 
     fn get_block_position(&self) -> IVec3 {
-        self.get_position().as_ivec3()
+        self.get_position().offset().as_ivec3()
+            + self.get_position().chunk_pos().as_vec() * CHUNK_SIZE as i32
     }
 
     fn get_chunk_position(&self) -> IVec3 {
@@ -37,7 +39,8 @@ pub trait Transform {
 
 #[derive(Debug)]
 pub struct GameObject {
-    position: Vec3,
+    position: WorldPos,
+    player_chunk: ChunkPos,
     rotation: Quat,
     scale: Vec3,
     velocity: Vec3,
@@ -51,7 +54,8 @@ pub struct GameObject {
 impl GameObject {
     pub fn new(texture: &Rc<TextureDef>, renderer: &Rc<MeshRenderer>) -> Self {
         GameObject {
-            position: Vec3::ZERO,
+            position: WorldPos::ZERO,
+            player_chunk: IVec3::ZERO.into(),
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
             texture: texture.clone(),
@@ -62,14 +66,23 @@ impl GameObject {
         }
     }
 
-    pub fn update(&mut self, time: &Time) {
-        if time.delta_time() > 0.0 {
+    pub fn update(&mut self, time: &Time, player_chunk: ChunkPos) {
+        if time.delta_time() > 0.0 && self.velocity != Vec3::ZERO {
             self.position += self.velocity * time.delta_time() as f32 * 0.001;
             self.transform_dirty = true;
         }
+        self.set_current_player_chunk(player_chunk);
         if self.transform_dirty {
+            let screen_pos = self.position.to_screen_pos(self.player_chunk);
             self.transform =
-                Mat4::from_scale_rotation_translation(self.scale, self.rotation, self.position);
+                Mat4::from_scale_rotation_translation(self.scale, self.rotation, screen_pos);
+        }
+    }
+
+    fn set_current_player_chunk(&mut self, chunk: ChunkPos) {
+        if chunk != self.player_chunk {
+            self.player_chunk = chunk;
+            self.transform_dirty = true;
         }
     }
 
@@ -103,11 +116,11 @@ impl GameObject {
 }
 
 impl Transform for GameObject {
-    fn get_position(&self) -> Vec3 {
+    fn get_position(&self) -> WorldPos {
         self.position
     }
 
-    fn set_position(&mut self, position: Vec3) {
+    fn set_position(&mut self, position: WorldPos) {
         self.position = position;
         self.transform_dirty = true;
     }

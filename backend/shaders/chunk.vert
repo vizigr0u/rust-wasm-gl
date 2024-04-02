@@ -4,6 +4,7 @@ layout (location = 0) in vec3 mesh_pos;
 layout (location = 1) in int data;
 layout (location = 2) in vec3 world_pos;
 
+uniform ivec3 player_chunk_pos;
 uniform mat4 view;
 uniform mat4 projection;
 
@@ -35,7 +36,7 @@ void main() {
     int face = (data >> 18) & 7;
     int depth = (data >> 21) & 63;
 
-    vec3 position = vec3(x, y, z);
+    vec3 position = vec3(x, y, z) - vec3(player_chunk_pos) * 16.0f;
     // vec3 normal = NORMALS[face];
 
     vec2 uvs = vec2(mesh_pos.z, mesh_pos.x);

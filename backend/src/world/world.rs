@@ -58,6 +58,7 @@ where
     chunks_to_load: Vec<ChunkPos>,
     render_data: WorldRenderData,
     render_frame_delay: usize,
+    player_chunk_pos: ChunkPos,
 }
 
 impl<G> World<G>
@@ -77,6 +78,7 @@ where
             chunks_to_load: Vec::with_capacity(MAX_MESH_TO_KEEP * 2),
             render_data: WorldRenderData::new(),
             render_frame_delay: 0,
+            player_chunk_pos: ChunkPos::default(),
         }
     }
 
@@ -104,10 +106,11 @@ where
         &mut self,
         gl: &glow::Context,
         _time: &Time,
-        player_pos: Vec3,
+        player_chunk_pos: ChunkPos,
     ) -> Result<(), String> {
-        let player_block_pos: BlockPos = player_pos.as_ivec3().into();
-        let player_chunk_pos: ChunkPos = player_block_pos.into();
+        self.player_chunk_pos = player_chunk_pos;
+        // let player_block_pos: BlockPos = player_pos.as_ivec3().into();
+        // let player_chunk_pos: ChunkPos = player_block_pos.into();
 
         let mut geom_changed = false;
         if self.streamer.tick_streaming(player_chunk_pos) > 0 {
@@ -224,6 +227,6 @@ where
     }
 
     pub fn render(&self, gl: &glow::Context, camera: &Camera) {
-        self.render_data.render(gl, camera);
+        self.render_data.render(gl, camera, self.player_chunk_pos);
     }
 }

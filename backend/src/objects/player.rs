@@ -6,10 +6,11 @@ use log::info;
 use super::{GameObject, LazyRenderGameObject, MakeRenderer};
 
 use crate::{
-    core::HandleInputs,
-    graphics::{MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
+    core::{HandleInputs, Time},
+    graphics::{Camera, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
     objects::gameobject::Transform,
     shader_def, utils,
+    world::WorldPos,
 };
 
 const MAX_SPEED: f32 = 10.0;
@@ -17,7 +18,7 @@ const PLAYER_SCALE: f32 = 0.5;
 
 #[derive(Debug, Default)]
 pub struct CreatePlayerRenderer {
-    origin: Vec3,
+    origin: WorldPos,
 }
 
 impl MakeRenderer for CreatePlayerRenderer {
@@ -36,36 +37,58 @@ impl MakeRenderer for CreatePlayerRenderer {
     }
 }
 
-pub type Player = LazyRenderGameObject<CreatePlayerRenderer>;
+#[derive(Debug)]
+pub struct Player(LazyRenderGameObject<CreatePlayerRenderer>);
 
 impl Default for Player {
     fn default() -> Self {
-        LazyRenderGameObject {
+        Player(LazyRenderGameObject {
             gameobject: None,
             renderer_creator: Default::default(),
-        }
+        })
     }
 }
 
 impl Player {
-    pub fn new(origin: Vec3) -> LazyRenderGameObject<CreatePlayerRenderer> {
-        LazyRenderGameObject {
+    pub fn new(origin: Vec3) -> Player {
+        Player(LazyRenderGameObject {
             gameobject: None,
-            renderer_creator: CreatePlayerRenderer { origin },
+            renderer_creator: CreatePlayerRenderer {
+                origin: WorldPos::ZERO + origin,
+            },
+        })
+    }
+
+    // pub fn get_gameobject(&self) -> &LazyRenderGameObject<CreatePlayerRenderer> {
+    //     &self.0
+    // }
+
+    pub fn update(&mut self, time: &Time) {
+        self.0.update(time, self.get_position().chunk_pos());
+    }
+
+    pub fn get_screen_position(&self) -> Vec3 {
+        match &self.0.gameobject {
+            Some(go) => go.get_position().offset(),
+            None => Vec3::ZERO,
         }
     }
 
-    pub fn get_position(&self) -> Vec3 {
-        match &self.gameobject {
+    pub fn render(&mut self, gl: &glow::Context, camera: &Camera) {
+        self.0.render_lazy(gl, camera);
+    }
+
+    pub fn get_position(&self) -> WorldPos {
+        match &self.0.gameobject {
             Some(go) => go.get_position(),
-            None => Default::default(),
+            None => WorldPos::ZERO,
         }
     }
 }
 
 impl HandleInputs for Player {
     fn handle_inputs(&mut self, inputs: &crate::core::InputState) {
-        if let Some(go) = self.gameobject.as_mut() {
+        if let Some(go) = self.0.gameobject.as_mut() {
             let mut velocity = Vec3::ZERO;
             if inputs.is_key_down("KeyW") {
                 velocity.x = 1.0;

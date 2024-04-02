@@ -93,7 +93,7 @@ impl Game {
             egui: None,
             gui_state: GuiState::default(),
             gizmo: Gizmo::new(Vec3::ZERO, 10.0),
-            player: Player::new(vec3(0.0, 10.5, 0.0)),
+            player: Player::new(vec3(0.0, 16.0, 0.0)),
             fps_display: FpsDisplay::new(),
         };
 
@@ -169,17 +169,14 @@ impl Game {
     fn update(&mut self, gl: &glow::Context) -> Result<(), String> {
         if !self.is_paused {
             self.player.update(&self.time);
-            if let Some(player) = self.player.get_gameobject() {
-                self.world.update(gl, &self.time, player.get_position())?;
-            }
+            let player_chunk_pos = self.player.get_position().chunk_pos();
+            self.world.update(gl, &self.time, player_chunk_pos)?;
+            self.gizmo.update(&self.time, player_chunk_pos);
         }
 
-        if let Some(player) = self.player.get_gameobject() {
-            self.camera.target = player.get_position();
-        }
+        self.camera.target = self.player.get_screen_position();
+
         self.camera.update(&self.time);
-
-        self.gizmo.update(&self.time);
 
         Ok(())
     }
@@ -225,7 +222,7 @@ impl Game {
         }
         self.world.render(gl, &self.camera);
 
-        self.player.render_lazy(gl, &self.camera);
+        self.player.render(gl, &self.camera);
         self.gizmo.render_lazy(gl, &self.camera);
 
         Ok(())
@@ -248,22 +245,13 @@ impl Game {
                                 .show(ui, |ui| {
                                     self.fps_display.display(ui);
 
-                                    if let Some(player) = self.player.get_gameobject() {
-                                        let pos = player.get_position();
-                                        let chunk_pos = player.get_chunk_position();
                                         ui.colored_label(egui::Color32::WHITE,RichText::new(format!(
-                                            "RNG seed: {}\ngit rev: {}\nPlayer position: {:.1},{:.1},{:.1} (chunk {},{},{})\nWorld: {}",
+                                            "RNG seed: {}\ngit rev: {}\nPlayer position: {:?}\nWorld: {}",
                                             self.seed,
                                             env!("GIT_HASH"),
-                                            pos.x,
-                                            pos.y,
-                                            pos.z,
-                                            chunk_pos.x,
-                                            chunk_pos.y,
-                                            chunk_pos.z,
+                                            self.player.get_position(),
                                             self.world.get_info()
                                         )).monospace());
-                                    }
                                 });
                         });
                 }

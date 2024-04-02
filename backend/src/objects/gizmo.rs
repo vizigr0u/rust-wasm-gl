@@ -11,6 +11,7 @@ use crate::{
     objects::gameobject::Transform,
     shader_def,
     utils::GlRenderFlags,
+    world::WorldPos,
 };
 
 #[derive(Debug)]
@@ -34,7 +35,7 @@ impl MakeRenderer for CreateGizmoRenderer {
     }
 
     fn init_gameobject(&self, gameobject: &mut GameObject) {
-        gameobject.set_position(self.origin);
+        gameobject.set_position(WorldPos::ZERO);
         gameobject.set_scale(Vec3::ONE * self.size);
         info!("Created Gizmo at {:?}, size: {}", self.origin, self.size);
     }

@@ -7,9 +7,10 @@ use crate::{
     core::Time,
     graphics::{Camera, MeshRenderer},
     utils::GlState,
+    world::ChunkPos,
 };
 
-use super::GameObject;
+use super::{player, GameObject, Transform};
 
 pub trait MakeRenderer {
     fn make_renderer(&self, gl: &glow::Context) -> Result<Rc<MeshRenderer>, String>;
@@ -50,9 +51,9 @@ where
         self.gameobject = Some(gameobject);
     }
 
-    pub fn update(&mut self, time: &Time) {
+    pub fn update(&mut self, time: &Time, player_chunk: ChunkPos) {
         if let Some(go) = self.gameobject.as_mut() {
-            go.update(time);
+            go.update(time, player_chunk);
         }
     }
 }
