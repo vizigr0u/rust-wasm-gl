@@ -60,12 +60,11 @@ impl WorldRenderData {
     fn is_visible(player_chunk_pos: ChunkPos, data_pos: ChunkPos, side: Side) -> bool {
         match side {
             Side::Front => player_chunk_pos.as_vec().z >= data_pos.as_vec().z,
-            Side::Back => player_chunk_pos.as_vec().z <= data_pos.as_vec().z,
-            Side::Left => player_chunk_pos.as_vec().x <= data_pos.as_vec().x,
+            Side::Back => player_chunk_pos.as_vec().z - 1 <= data_pos.as_vec().z,
+            Side::Left => player_chunk_pos.as_vec().x - 1 <= data_pos.as_vec().x,
             Side::Right => player_chunk_pos.as_vec().x >= data_pos.as_vec().x,
             Side::Top => player_chunk_pos.as_vec().y >= data_pos.as_vec().y,
-            Side::Bottom => player_chunk_pos.as_vec().y <= data_pos.as_vec().y,
-            _ => unreachable!(),
+            Side::Bottom => player_chunk_pos.as_vec().y - 1 <= data_pos.as_vec().y,
         }
     }
 
