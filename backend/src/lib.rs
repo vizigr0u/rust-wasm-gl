@@ -1,3 +1,4 @@
+use log::info;
 use winit::{event_loop::EventLoop, window::Window};
 
 async fn run(window: Window) {
@@ -36,13 +37,16 @@ async fn run(window: Window) {
         .get_default_config(&adapter, size.width, size.height)
         .unwrap();
 
+    // log config and device to show they are not optimized out
+    info!("wgpu config: {:?} - device: {:?}", config, device);
+
     // BUG REPRO - comment out next line to get the code to run in wasm
-    surface.configure(&device, &config);
+    // surface.configure(&device, &config);
 }
 
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen]
+#[wasm_bindgen(start)]
 pub fn main() {
     let event_loop = EventLoop::new().unwrap();
     #[allow(unused_mut)]
