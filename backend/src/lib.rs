@@ -36,7 +36,8 @@ async fn run(window: Window) {
         .get_default_config(&adapter, size.width, size.height)
         .unwrap();
 
-    // surface.configure(&device, &config);
+    // BUG REPRO - comment out next line to get the code to run in wasm
+    surface.configure(&device, &config);
 }
 
 use wasm_bindgen::prelude::*;
