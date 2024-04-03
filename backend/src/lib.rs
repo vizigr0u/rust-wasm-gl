@@ -41,7 +41,7 @@ async fn run(window: Window) {
     info!("wgpu config: {:?} - device: {:?}", config, device);
 
     // BUG REPRO - comment out next line to get the code to run in wasm
-    // surface.configure(&device, &config);
+    surface.configure(&device, &config);
 }
 
 use wasm_bindgen::prelude::*;
