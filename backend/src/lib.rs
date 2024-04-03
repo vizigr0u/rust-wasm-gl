@@ -1,54 +1,76 @@
-use std::{cell::RefCell, rc::Rc};
+use winit::{event_loop::EventLoop, window::Window};
 
-use game::Game;
-use wasm_bindgen::prelude::*;
-use web_sys::WebGl2RenderingContext;
+async fn run(window: Window) {
+    let mut size = window.inner_size();
+    size.width = size.width.max(1);
+    size.height = size.height.max(1);
 
-mod game;
-mod shaders;
-mod utils;
+    let instance = wgpu::Instance::default();
 
-fn request_animation_frame(f: &Closure<dyn FnMut(f64)>) {
-    web_sys::window()
-        .unwrap()
-        .request_animation_frame(f.as_ref().unchecked_ref())
+    let surface = instance.create_surface(&window).unwrap();
+    let adapter = instance
+        .request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::default(),
+            force_fallback_adapter: false,
+            // Request an adapter which can render to our surface
+            compatible_surface: Some(&surface),
+        })
+        .await
+        .expect("Failed to find an appropriate adapter");
+
+    let (device, _queue) = adapter
+        .request_device(
+            &wgpu::DeviceDescriptor {
+                label: None,
+                required_features: wgpu::Features::empty(),
+                // Make sure we use the texture resolution limits from the adapter, so we can support images the size of the swapchain.
+                required_limits: wgpu::Limits::downlevel_webgl2_defaults()
+                    .using_resolution(adapter.limits()),
+            },
+            None,
+        )
+        .await
+        .expect("Failed to create device");
+
+    let mut config = surface
+        .get_default_config(&adapter, size.width, size.height)
         .unwrap();
+
+    // surface.configure(&device, &config);
 }
 
-#[wasm_bindgen(start)]
-fn start() -> Result<(), JsValue> {
-    utils::set_panic_hook();
-    let document = web_sys::window().unwrap().document().unwrap();
-    let canvas = document.get_element_by_id("canvas").unwrap();
-    let canvas: web_sys::HtmlCanvasElement = canvas.dyn_into::<web_sys::HtmlCanvasElement>()?;
+use wasm_bindgen::prelude::*;
 
-    let context = canvas
-        .get_context("webgl2")?
-        .expect("Unable to get WebGl2 context from canvas.")
-        .dyn_into::<WebGl2RenderingContext>()?;
-    let context = Rc::new(RefCell::new(context));
+#[wasm_bindgen]
+pub fn main() {
+    let event_loop = EventLoop::new().unwrap();
+    #[allow(unused_mut)]
+    let mut builder = winit::window::WindowBuilder::new();
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsCast;
+        use winit::platform::web::WindowBuilderExtWebSys;
+        let canvas = web_sys::window()
+            .unwrap()
+            .document()
+            .unwrap()
+            .get_element_by_id("canvas")
+            .unwrap()
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .unwrap();
+        builder = builder.with_canvas(Some(canvas));
+    }
+    let window = builder.build(&event_loop).unwrap();
 
-    let game = Rc::new(RefCell::new(Game::new(context)));
-    game.borrow().init()?;
-
-    main_loop(game)?;
-
-    Ok(())
-}
-
-fn main_loop(game: Rc<RefCell<Game>>) -> Result<(), JsValue> {
-    let update: Rc<RefCell<Option<Closure<dyn FnMut(f64)>>>> = Rc::new(RefCell::new(None));
-    /* Reference to closure requests for first frame and then it's dropped */
-    let request_update = update.clone();
-
-    *request_update.borrow_mut() = Some(Closure::new(move |time| {
-        game.borrow_mut().draw(time); // Mutably borrow the game for drawing.
-
-        // Request the next animation frame.
-        request_animation_frame(update.borrow().as_ref().unwrap());
-    }));
-
-    request_animation_frame(request_update.borrow().as_ref().unwrap());
-
-    Ok(())
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        env_logger::init();
+        pollster::block_on(run(event_loop, window));
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        console_log::init().expect("could not initialize logger");
+        wasm_bindgen_futures::spawn_local(run(window));
+    }
 }

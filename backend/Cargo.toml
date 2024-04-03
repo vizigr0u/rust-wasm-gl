@@ -9,45 +9,36 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 cfg-if = "1.0.0"
-js-sys = "0.3.68"
-wasm-bindgen = "0.2.91"
-glam = "0.25.0"
-
-# The `console_error_panic_hook` crate provides better debugging of panics by
-# logging them with `console.error`. This is great for development, but requires
-# all the `std::fmt` and `std::panicking` infrastructure, so isn't great for
-# code size when deploying.
-console_error_panic_hook = { version = "0.1.6", optional = true }
-
-# `wee_alloc` is a tiny allocator for wasm that is only ~1K in code size
-# compared to the default allocator's ~10K. It is slower than the default
-# allocator, however.
-#
-# Unfortunately, `wee_alloc` requires nightly Rust when targeting wasm for now.
-wee_alloc = { version = "0.4.5", optional = true }
+winit = "0.29.15"
+wgpu = { version = "0.19.3", optional = true }
+log = "0.4"
+console_error_panic_hook = { version = "0.1", optional = true }
+js-sys = "0.3"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4.42"
+console_log = "1.0.0"
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3.13"
+wasm-bindgen-test = "0.3.42"
 
 [dependencies.web-sys]
-version = "0.3.4"
-features = [
-    'console',
-    'Document',
-    'Element',
-    'HtmlCanvasElement',
-    'WebGlBuffer',
-    'WebGlVertexArrayObject',
-    'WebGl2RenderingContext',
-    'WebGlProgram',
-    'WebGlShader',
-    'Window',
-]
+features = ['console', 'Document', 'Element', 'HtmlCanvasElement', 'Window']
+version = "0.3"
+
+[profile.dev]
+opt-level = 0           # do not optimize for debug
+debug = true            # print debug info
+debug-assertions = true # enable debug assertions
+overflow-checks = true  # check for overflows
 
 [profile.release]
-# Tell `rustc` to optimize for small code size.
-opt-level = "s"
+opt-level = "s"     # optimize for small code size.
+lto = true          # Enable link time optimizations
+debug = false       # Strip debug information
+codegen-units = 1   # More aggressive optimizations at the cost of compilation time
+incremental = false # Disable incremental compilation
 
 [features]
-# default = ["console_error_panic_hook" ,"wee_alloc"]
-default = ["console_error_panic_hook"]
+default = ["wgpu"]
+wgpu = ["dep:console_error_panic_hook", "dep:wgpu"]
+# wgpu = ["dep:wgpu"]
