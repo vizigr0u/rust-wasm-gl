@@ -10,13 +10,16 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 cfg-if = "1.0.0"
 winit = "0.29.15"
-wgpu = { version = "0.19.3", optional = true }
+wgpu = { version = "0.19.3", features = ["webgpu"], optional = true }
 log = "0.4"
 console_error_panic_hook = { version = "0.1", optional = true }
 js-sys = "0.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4.42"
 console_log = "1.0.0"
+
+# wgpu depends on parking_lot, which depends on instant but without the wasm-bindgen feature
+instant = { version = "0.1.12", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.42"
@@ -40,5 +43,6 @@ incremental = false # Disable incremental compilation
 
 [features]
 default = ["wgpu"]
-wgpu = ["dep:console_error_panic_hook", "dep:wgpu"]
+wgpu = ["dep:console_error_panic_hook", "dep:wgpu", "instant/wasm-bindgen"]
+
 # wgpu = ["dep:wgpu"]
