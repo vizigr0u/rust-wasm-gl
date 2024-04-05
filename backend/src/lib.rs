@@ -5,7 +5,7 @@ use winit::{
     event::{ElementState, Event, KeyEvent, WindowEvent},
     event_loop::EventLoop,
     keyboard::{KeyCode, PhysicalKey},
-    window::Window,
+    window::{Window, WindowBuilder},
 };
 
 const DEFAULT_CLEAR_COLOR: wgpu::Color = wgpu::Color {
@@ -24,9 +24,9 @@ struct GraphicsContext<'w> {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    size: winit::dpi::PhysicalSize<u32>,
     clear_color: wgpu::Color,
     window: &'w Window,
+    render_pipeline: wgpu::RenderPipeline,
 }
 
 impl<'w> GraphicsContext<'w> {
@@ -71,6 +71,40 @@ impl<'w> GraphicsContext<'w> {
             .unwrap();
         surface.configure(&device, &config);
 
+        // Load the shaders from disk
+        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/shader.wgsl"))),
+        });
+
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
+
+        let swapchain_capabilities = surface.get_capabilities(&adapter);
+        let swapchain_format = swapchain_capabilities.formats[0];
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(swapchain_format.into())],
+            }),
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+        });
+
         Self {
             instance,
             adapter,
@@ -79,8 +113,8 @@ impl<'w> GraphicsContext<'w> {
             queue,
             config,
             clear_color: DEFAULT_CLEAR_COLOR,
-            size,
             window,
+            render_pipeline,
         }
     }
 
@@ -90,47 +124,6 @@ impl<'w> GraphicsContext<'w> {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
-        // Load the shaders from disk
-        let shader = self
-            .device
-            .create_shader_module(wgpu::ShaderModuleDescriptor {
-                label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
-                    "../shaders/shader.wgsl"
-                ))),
-            });
-
-        let pipeline_layout = self
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[],
-                push_constant_ranges: &[],
-            });
-
-        let swapchain_capabilities = self.surface.get_capabilities(&self.adapter);
-        let swapchain_format = swapchain_capabilities.formats[0];
-
-        let render_pipeline = self
-            .device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: None,
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: "vs_main",
-                    buffers: &[],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: "fs_main",
-                    targets: &[Some(swapchain_format.into())],
-                }),
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                multiview: None,
-            });
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -149,7 +142,7 @@ impl<'w> GraphicsContext<'w> {
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
-            rpass.set_pipeline(&render_pipeline);
+            rpass.set_pipeline(&self.render_pipeline);
             rpass.draw(0..3, 0..1);
         }
 
@@ -163,8 +156,8 @@ impl<'w> GraphicsContext<'w> {
         match event {
             WindowEvent::CursorMoved { position, .. } => {
                 self.clear_color = wgpu::Color {
-                    r: position.x as f64 / self.size.width as f64,
-                    g: position.y as f64 / self.size.height as f64,
+                    r: position.x as f64 / self.config.width as f64, //self.size.width as f64,
+                    g: position.y as f64 / self.config.height as f64, // self.size.height as f64,
                     b: 1.0,
                     a: 1.0,
                 };
@@ -174,7 +167,10 @@ impl<'w> GraphicsContext<'w> {
         }
     }
 
+    fn update(&mut self) {}
+
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        info!("resizing to {:?}", new_size);
         // Reconfigure the surface with the new size
         self.config.width = new_size.width.max(1);
         self.config.height = new_size.height.max(1);
@@ -191,37 +187,51 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 ref event,
                 window_id,
             } if window_id == window.id() => {
-                match &event {
-                    WindowEvent::Resized(physical_size) => state.resize(*physical_size),
-                    WindowEvent::ScaleFactorChanged { .. } => {
-                        state.resize(window.inner_size());
-                    }
-                    WindowEvent::CloseRequested => event_loop_window_target.exit(),
-                    WindowEvent::KeyboardInput { event, .. } => {
-                        if state.input(event) {
-                            window.request_redraw();
+                if !state.input(event) {
+                    match &event {
+                        WindowEvent::Resized(physical_size) => state.resize(*physical_size),
+                        WindowEvent::ScaleFactorChanged { .. } => {
+                            state.resize(window.inner_size());
                         }
-                        if event.state.is_pressed() {
-                            match event.physical_key {
-                                Code(KeyCode::Escape) => {
-                                    event_loop_window_target.exit();
+                        WindowEvent::CloseRequested => event_loop_window_target.exit(),
+                        WindowEvent::KeyboardInput {
+                            event: key_event, ..
+                        } => {
+                            if state.input(event) {
+                                window.request_redraw();
+                            }
+                            if key_event.state.is_pressed() {
+                                match key_event.physical_key {
+                                    PhysicalKey::Code(KeyCode::Escape) => {
+                                        event_loop_window_target.exit();
+                                    }
+                                    _ => {}
                                 }
-                                _ => {}
                             }
                         }
-                    }
-                    WindowEvent::RedrawRequested => {
-                        // state.update();
-                        match state.render() {
-                            Ok(_) => {}
-                            // Recreate the swap_chain if lost
-                            Err(wgpu::SurfaceError::Lost) => state.resize(state.size),
-                            Err(wgpu::SurfaceError::OutOfMemory) => event_loop_window_target.exit(),
-                            Err(e) => eprintln!("Some unhandled error {:?}", e),
+                        WindowEvent::RedrawRequested => {
+                            state.update();
+                            match state.render() {
+                                Ok(_) => {}
+                                // Recreate the swap_chain if lost
+                                Err(wgpu::SurfaceError::Lost) => state.resize(PhysicalSize::new(
+                                    state.config.width,
+                                    state.config.height,
+                                )),
+                                Err(wgpu::SurfaceError::OutOfMemory) => {
+                                    event_loop_window_target.exit()
+                                }
+                                Err(e) => eprintln!("Some unhandled error {:?}", e),
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
                 }
+            }
+            Event::AboutToWait => {
+                // RedrawRequested will only trigger once, unless we manually
+                // request it.
+                state.window.request_redraw();
             }
             _ => {}
         })
@@ -229,31 +239,18 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
 }
 
 use wasm_bindgen::prelude::*;
+use winit::platform::web::WindowBuilderExtWebSys;
 
 #[wasm_bindgen(start)]
 pub fn main() {
     let event_loop = EventLoop::new().unwrap();
-    #[allow(unused_mut)]
-    let mut builder = winit::window::WindowBuilder::new();
-    // #[cfg(target_arch = "wasm32")]
-    {
-        use wasm_bindgen::JsCast;
-        use winit::platform::web::WindowBuilderExtWebSys;
-        let canvas = web_sys::window()
-            .unwrap()
-            .document()
-            .unwrap()
-            .get_element_by_id("canvas")
-            .unwrap()
-            .dyn_into::<web_sys::HtmlCanvasElement>()
-            .unwrap();
-        builder = builder
-            .with_inner_size(PhysicalSize::new(800, 600))
-            .with_canvas(Some(canvas))
-            .with_append(true);
-    }
-    let window = builder.build(&event_loop).unwrap();
-    let _ = window.request_inner_size(PhysicalSize::new(800, 600));
+    let window = WindowBuilder::new()
+        .with_inner_size(PhysicalSize::new(800, 600))
+        .with_title("WebGPU-based DVR")
+        .with_append(true)
+        .build(&event_loop)
+        .unwrap();
+    // let _ = window.request_inner_size(PhysicalSize::new(800, 600));
 
     // #[cfg(not(target_arch = "wasm32"))]
     // {
