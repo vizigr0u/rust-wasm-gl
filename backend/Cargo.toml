@@ -8,7 +8,9 @@ edition = "2018"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-cfg-if = "1.0.0"
+wasm_thread = { version = "0.3.0", features = ["es_modules"] }
+
+# wgpu depends on parking_lot, which depends on instant but without the wasm-bindgen featurecfg-if = "1.0.0"
 winit = "0.29.15"
 wgpu = { version = "0.19.3", features = ["webgpu"], optional = true }
 log = "0.4"
@@ -17,15 +19,20 @@ js-sys = "0.3"
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4.42"
 console_log = "1.0.0"
-
-# wgpu depends on parking_lot, which depends on instant but without the wasm-bindgen feature
 instant = { version = "0.1.12", optional = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.42"
 
 [dependencies.web-sys]
-features = ['console', 'Document', 'Element', 'HtmlCanvasElement', 'Window']
+features = [
+    'console',
+    'Document',
+    'Element',
+    'HtmlCanvasElement',
+    'MessageEvent',
+    'Window',
+]
 version = "0.3"
 
 [profile.dev]
@@ -33,6 +40,7 @@ opt-level = 0           # do not optimize for debug
 debug = true            # print debug info
 debug-assertions = true # enable debug assertions
 overflow-checks = true  # check for overflows
+incremental = true
 
 [profile.release]
 opt-level = "s"     # optimize for small code size.
