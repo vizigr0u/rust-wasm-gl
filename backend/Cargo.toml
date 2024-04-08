@@ -20,6 +20,14 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4.42"
 console_log = "1.0.0"
 instant = { version = "0.1.12", optional = true }
+egui = { version = "0.27.2", features = ["bytemuck", "mint", "serde"] }
+egui-wgpu = { version = "0.27.2", features = ["winit"] }
+egui-winit = { version = "0.27.2", default-features = false, features = [
+    "links",
+    "serde",
+] }
+getrandom = { version = "0.2.13", features = ["js"] }
+bytemuck = { version = "1.15.0", features = ["derive"] }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.42"

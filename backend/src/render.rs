@@ -2,10 +2,11 @@ use crate::gamestate::GameState;
 use log::info;
 use std::{
     borrow::Cow,
+    mem,
     sync::{Arc, Mutex},
 };
 use web_sys::OffscreenCanvas;
-use wgpu::SurfaceTarget;
+use wgpu::{util::DeviceExt, SurfaceTarget};
 
 const DEFAULT_CLEAR_COLOR: wgpu::Color = wgpu::Color {
     r: 0.4,
@@ -17,6 +18,44 @@ const DEFAULT_CLEAR_COLOR: wgpu::Color = wgpu::Color {
 struct DrawState {
     clear_color: wgpu::Color,
 }
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 3],
+}
+
+unsafe impl bytemuck::Pod for Vertex {}
+unsafe impl bytemuck::Zeroable for Vertex {}
+
+impl Vertex {
+    const ATTRIBS: [wgpu::VertexAttribute; 2] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+}
+
+const VERTICES: &[Vertex] = &[
+    Vertex {
+        position: [0.0, 0.5, 0.0],
+        color: [1.0, 0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, 0.0],
+        color: [0.0, 1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, 0.0],
+        color: [0.0, 0.0, 1.0],
+    },
+];
 
 pub struct GraphicsContext<'w> {
     #[allow(dead_code)]
@@ -30,6 +69,9 @@ pub struct GraphicsContext<'w> {
     draw_state: DrawState,
     render_pipeline: wgpu::RenderPipeline,
     game_state: Arc<Mutex<GameState>>,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
+    gui_renderer: egui_wgpu::Renderer,
 }
 
 impl<'w> GraphicsContext<'w> {
@@ -74,6 +116,12 @@ impl<'w> GraphicsContext<'w> {
             source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/shader.wgsl"))),
         });
 
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[],
@@ -89,7 +137,7 @@ impl<'w> GraphicsContext<'w> {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[],
+                buffers: &[Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -101,6 +149,8 @@ impl<'w> GraphicsContext<'w> {
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
         });
+
+        let gui_renderer = egui_wgpu::Renderer::new(&device, swapchain_format, None, 1);
 
         Self {
             instance,
@@ -114,6 +164,9 @@ impl<'w> GraphicsContext<'w> {
             },
             render_pipeline,
             game_state,
+            gui_renderer,
+            vertex_buffer,
+            num_vertices: VERTICES.len() as u32,
         }
     }
 
@@ -142,9 +195,13 @@ impl<'w> GraphicsContext<'w> {
                 occlusion_query_set: None,
             });
             rpass.set_pipeline(&self.render_pipeline);
-            rpass.draw(0..3, 0..1);
+            rpass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            rpass.draw(0..self.num_vertices, 0..1);
         }
         self.queue.submit(Some(encoder.finish()));
+
+        // self.gui_renderer.render(render_pass, paint_jobs, screen_descriptor)
+
         frame.present();
 
         Ok(())

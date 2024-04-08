@@ -2,6 +2,7 @@ use instant::Duration;
 use render::GraphicsContext;
 use std::sync::{Arc, Mutex};
 use wasm_thread as thread;
+use wgpu::Backend;
 use winit::{
     dpi::PhysicalSize,
     event::{Event, WindowEvent},
@@ -22,17 +23,34 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             .expect("canvas transfer failed");
         let game_state = Arc::new(Mutex::new(gamestate::GameState {
             mouse_pos: (0.0, 0.0),
+            gui_state: None,
         }));
 
         let mut graphics_context = GraphicsContext::new(offscreen_canvas, game_state.clone()).await;
 
-        let state_clone = game_state.clone();
-        thread::spawn(move || {
-            while true {
-                thread::sleep(Duration::from_secs(1));
-                state_clone.lock().unwrap().mouse_pos = (0.0, 0.0);
-            }
-        });
+        {
+            let state_clone = game_state.clone();
+            thread::spawn(move || {
+                while true {
+                    thread::sleep(Duration::from_secs(1));
+                    state_clone.lock().unwrap().mouse_pos = (0.0, 0.0);
+                }
+            });
+        }
+        let egui_ctx = egui::Context::default();
+        // let e = egui_wgpu::winit::Painter::new(
+        //     egui_wgpu::WgpuConfiguration {
+        //         supported_backends: Backend::BrowserWebGpu.into(),
+        //         device_descriptor: (),
+        //         present_mode: (),
+        //         desired_maximum_frame_latency: (),
+        //         power_preference: (),
+        //         on_surface_error: (),
+        //     },
+        //     1,
+        //     None,
+        //     false,
+        // );
 
         event_loop
             .run(|event, event_loop_window_target| match event {
@@ -64,6 +82,16 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             }
                         }
                         WindowEvent::RedrawRequested => {
+                            let raw_input = egui::RawInput::default();
+                            game_state.lock().unwrap().gui_state =
+                                Some(egui_ctx.run(raw_input, |ctx| {
+                                    egui::CentralPanel::default().show(&ctx, |ui| {
+                                        ui.label("Hello world!");
+                                        if ui.button("Click me").clicked() {
+                                            // take some action here
+                                        }
+                                    });
+                                }));
                             match graphics_context.tick() {
                                 Ok(_) => {}
                                 // Recreate the swap_chain if lost
