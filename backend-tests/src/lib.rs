@@ -1,0 +1,264 @@
+mod position;
+
+use position::*;
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use glam::{ivec2, ivec3, vec3, IVec3};
+
+    use crate::{
+        BlockPos, ChunkPos, PageChunkOffset, PagePos, WorldPos, CHUNK_PAGE_SIZE, CHUNK_SIZE,
+        MAX_BLOCK_Y, MAX_CHUNK_Y, MIN_BLOCK_Y, MIN_CHUNK_Y, NUM_CHUNKS_PER_PAGE,
+    };
+
+    #[test]
+    fn test_page_index_to_page_chunk_offset() {
+        let convert = |i: usize| PageChunkOffset::from_page_index(i.into());
+        let invert = |o: PageChunkOffset| o.as_page_index();
+
+        let mut map = HashMap::<PageChunkOffset, usize>::new();
+
+        // check that each offset is unique
+        for i in 0..NUM_CHUNKS_PER_PAGE {
+            let offset = convert(i);
+            assert!(
+                !map.contains_key(&offset),
+                "{i} -> {:?}, already as {:?}",
+                offset,
+                map[&offset]
+            );
+            map.insert(offset, i);
+            assert_eq!(invert(offset), i.into());
+        }
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_page_index_out_of_bounds() {
+        let _ = PageChunkOffset::from_page_index(NUM_CHUNKS_PER_PAGE.into());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_low_chunk_pos() {
+        let _: ChunkPos = ivec3(0, MIN_CHUNK_Y - 1, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_very_low_chunk_pos() {
+        let _: ChunkPos = ivec3(0, MIN_CHUNK_Y - 100, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_high_chunk_pos() {
+        let _: ChunkPos = ivec3(0, MAX_CHUNK_Y, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_very_high_chunk_pos() {
+        let _: ChunkPos = ivec3(0, MAX_CHUNK_Y + 100, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_low_block_pos() {
+        let _: BlockPos = ivec3(0, MIN_BLOCK_Y - 1, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_very_low_block_pos() {
+        let _: BlockPos = ivec3(0, MIN_BLOCK_Y - 100, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_high_block_pos() {
+        let _: BlockPos = ivec3(0, MAX_BLOCK_Y, 0).into();
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_very_high_block_pos() {
+        let _: BlockPos = ivec3(0, MAX_BLOCK_Y + 100, 0).into();
+    }
+
+    #[test]
+    fn test_page_pos_into_chunk_pos() {
+        let convert = |v| Into::<PagePos>::into(v).get_center_chunk_pos();
+        let invert = |c: ChunkPos| c.get_page_pos_with_offset().0;
+
+        let tests = [
+            (ivec2(0, 0), ivec3(0, 0, 0)),
+            (
+                ivec2(1, 2),
+                ivec3(CHUNK_PAGE_SIZE.x, 0, 2 * CHUNK_PAGE_SIZE.z),
+            ),
+            (
+                ivec2(-2, -1),
+                ivec3(-CHUNK_PAGE_SIZE.x * 2, 0, -CHUNK_PAGE_SIZE.z),
+            ),
+        ];
+        for (v, expected) in tests {
+            let result = convert(v);
+            assert_eq!(result, expected.into());
+            assert_eq!(invert(result), v.into());
+        }
+    }
+
+    #[test]
+    fn test_chunk_page_pos_and_offset() {
+        let convert = |v| Into::<ChunkPos>::into(v).get_page_pos_with_offset();
+        let max = CHUNK_PAGE_SIZE.x / 2;
+
+        let tests = [
+            (ivec3(0, 0, 0), (ivec2(0, 0), ivec3(0, 0, 0))),
+            (ivec3(1, 1, 1), (ivec2(0, 0), ivec3(1, 1, 1))),
+            (ivec3(-1, -1, -1), (ivec2(0, 0), ivec3(-1, -1, -1))),
+            (ivec3(-max, -1, -max), (ivec2(0, 0), ivec3(-max, -1, -max))),
+            (
+                ivec3(-max - 1, -1, -max - 1),
+                (ivec2(-1, -1), ivec3(max - 1, -1, max - 1)),
+            ),
+            (
+                ivec3(-max - 1, 3, max - 1),
+                (ivec2(-1, 0), ivec3(max - 1, 3, max - 1)),
+            ),
+            (
+                ivec3(-max - 1, 3, max),
+                (ivec2(-1, 1), ivec3(max - 1, 3, -max)),
+            ),
+        ];
+        for (v, expected) in tests {
+            let (page_pos, offset) = convert(v);
+            assert_eq!(page_pos, expected.0.into());
+            assert_eq!(offset, expected.1.into());
+            let chunk_pos = page_pos.get_chunk_pos_at(offset);
+            assert_eq!(chunk_pos, v.into());
+        }
+    }
+
+    #[test]
+    fn test_block_pos_into_chunk_pos() {
+        let convert = |v| Into::<ChunkPos>::into(Into::<BlockPos>::into(v));
+        let max = CHUNK_SIZE as i32;
+        assert_eq!(convert(ivec3(0, 0, 0)), ivec3(0, 0, 0).into());
+
+        assert_eq!(convert(ivec3(1, 0, 0)), ivec3(0, 0, 0).into());
+
+        assert_eq!(convert(ivec3(max, 0, 0)), ivec3(1, 0, 0).into());
+
+        assert_eq!(convert(ivec3(max + 1, 0, 0)), ivec3(1, 0, 0).into());
+
+        assert_eq!(convert(ivec3(max * 2, 0, 0)), ivec3(2, 0, 0).into());
+
+        assert_eq!(convert(ivec3(max * 2, 0, -1)), ivec3(2, 0, -1).into());
+
+        assert_eq!(convert(ivec3(max * 2, 0, -max)), ivec3(2, 0, -1).into());
+
+        assert_eq!(convert(ivec3(max * 2, 0, -max - 1)), ivec3(2, 0, -2).into());
+
+        assert_eq!(convert(ivec3(max * 2, 0, -max * 2)), ivec3(2, 0, -2).into());
+        assert_eq!(
+            convert(ivec3(max * 2, 0, -max * 2 - 2)),
+            ivec3(2, 0, -3).into()
+        );
+    }
+
+    // #[test]
+    // fn test_proper_modulo() {
+    //     assert_eq!(4, proper_modulo_i32(-6, 5));
+    //     assert_eq!(0, proper_modulo_i32(-5, 5));
+    //     assert_eq!(1, proper_modulo_i32(-4, 5));
+    //     assert_eq!(2, proper_modulo_i32(-3, 5));
+    //     assert_eq!(3, proper_modulo_i32(-2, 5));
+    //     assert_eq!(4, proper_modulo_i32(-1, 5));
+    //     assert_eq!(0, proper_modulo_i32(0, 5));
+    //     assert_eq!(1, proper_modulo_i32(1, 5));
+    //     assert_eq!(2, proper_modulo_i32(2, 5));
+    //     assert_eq!(3, proper_modulo_i32(3, 5));
+    //     assert_eq!(4, proper_modulo_i32(4, 5));
+    //     assert_eq!(0, proper_modulo_i32(5, 5));
+    //     assert_eq!(1, proper_modulo_i32(6, 5));
+    // }
+
+    #[test]
+    fn test_add_world_pos() {
+        let c = CHUNK_SIZE as f32;
+        let tests = [
+            (
+                (ivec3(0, 0, 0), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, 0, 0), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, 0, 0), vec3(2.0, 4.0, 6.0)),
+            ),
+            (
+                (ivec3(0, 0, 0), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, 0, 0), vec3(-1.0, -2.0, -3.0)),
+                (ivec3(0, 0, 0), vec3(0.0, 0.0, 0.0)),
+            ),
+            (
+                (ivec3(1, 2, 3), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, 0, 3), vec3(-1.0, -2.0, -3.0)),
+                (ivec3(1, 2, 6), vec3(0.0, 0.0, 0.0)),
+            ),
+            (
+                (ivec3(1, 2, 3), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, 0, 3), vec3(c, -2.0, -3.0 - 3.0 * c)),
+                (ivec3(2, 2, 3), vec3(1.0, 0.0, 0.0)),
+            ),
+            (
+                (ivec3(1, 2, 3), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, MAX_CHUNK_Y - 1, 0), vec3(-1.0, -2.0, -3.0)),
+                (ivec3(1, MAX_CHUNK_Y - 1, 3), vec3(0.0, 2.0 * c, 0.0)),
+            ),
+            (
+                (ivec3(1, 2, 3), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, MIN_CHUNK_Y, 0), vec3(-2.0, 2.0, -5.0)),
+                (ivec3(1, MIN_CHUNK_Y + 2, 3), vec3(-1.0, 4.0, -2.0)),
+            ),
+            (
+                (ivec3(1, -1, 3), vec3(1.0, 2.0, 3.0)),
+                (ivec3(0, MIN_CHUNK_Y, 0), vec3(-2.0, 2.0, -5.0)),
+                (ivec3(1, MIN_CHUNK_Y, 3), vec3(-1.0, 4.0 - c, -2.0)),
+            ),
+        ];
+        let to_pos = |(chunk_pos, offset)| WorldPos::new(Into::<ChunkPos>::into(chunk_pos), offset);
+        for (a, b, expected) in tests {
+            let (a, b, expected) = (to_pos(a), to_pos(b), to_pos(expected));
+            assert_eq!(a + b, expected);
+        }
+    }
+
+    #[test]
+    fn test_world_pos_to_screen_pos() {
+        let c = CHUNK_SIZE as f32;
+        let tests = [
+            (
+                (ivec3(2, 3, 4), vec3(1.0, 2.0, 3.0)),
+                ivec3(2, 3, 4),
+                vec3(1.0, 2.0, 3.0),
+            ),
+            (
+                (ivec3(2, 3, 4), vec3(1.0, 2.0, 3.0)),
+                ivec3(0, 0, 0),
+                vec3(1.0, 2.0, 3.0) + ivec3(2, 3, 4).as_vec3() * c,
+            ),
+            (
+                (ivec3(0, 0, 0), vec3(1.0, 2.0, 3.0)),
+                ivec3(2, 3, 4),
+                vec3(1.0, 2.0, 3.0) - ivec3(2, 3, 4).as_vec3() * c,
+            ),
+        ];
+        let to_pos = |(chunk_pos, offset)| WorldPos::new(Into::<ChunkPos>::into(chunk_pos), offset);
+        for (a, b, expected) in tests {
+            let a = to_pos(a);
+            let player_chunk: ChunkPos = b.into();
+            assert_eq!(a.to_screen_pos(player_chunk), expected);
+        }
+    }
+}

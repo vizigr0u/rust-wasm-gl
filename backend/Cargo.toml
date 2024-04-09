@@ -2,53 +2,78 @@
 name = "backend"
 version = "0.1.0"
 authors = ["Vladimir Nachbaur <vizigr0u@gmail.com>"]
-edition = "2018"
+edition = "2021"
+description = "WebGL2 game/experiment"
+repository = "https://github.com/vizigr0u/rust-wasm-gl"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-wasm_thread = { version = "0.3.0", features = ["es_modules"] }
-
-# wgpu depends on parking_lot, which depends on instant but without the wasm-bindgen featurecfg-if = "1.0.0"
-winit = "0.29.15"
-wgpu = { version = "0.19.3", features = ["webgpu"], optional = true }
-log = "0.4"
+bytemuck = { version = "1.15", features = ["derive"] }
+cfg-if = "1.0.0"
 console_error_panic_hook = { version = "0.1", optional = true }
-js-sys = "0.3"
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4.42"
-console_log = "1.0.0"
-instant = { version = "0.1.12", optional = true }
-egui = { version = "0.27.2", features = ["bytemuck", "mint", "serde"] }
+console_log = "1.0"
+egui = { version = "0.27", features = ['bytemuck', 'log', 'mint', "serde"] }
 egui-wgpu = { version = "0.27.2", features = ["winit"] }
 egui-winit = { version = "0.27.2", default-features = false, features = [
     "links",
     "serde",
 ] }
-getrandom = { version = "0.2.13", features = ["js"] }
-bytemuck = { version = "1.15.0", features = ["derive"] }
-
-[dev-dependencies]
-wasm-bindgen-test = "0.3.42"
+egui_plot = "0.27"
+fastrand = { version = "2.0", default-features = false, features = ["js"] }
+getrandom = { version = "0.2", features = ["js"] }
+glam = "0.27"
+gloo = { version = "0.11.0", features = ['gloo-events'] }
+glow = "0.13"
+instant = { version = "0.1.12", optional = true } # wgpu depends on parking_lot, which depends on instant but without the wasm-bindgen feature
+itertools = "0.12"
+js-sys = "0.3"
+log = "0.4"
+tracing = "0.1"
+tracing-wasm = "0.2"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+wasm_thread = { version = "0.3.0", features = ["es_modules"] }
+winit = "0.29.15"
+wgpu = { version = "0.19.3", features = ["webgpu"], optional = true }
 
 [dependencies.web-sys]
+version = "0.3"
 features = [
     'console',
     'Document',
     'Element',
     'HtmlCanvasElement',
+    'WebGlBuffer',
+    'WebGlVertexArrayObject',
+    'WebGl2RenderingContext',
+    'WebGlUniformLocation',
+    'WebGlProgram',
+    'WebGlShader',
     'MessageEvent',
     'Window',
+    'ImageBitmap',
+    'HtmlImageElement',
+    'Headers',
+    'Request',
+    'RequestInit',
+    'RequestMode',
+    'Response',
+    'Performance',
+    'MouseEvent',
+    'WheelEvent',
+    'KeyboardEvent',
 ]
-version = "0.3"
+
 
 [profile.dev]
 opt-level = 0           # do not optimize for debug
 debug = true            # print debug info
 debug-assertions = true # enable debug assertions
 overflow-checks = true  # check for overflows
-incremental = true
 
 [profile.release]
 opt-level = "s"     # optimize for small code size.

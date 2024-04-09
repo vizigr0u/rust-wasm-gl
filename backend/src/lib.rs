@@ -1,8 +1,11 @@
 use instant::Duration;
 use render::GraphicsContext;
-use std::sync::{Arc, Mutex};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 use wasm_thread as thread;
-use wgpu::Backend;
 use winit::{
     dpi::PhysicalSize,
     event::{Event, WindowEvent},
@@ -15,7 +18,7 @@ use winit::{
 mod gamestate;
 mod render;
 
-async fn run(event_loop: EventLoop<()>, window: Window) {
+async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
     let window = &window;
     if let Some(canvas) = window.canvas() {
         let offscreen_canvas = canvas
@@ -119,21 +122,73 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
 }
 
 use wasm_bindgen::prelude::*;
+
+use crate::core::Game;
+
+mod core;
+mod graphics;
+mod gui;
+pub mod math;
+mod objects;
+mod utils;
+mod world;
+
+use wasm_bindgen::prelude::*;
 use winit::platform::web::WindowBuilderExtWebSys;
 
 #[wasm_bindgen(start)]
-pub fn main() {
-    let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new()
-        .with_append(true)
-        .with_inner_size(PhysicalSize::new(800, 600))
-        .build(&event_loop)
-        .unwrap();
+fn start() -> Result<(), JsValue> {
+    use utils::get_webgl2_context;
+
+    utils::set_panic_hook();
+    tracing_wasm::set_as_global_default();
+
+    utils::init_log();
+
+    let gl = get_webgl2_context()?;
+
+    let game = Game::new()?;
+
+    main_loop(game, gl)?;
 
     {
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-        console_log::init().expect("could not initialize logger");
-
-        wasm_bindgen_futures::spawn_local(run(event_loop, window));
+        let event_loop = EventLoop::new().unwrap();
+        let window = WindowBuilder::new()
+            .with_append(true)
+            .with_inner_size(PhysicalSize::new(800, 600))
+            .build(&event_loop)
+            .unwrap();
+        wasm_bindgen_futures::spawn_local(run_wgpu(event_loop, window));
     }
+
+    Ok(())
+}
+
+fn request_animation_frame(f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>) {
+    web_sys::window()
+        .unwrap()
+        .request_animation_frame(f.as_ref().unchecked_ref())
+        .unwrap();
+}
+
+fn main_loop(game: Game, gl: glow::Context) -> Result<(), JsValue> {
+    let context = Rc::new(RefCell::new(gl));
+    let update: Rc<RefCell<Option<Closure<dyn FnMut(f64) -> Result<(), JsValue>>>>> =
+        Rc::new(RefCell::new(None));
+    /* Reference to closure requests for first frame and then it's dropped */
+    let request_update = update.clone();
+    let game = Rc::new(RefCell::new(game));
+
+    *request_update.borrow_mut() = Some(Closure::new(move |time| {
+        let gl = &context.borrow();
+        game.borrow_mut().tick(gl, time)?;
+
+        // Request the next animation frame.
+        request_animation_frame(update.borrow().as_ref().unwrap());
+        Ok(())
+    }));
+
+    request_animation_frame(request_update.borrow().as_ref().unwrap());
+
+    Ok(())
 }
