@@ -1,4 +1,4 @@
-use glow::WebTextureKey;
+use super::Renderer;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum TextureType {
@@ -7,7 +7,10 @@ pub enum TextureType {
     Texture2DArray(u32),
 }
 
-pub type TextureDef = (TextureType, WebTextureKey);
+pub type TextureDef<R>
+where
+    R: Renderer,
+= (TextureType, R::TextureKey);
 
 impl Into<u32> for TextureType {
     fn into(self) -> u32 {

@@ -1,13 +1,14 @@
-use glow::{HasContext, WebTextureKey};
+// use glow::{HasContext, WebTextureKey};
 use log::info;
 use std::cell::RefCell;
+use std::fmt::Debug;
 use std::rc::Rc;
 use std::sync::Mutex;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::{closure::Closure, JsValue};
 use web_sys::HtmlImageElement;
 
-use super::TextureType;
+use super::{Renderer, TextureType};
 use crate::utils::{get_document, get_performance};
 
 #[derive(Debug)]
@@ -17,23 +18,34 @@ enum TextureStatus {
 }
 
 #[derive(Debug)]
-struct LoadingTexture {
+struct LoadingTexture<R>
+where
+    R: Renderer,
+    R: Debug,
+{
     img: HtmlImageElement,
-    key: Option<WebTextureKey>,
+    key: Option<R::TextureKey>,
     texture_type: TextureType,
     status: TextureStatus,
 }
 
 #[derive(Debug)]
-pub struct TextureLoader {
-    pool: Rc<RefCell<Vec<LoadingTexture>>>,
+pub struct TextureLoader<R>
+where
+    R: Renderer,
+{
+    pool: Rc<RefCell<Vec<LoadingTexture<R>>>>,
+    renderer: Rc<RefCell<R>>,
 }
 
 const TEXTURE_CONTAINER_ID: &str = "textures_container";
 const EMPTY_TEXTURE: [u8; 4] = [255, 0, 255, 255];
 
-impl TextureLoader {
-    pub fn new(pool_size: usize) -> Result<Self, JsValue> {
+impl<R> TextureLoader<R>
+where
+    R: Renderer,
+{
+    pub fn new(pool_size: usize, renderer: Rc<RefCell<R>>) -> Result<Self, JsValue> {
         let document = get_document()?;
         // let body = document.body().ok_or("document should have a body")?;
         let container = document
@@ -60,7 +72,7 @@ impl TextureLoader {
             .collect();
         let pool = Rc::new(RefCell::new(pool));
 
-        Ok(TextureLoader { pool })
+        Ok(TextureLoader { pool, renderer })
     }
 
     // pub fn get_num_loading(&self) -> usize {
@@ -76,7 +88,7 @@ impl TextureLoader {
         gl: &glow::Context,
         src: &str,
         texture_type: TextureType,
-    ) -> Result<WebTextureKey, String> {
+    ) -> Result<R::TextureKey, String> {
         let mut pool = self.pool.borrow_mut();
         if let Some((index, loading_tex)) = pool
             .iter_mut()
@@ -99,36 +111,11 @@ impl TextureLoader {
                 loading_tex.img.set_src(src);
                 let start_time: f64 = get_performance()?.now(); // TODO
                 loading_tex.status = TextureStatus::Busy(start_time, rc_closure);
-                unsafe {
-                    let key = Some(gl.create_texture().expect("Can't create texture"));
-                    gl.bind_texture(texture_type.into(), key);
-                    match texture_type {
-                        TextureType::Texture2D => {
-                            gl.tex_image_2d(
-                                texture_type.into(),
-                                0,
-                                glow::RGBA as _,
-                                1,
-                                1,
-                                0,
-                                glow::RGBA,
-                                glow::UNSIGNED_BYTE,
-                                Some(&EMPTY_TEXTURE),
-                            );
-                        }
-                        TextureType::Texture2DArray(_) => gl.tex_image_3d(
-                            texture_type.into(),
-                            0,
-                            glow::RGBA as _,
-                            1,
-                            1,
-                            1,
-                            0,
-                            glow::RGBA,
-                            glow::UNSIGNED_BYTE,
-                            Some(&EMPTY_TEXTURE),
-                        ),
-                    }
+
+                {
+                    let mut renderer = self.renderer.borrow_mut();
+                    let key = Some(renderer.create_texture());
+                    renderer.bind_texture(texture_type, key);
 
                     loading_tex.key = key;
                     loading_tex.texture_type = texture_type;
@@ -163,6 +150,8 @@ impl TextureLoader {
                     }
                     TextureStatus::Busy(start_time, _) => {
                         let img = &tex.img;
+                        let key = tex.key;
+                        let t = tex.texture_type;
                         let now: f64 = get_performance()?.now();
                         let total_time = now - *start_time;
                         info!(
@@ -173,53 +162,9 @@ impl TextureLoader {
                             total_time.round()
                         );
 
-                        let texture_type = tex.texture_type.into();
-                        unsafe {
-                            gl.bind_texture(texture_type, tex.key);
-
-                            gl.tex_parameter_i32(
-                                texture_type,
-                                glow::TEXTURE_MIN_FILTER,
-                                glow::NEAREST as _,
-                            );
-                            gl.tex_parameter_i32(
-                                texture_type,
-                                glow::TEXTURE_MAG_FILTER,
-                                glow::NEAREST as _,
-                            );
-
-                            let lod = 0;
-                            let internal_format = glow::RGBA;
-                            let src_format: u32 = glow::RGBA;
-                            let src_type = glow::UNSIGNED_BYTE;
-
-                            match tex.texture_type {
-                                TextureType::Texture2D => {
-                                    gl.tex_image_2d_with_html_image(
-                                        glow::TEXTURE_2D,
-                                        lod,
-                                        internal_format as _,
-                                        src_format,
-                                        src_type,
-                                        &img,
-                                    );
-                                }
-                                TextureType::Texture2DArray(depth) => gl
-                                    .tex_image_3d_with_html_image_element(
-                                        texture_type,
-                                        lod,
-                                        internal_format as _,
-                                        img.natural_width() as _,
-                                        (img.natural_height() / depth) as _,
-                                        depth as _,
-                                        0,
-                                        src_format,
-                                        glow::UNSIGNED_BYTE,
-                                        &img,
-                                    ),
-                            }
-
-                            gl.generate_mipmap(texture_type);
+                        {
+                            let mut renderer = self.renderer.borrow_mut();
+                            renderer.load_texture_from_image(key, t, img)
                         }
 
                         tex.status = TextureStatus::Idle;
