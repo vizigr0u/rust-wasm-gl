@@ -5,7 +5,7 @@ use crate::shader_def;
 use crate::utils::{GlRenderFlags, GlState};
 use crate::{core::Time, graphics::MeshRenderer};
 
-use crate::graphics::{Mesh, ShaderDef, UniformTypes, VertexAttrType};
+use crate::graphics::{EguiRenderer, GlowRenderer, Mesh, ShaderDef, UniformTypes, VertexAttrType};
 use egui::{epaint::Primitive, Event, Key, TextureFilter, TextureId, TextureWrapMode};
 use glow::{HasContext, WebTextureKey};
 use log::{info, warn};
@@ -39,7 +39,7 @@ use web_sys::{KeyboardEvent, MouseEvent};
 // });
 
 #[derive(Debug)]
-pub struct EguiBackend {
+pub struct EguiGlowRenderer {
     egui_ctx: egui::Context,
     // egui_once: bool,
     textures: HashMap<TextureId, WebTextureKey>,
@@ -51,7 +51,7 @@ pub struct EguiBackend {
 
 const RENDER_FLAGS: [GlRenderFlags; 1] = [GlRenderFlags::Blend];
 
-impl EguiBackend {
+impl EguiGlowRenderer {
     pub fn new(gl: &glow::Context) -> Self {
         let program = unsafe {
             shader_def!(
@@ -76,25 +76,6 @@ impl EguiBackend {
             current_events: Vec::new(),
             size: (800, 600),
             time: Time::default(),
-        }
-    }
-
-    pub fn render_ui<F>(&mut self, gl: &glow::Context, mut build_gui: F)
-    where
-        F: FnMut(&egui::Context),
-    {
-        let raw_input: egui::RawInput = self.gather_input();
-
-        let full_output = self.egui_ctx.run(raw_input, |ctx| {
-            build_gui(ctx);
-        });
-        self.handle_platform_output(full_output.platform_output);
-        let clipped_primitives = self
-            .egui_ctx
-            .tessellate(full_output.shapes, full_output.pixels_per_point);
-
-        unsafe {
-            self.paint(gl, full_output.textures_delta, clipped_primitives);
         }
     }
 
@@ -236,20 +217,7 @@ impl EguiBackend {
     //     }
     // }
 
-    fn handle_platform_output(&self, _platform_output: egui::PlatformOutput) {}
-
-    fn gather_input(&self) -> egui::RawInput {
-        egui::RawInput {
-            screen_rect: Some(egui::Rect {
-                min: egui::pos2(0.0, 0.0),
-                max: egui::pos2(self.size.0 as f32, self.size.1 as f32),
-            }),
-            events: self.current_events.clone(),
-            // time: Some(self.time.time()),
-            // predicted_dt: self.time.delta_time() as _,
-            ..Default::default()
-        }
-    }
+    fn handle_platform_output(&self, _platform_output: &egui::PlatformOutput) {}
 
     fn set_events(&mut self, events: &Vec<InputEventType>) {
         self.current_events.clear();
@@ -271,9 +239,28 @@ impl EguiBackend {
     }
 }
 
-impl HandleInputs for EguiBackend {
+impl HandleInputs for EguiGlowRenderer {
     fn handle_inputs(&mut self, inputs: &InputState) {
         self.set_events(inputs.get_events());
+    }
+}
+
+impl EguiRenderer<GlowRenderer> for EguiGlowRenderer {
+    fn render(&mut self, glow_renderer: &mut GlowRenderer, egui_output: egui::FullOutput) {
+        // let raw_input: egui::RawInput = self.gather_input();
+
+        // self.handle_platform_output(full_output.platform_output);
+        let clipped_primitives = self
+            .egui_ctx
+            .tessellate(egui_output.shapes, egui_output.pixels_per_point);
+
+        unsafe {
+            self.paint(
+                glow_renderer.gl(),
+                egui_output.textures_delta,
+                clipped_primitives,
+            );
+        }
     }
 }
 

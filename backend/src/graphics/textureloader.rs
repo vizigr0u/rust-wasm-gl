@@ -83,12 +83,7 @@ where
     //         .count()
     // }
 
-    pub fn load(
-        &mut self,
-        gl: &glow::Context,
-        src: &str,
-        texture_type: TextureType,
-    ) -> Result<R::TextureKey, String> {
+    pub fn load(&mut self, src: &str, texture_type: TextureType) -> Result<R::TextureKey, String> {
         let mut pool = self.pool.borrow_mut();
         if let Some((index, loading_tex)) = pool
             .iter_mut()
@@ -130,7 +125,7 @@ where
         }
     }
 
-    pub fn tick(&mut self, gl: &glow::Context) -> Result<(), String> {
+    pub fn tick(&mut self) -> Result<(), String> {
         let completed_loads = MessageSystem::take_completed_loads();
 
         if completed_loads.len() > 0 {

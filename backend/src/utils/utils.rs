@@ -41,19 +41,6 @@ pub fn get_canvas() -> Result<web_sys::HtmlCanvasElement, JsValue> {
         .map_err(|_| "canvas isnt a Canvas Element".into())
 }
 
-pub fn get_web_sys_context() -> Result<WebGl2RenderingContext, JsValue> {
-    let context = get_canvas()?
-        .get_context("webgl2")?
-        .expect("Unable to get WebGl2 context from canvas.")
-        .dyn_into::<WebGl2RenderingContext>()?;
-
-    Ok(context)
-}
-
-pub fn get_webgl2_context() -> Result<glow::Context, JsValue> {
-    Ok(glow::Context::from_webgl2_context(get_web_sys_context()?))
-}
-
 #[wasm_bindgen]
 pub async fn run(repo: String) -> Result<JsValue, JsValue> {
     let mut opts = RequestInit::new();
@@ -80,44 +67,6 @@ pub async fn run(repo: String) -> Result<JsValue, JsValue> {
 
     // Send the JSON response back to JS.
     Ok(json)
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub enum GlRenderFlags {
-    DepthTest = glow::DEPTH_TEST as isize,
-    CullFace = glow::CULL_FACE as isize,
-    Blend = glow::BLEND as isize,
-}
-
-pub struct GlState {
-    pub depth_test: bool,
-    pub cull_face: bool,
-    pub blend: bool,
-}
-
-impl GlState {
-    // pub fn save(gl: &glow::Context) -> Self {
-    //     unsafe {
-    //         Self {
-    //             depth_test: gl.is_enabled(GlRenderFlags::DepthTest as _),
-    //             cull_face: gl.is_enabled(GlRenderFlags::CullFace as _),
-    //             blend: gl.is_enabled(GlRenderFlags::Blend as _),
-    //         }
-    //     }
-    // }
-    // pub fn restore(&self, gl: &glow::Context) {
-    //     GlState::set_flag(gl, GlRenderFlags::DepthTest, self.depth_test);
-    //     GlState::set_flag(gl, GlRenderFlags::CullFace, self.cull_face);
-    //     GlState::set_flag(gl, GlRenderFlags::Blend, self.blend);
-    // }
-
-    pub fn set_flag(gl: &glow::Context, param: GlRenderFlags, value: bool) {
-        if value {
-            unsafe { gl.enable(param as _) };
-        } else {
-            unsafe { gl.disable(param as _) };
-        }
-    }
 }
 
 pub fn performance_now() -> f64 {

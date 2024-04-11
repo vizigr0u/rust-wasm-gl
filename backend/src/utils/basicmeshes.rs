@@ -3,10 +3,7 @@
 
 use glam::Vec3;
 
-use crate::{
-    graphics::{uv_definitions, Mesh, Side, SideVertices, VertexAttrType},
-    world::BlockSideTexture,
-};
+use crate::graphics::{uv_definitions, Mesh, PrimitiveType, Side, SideVertices, VertexAttrType};
 
 pub fn make_quad() -> Mesh {
     let verts = [
@@ -27,7 +24,7 @@ pub fn make_quad() -> Mesh {
         data,
         indices: None,
         layout: vec![(VertexAttrType::Position, 3), (VertexAttrType::UVs, 2)],
-        primitive_type: glow::TRIANGLE_STRIP,
+        primitive_type: PrimitiveType::TriangleStrip,
     }
 }
 
@@ -54,7 +51,7 @@ pub fn make_quad_triangles() -> Mesh {
         data,
         indices: None,
         layout: vec![(VertexAttrType::Position, 3), (VertexAttrType::UVs, 2)],
-        primitive_type: glow::TRIANGLES,
+        primitive_type: PrimitiveType::Triangles,
     }
 }
 
@@ -77,19 +74,27 @@ pub fn make_quad_elements() -> Mesh {
         data,
         indices: Some(vec![0, 1, 2, 1, 3, 2]),
         layout: vec![(VertexAttrType::Position, 3), (VertexAttrType::UVs, 2)],
-        primitive_type: glow::TRIANGLES,
+        primitive_type: PrimitiveType::Triangles,
     }
 }
 
 pub fn make_cube() -> Mesh {
     Mesh::from_offset_sides(
         [
-            (Side::Top, BlockSideTexture::GrassTop, Vec3::ZERO),
-            (Side::Bottom, BlockSideTexture::Dirt, Vec3::ZERO),
-            (Side::Front, BlockSideTexture::GrassSide, Vec3::ZERO),
-            (Side::Back, BlockSideTexture::GrassSide, Vec3::ZERO),
-            (Side::Left, BlockSideTexture::GrassSide, Vec3::ZERO),
-            (Side::Right, BlockSideTexture::GrassSide, Vec3::ZERO),
+            (Side::Top, CubeSideTextureDepth::GrassTop as _, Vec3::ZERO),
+            (Side::Bottom, CubeSideTextureDepth::Dirt as _, Vec3::ZERO),
+            (
+                Side::Front,
+                CubeSideTextureDepth::GrassSide as _,
+                Vec3::ZERO,
+            ),
+            (Side::Back, CubeSideTextureDepth::GrassSide as _, Vec3::ZERO),
+            (Side::Left, CubeSideTextureDepth::GrassSide as _, Vec3::ZERO),
+            (
+                Side::Right,
+                CubeSideTextureDepth::GrassSide as _,
+                Vec3::ZERO,
+            ),
         ],
         1.0,
         &SIDE_VERTICES,
@@ -181,3 +186,23 @@ const H: Vec3 = Vec3 {
     y: -1.0,
     z: -1.0,
 };
+
+#[derive(Clone, Copy, Debug)]
+pub enum CubeSideTextureDepth {
+    Unknown = 0,
+    GrassSide,
+    Cobblestone,
+    RedStone,
+    TreeBark,
+    Sand,
+    Dirt,
+    Pickaxe,
+    TreeCenter,
+    GrassTop,
+    Coal,
+    Lava,
+    Diamond,
+    Iron,
+    Gold,
+    Dirt2,
+}

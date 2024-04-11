@@ -1,10 +1,9 @@
+use egui::mutex::Mutex;
+use graphics::{GameRenderer, Gl2Renderer, Renderer};
 use instant::Duration;
 use render::GraphicsContext;
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{Arc, Mutex},
-};
+use std::{cell::RefCell, rc::Rc, sync::Arc};
+use utils::get_canvas;
 use wasm_thread as thread;
 use winit::{
     dpi::PhysicalSize,
@@ -14,9 +13,6 @@ use winit::{
     platform::web::WindowExtWebSys,
     window::{Window, WindowBuilder},
 };
-
-mod gamestate;
-mod render;
 
 async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
     let window = &window;
@@ -36,7 +32,7 @@ async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
             thread::spawn(move || {
                 while true {
                     thread::sleep(Duration::from_secs(1));
-                    state_clone.lock().unwrap().mouse_pos = (0.0, 0.0);
+                    state_clone.lock().mouse_pos = (0.0, 0.0);
                 }
             });
         }
@@ -70,7 +66,7 @@ async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
                         }
                         WindowEvent::CloseRequested => event_loop_window_target.exit(),
                         WindowEvent::CursorMoved { position, .. } => {
-                            game_state.lock().unwrap().mouse_pos = (position.x, position.y);
+                            game_state.lock().mouse_pos = (position.x, position.y);
                         }
                         WindowEvent::KeyboardInput {
                             event: key_event, ..
@@ -86,15 +82,14 @@ async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
                         }
                         WindowEvent::RedrawRequested => {
                             let raw_input = egui::RawInput::default();
-                            game_state.lock().unwrap().gui_state =
-                                Some(egui_ctx.run(raw_input, |ctx| {
-                                    egui::CentralPanel::default().show(&ctx, |ui| {
-                                        ui.label("Hello world!");
-                                        if ui.button("Click me").clicked() {
-                                            // take some action here
-                                        }
-                                    });
-                                }));
+                            game_state.lock().gui_state = Some(egui_ctx.run(raw_input, |ctx| {
+                                egui::CentralPanel::default().show(&ctx, |ui| {
+                                    ui.label("Hello world!");
+                                    if ui.button("Click me").clicked() {
+                                        // take some action here
+                                    }
+                                });
+                            }));
                             match graphics_context.tick() {
                                 Ok(_) => {}
                                 // Recreate the swap_chain if lost
@@ -125,31 +120,34 @@ use wasm_bindgen::prelude::*;
 
 use crate::core::Game;
 
+mod gamestate;
+mod render;
+
 mod core;
 mod graphics;
 mod gui;
 pub mod math;
 mod objects;
 mod utils;
-mod world;
+// mod world;
 
 use wasm_bindgen::prelude::*;
 use winit::platform::web::WindowBuilderExtWebSys;
 
 #[wasm_bindgen(start)]
 fn start() -> Result<(), JsValue> {
-    use utils::get_webgl2_context;
-
     utils::set_panic_hook();
     tracing_wasm::set_as_global_default();
 
     utils::init_log();
 
-    let gl = get_webgl2_context()?;
+    let canvas = get_canvas()?;
+    let renderer = Gl2Renderer::new(canvas)?;
 
-    let game = Game::new()?;
+    let game = Arc::new(Mutex::new(Game::new()?));
+    let renderer = GameRenderer::new(game.clone(), renderer)?;
 
-    main_loop(game, gl)?;
+    main_loop(game, renderer)?;
 
     {
         let event_loop = EventLoop::new().unwrap();
@@ -171,17 +169,21 @@ fn request_animation_frame(f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>) {
         .unwrap();
 }
 
-fn main_loop(game: Game, gl: glow::Context) -> Result<(), JsValue> {
-    let context = Rc::new(RefCell::new(gl));
+fn main_loop<R>(game: Arc<Mutex<Game>>, renderer: GameRenderer<R>) -> Result<(), JsValue>
+where
+    R: Renderer + 'static,
+{
+    let renderer = Rc::new(RefCell::new(renderer));
     let update: Rc<RefCell<Option<Closure<dyn FnMut(f64) -> Result<(), JsValue>>>>> =
         Rc::new(RefCell::new(None));
     /* Reference to closure requests for first frame and then it's dropped */
     let request_update = update.clone();
-    let game = Rc::new(RefCell::new(game));
 
     *request_update.borrow_mut() = Some(Closure::new(move |time| {
-        let gl = &context.borrow();
-        game.borrow_mut().tick(gl, time)?;
+        {
+            renderer.borrow_mut().tick()?;
+            game.lock().tick(time)?;
+        }
 
         // Request the next animation frame.
         request_animation_frame(update.borrow().as_ref().unwrap());

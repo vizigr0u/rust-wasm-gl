@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use glam::IVec3;
 use glam::Mat4;
 use glam::Quat;
@@ -7,35 +5,14 @@ use glam::Vec3;
 use glow::HasContext;
 use glow::WebTextureKey;
 
+use crate::core::position::ChunkPos;
+use crate::core::position::WorldPos;
+use crate::core::position::CHUNK_SIZE;
 use crate::core::Time;
-use crate::graphics::Camera;
-use crate::graphics::MeshRenderer;
-use crate::graphics::TextureDef;
+use crate::core::Transform;
 use crate::graphics::TextureType;
 use crate::graphics::UniformTypes;
-use crate::world::ChunkPos;
-use crate::world::WorldPos;
-use crate::world::CHUNK_SIZE;
-
-pub trait Transform {
-    fn get_position(&self) -> WorldPos;
-    fn set_position(&mut self, position: WorldPos);
-    fn get_rotation(&self) -> Quat;
-    fn set_rotation(&mut self, rotation: Quat);
-    fn get_scale(&self) -> Vec3;
-    fn set_scale(&mut self, scale: Vec3);
-    fn get_velocity(&self) -> Vec3;
-    fn set_velocity(&mut self, velocity: Vec3);
-
-    fn get_block_position(&self) -> IVec3 {
-        self.get_position().offset().as_ivec3()
-            + self.get_position().chunk_pos().as_vec() * CHUNK_SIZE as i32
-    }
-
-    fn get_chunk_position(&self) -> IVec3 {
-        self.get_block_position() / CHUNK_SIZE as i32
-    }
-}
+use crate::objects::Camera;
 
 #[derive(Debug)]
 pub struct GameObject {
@@ -44,23 +21,19 @@ pub struct GameObject {
     rotation: Quat,
     scale: Vec3,
     velocity: Vec3,
-    renderer: Rc<MeshRenderer>,
 
     transform: Mat4,
     transform_dirty: bool,
-    texture: Rc<TextureDef>,
 }
 
 impl GameObject {
-    pub fn new(texture: &Rc<TextureDef>, renderer: &Rc<MeshRenderer>) -> Self {
+    pub fn new() -> Self {
         GameObject {
             position: WorldPos::ZERO,
             player_chunk: IVec3::ZERO.into(),
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
-            texture: texture.clone(),
             transform: Mat4::IDENTITY,
-            renderer: renderer.clone(),
             transform_dirty: true,
             velocity: Vec3::ZERO,
         }
@@ -83,34 +56,6 @@ impl GameObject {
         if chunk != self.player_chunk {
             self.player_chunk = chunk;
             self.transform_dirty = true;
-        }
-    }
-
-    pub fn _get_renderer(&self) -> &Rc<MeshRenderer> {
-        &self.renderer
-    }
-
-    pub fn render(&self, gl: &glow::Context, camera: &Camera) {
-        unsafe {
-            let program = self.renderer.get_program();
-            program.gl_use(gl);
-
-            program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
-            program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
-            program.set_matrix(gl, UniformTypes::ModelMatrix, &self.transform);
-
-            let (tex_type, key) = *self.texture;
-            if key != WebTextureKey::default() {
-                let texture = Some(key);
-                match tex_type {
-                    TextureType::Texture2D => gl.bind_texture(glow::TEXTURE_2D, texture),
-                    TextureType::Texture2DArray(_depth) => {
-                        gl.bind_texture(glow::TEXTURE_2D_ARRAY, texture)
-                    }
-                };
-            }
-
-            self.renderer.render(gl);
         }
     }
 }

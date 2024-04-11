@@ -83,6 +83,7 @@ impl FpsDisplay {
         start_time: f64,
         update_time: f64,
         render_time: f64,
+        render_ui_time: f64,
         frame_time: f64,
     ) {
         self.tick_times[self.tick_index] =

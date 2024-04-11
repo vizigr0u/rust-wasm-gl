@@ -1,10 +1,7 @@
 use crate::gamestate::GameState;
+use egui::mutex::Mutex;
 use log::info;
-use std::{
-    borrow::Cow,
-    mem,
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, mem, sync::Arc};
 use web_sys::OffscreenCanvas;
 use wgpu::{util::DeviceExt, SurfaceTarget};
 
@@ -223,7 +220,7 @@ impl<'w> GraphicsContext<'w> {
     }
 
     fn update(&mut self) {
-        let state = self.game_state.lock().unwrap();
+        let state = self.game_state.lock();
         self.draw_state.clear_color = wgpu::Color {
             r: state.mouse_pos.0 / self.config.width as f64, //self.size.width as f64,
             g: state.mouse_pos.1 / self.config.height as f64, // self.size.height as f64,

@@ -3,18 +3,26 @@
 
 use glam::Vec3;
 
-use crate::world::BlockSideTexture;
+// use crate::world::BlockSideTexture;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PrimitiveType {
+    Points,
+    Lines,
+    Triangles,
+    TriangleStrip,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VertexDataType {
-    U8 = glow::UNSIGNED_BYTE as _,
-    I8 = glow::BYTE as _,
-    U16 = glow::UNSIGNED_SHORT as _,
-    I16 = glow::SHORT as _,
-    U32 = glow::UNSIGNED_INT as _,
-    I32 = glow::INT as _,
-    F16 = glow::HALF_FLOAT as _,
-    F32 = glow::FLOAT as _,
+    U8,
+    I8,
+    U16,
+    I16,
+    U32,
+    I32,
+    F16,
+    F32,
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
@@ -27,13 +35,13 @@ pub enum VertexAttrType {
     Custom(VertexDataType),
 }
 
-pub type QuadSideData = (Side, BlockSideTexture, Vec3);
+pub type QuadSideData = (Side, usize, Vec3);
 
 pub struct Mesh {
     pub data: Vec<f32>,
     pub indices: Option<Vec<u32>>,
     pub layout: Vec<(VertexAttrType, usize)>,
-    pub primitive_type: u32,
+    pub primitive_type: PrimitiveType,
 }
 
 pub trait ToMesh {
@@ -74,7 +82,7 @@ impl Mesh {
                 data.push(norm.x);
                 data.push(norm.y);
                 data.push(norm.z);
-                data.push(texture as usize as _);
+                data.push(texture as _);
             }
         }
         Mesh {
@@ -86,7 +94,7 @@ impl Mesh {
                 (VertexAttrType::Depth, 1),
             ],
             indices: None,
-            primitive_type: glow::TRIANGLES,
+            primitive_type: PrimitiveType::Triangles,
         }
     }
 }
