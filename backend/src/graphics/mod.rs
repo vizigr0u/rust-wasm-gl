@@ -1,6 +1,6 @@
 mod eguirenderer;
 // mod gameobjectrenderer;
-mod commands;
+pub mod commands;
 mod gamerenderer;
 mod mesh;
 mod meshrenderer;

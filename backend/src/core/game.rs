@@ -6,10 +6,10 @@ use glam::{vec3, Vec3, Vec4};
 use wasm_bindgen::JsValue;
 
 use crate::{
+    graphics::commands::{self, GraphicsCommands},
     gui::FpsDisplay,
     objects::Camera,
-    utils::performance_now,
-    // world::{GeneratorV0, TestGenerator, World},
+    utils::performance_now, // world::{GeneratorV0, TestGenerator, World},
 };
 
 use super::{HandleInputs, InputEventType, InputSystem, Time};
@@ -47,6 +47,7 @@ pub struct Game {
     pub last_render_time: f64,
     pub last_render_ui_time: f64,
     pub clear_color: Vec4,
+    pub commands: Vec<commands::SerializedCommand>,
 }
 
 struct GuiState {
@@ -106,6 +107,7 @@ impl Game {
             last_render_time: 0.0,
             last_render_ui_time: 0.0,
             clear_color: Vec4::new(0.4, 0.6, 0.7, 1.0),
+            commands: Vec::new(),
         };
 
         Ok(game)
@@ -116,6 +118,7 @@ impl Game {
     }
 
     pub fn tick(&mut self, time: f64) -> Result<(), String> {
+        self.commands.clear();
         match self.current_state {
             State::Loading => {
                 let load_state = self.tick_loading()?;
@@ -125,6 +128,8 @@ impl Game {
                 self.tick_running(time)?;
             }
         }
+        let command = GraphicsCommands::set_clear_color(&self.clear_color.to_array());
+        command.enqueue(&mut self.commands);
         Ok(())
     }
 

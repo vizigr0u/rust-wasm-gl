@@ -20,12 +20,12 @@ where
 
 // region: command types
 // pub struct Shader;
-#[derive(Encode, Decode)]
+#[derive(Encode, Decode, Clone)]
 pub enum BasicCommand {
-    SetClearColor([f32; 3]),
+    SetClearColor([f32; 4]),
 }
 
-#[derive(Encode, Decode)]
+#[derive(Encode, Decode, Clone)]
 pub enum TextureCommand {
     CreateTexture,
 }
@@ -37,8 +37,8 @@ pub struct GraphicsCommands<S> {
 }
 
 impl GraphicsCommands<Empty> {
-    pub fn set_clear_color(self, color: [f32; 3]) -> GraphicsCommands<Command<BasicCommand>> {
-        Self::command(BasicCommand::SetClearColor(color))
+    pub fn set_clear_color(color: &[f32; 4]) -> GraphicsCommands<Command<BasicCommand>> {
+        Self::command(BasicCommand::SetClearColor(color.clone()))
     }
     pub fn create_texture() -> GraphicsCommands<ResourceCommand<Texture, TextureCommand>> {
         let a = Self::create::<Texture>();
@@ -91,6 +91,22 @@ where
     }
 }
 
+impl<C> GraphicsCommands<Command<C>>
+where
+    C: Encode + Clone,
+    GraphicsCommands<Command<C>>: Into<SerializedCommand>,
+{
+    pub fn enqueue(&self, queue: &mut Vec<SerializedCommand>) {
+        queue.push(<GraphicsCommands<Command<C>> as Into<SerializedCommand>>::into(self.clone()));
+    }
+}
+
+pub enum CommandType {
+    Basic = 1,
+    Texture = 2,
+}
+
+#[derive(Debug)]
 pub struct SerializedCommand {
     pub command_type: u32,
     pub data: Vec<u8>,
@@ -99,7 +115,7 @@ pub struct SerializedCommand {
 impl Into<SerializedCommand> for GraphicsCommands<Command<BasicCommand>> {
     fn into(self) -> SerializedCommand {
         SerializedCommand {
-            command_type: 0,
+            command_type: CommandType::Basic as u32,
             data: bitcode::encode(&self.data.0),
         }
     }
