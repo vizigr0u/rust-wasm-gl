@@ -1,18 +1,18 @@
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{cell::RefCell, default, fmt::Debug, rc::Rc, sync::Arc};
 
-use egui::{FullOutput, RichText};
+use egui::{mutex::Mutex, FullOutput, RichText};
 use fastrand::Rng;
 use glam::{vec3, Vec3, Vec4};
 use wasm_bindgen::JsValue;
 
 use crate::{
-    graphics::commands::{self, GraphicsCommands},
+    graphics::commands::{self, CommandQueue, GraphicsCommands},
     gui::FpsDisplay,
     objects::Camera,
     utils::performance_now, // world::{GeneratorV0, TestGenerator, World},
 };
 
-use super::{HandleInputs, InputEventType, InputSystem, Time};
+use super::Time;
 
 // type WorldGenerator = GeneratorV0;
 
@@ -26,7 +26,13 @@ enum State {
     Running,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Default)]
+pub struct GameSharedState {
+    pub last_render_time: f64,
+    pub last_render_ui_time: f64,
+    pub commands: CommandQueue,
+}
+
 pub struct Game {
     seed: u64,
     current_state: State,
@@ -34,8 +40,7 @@ pub struct Game {
     // world: World<WorldGenerator>,
     camera: Camera,
 
-    input_system: InputSystem,
-
+    // input_system: InputSystem,
     time: Time,
     is_paused: bool,
     egui_context: Option<egui::Context>,
@@ -44,10 +49,9 @@ pub struct Game {
     // player: Player,
     screen_size: (u32, u32),
     fps_display: FpsDisplay,
-    pub last_render_time: f64,
-    pub last_render_ui_time: f64,
     pub clear_color: Vec4,
-    pub commands: Vec<commands::SerializedCommand>,
+    local_state: GameSharedState,
+    shared_state: Arc<Mutex<GameSharedState>>,
 }
 
 struct GuiState {
@@ -82,6 +86,10 @@ impl Default for GuiState {
 }
 
 impl Game {
+    pub fn state(&self) -> Arc<Mutex<GameSharedState>> {
+        self.shared_state.clone()
+    }
+
     pub fn new() -> Result<Self, JsValue> {
         let seed = 0;
         let rng = Rng::with_seed(seed);
@@ -95,7 +103,7 @@ impl Game {
                 y: 5.0,
                 z: 0.0,
             }),
-            input_system: InputSystem::new()?,
+            // input_system: InputSystem::new()?,
             is_paused: false,
             time: Time::default(),
             gui_state: GuiState::default(),
@@ -104,10 +112,9 @@ impl Game {
             fps_display: FpsDisplay::new(),
             screen_size: (800, 600),
             egui_context: None,
-            last_render_time: 0.0,
-            last_render_ui_time: 0.0,
             clear_color: Vec4::new(0.4, 0.6, 0.7, 1.0),
-            commands: Vec::new(),
+            local_state: GameSharedState::default(),
+            shared_state: Arc::new(Mutex::new(GameSharedState::default())),
         };
 
         Ok(game)
@@ -118,7 +125,6 @@ impl Game {
     }
 
     pub fn tick(&mut self, time: f64) -> Result<(), String> {
-        self.commands.clear();
         match self.current_state {
             State::Loading => {
                 let load_state = self.tick_loading()?;
@@ -128,8 +134,7 @@ impl Game {
                 self.tick_running(time)?;
             }
         }
-        let command = GraphicsCommands::set_clear_color(&self.clear_color.to_array());
-        command.enqueue(&mut self.commands);
+
         Ok(())
     }
 
@@ -149,10 +154,12 @@ impl Game {
         self.fps_display.update_fps_report(
             start,
             update_time,
-            self.last_render_time,
-            self.last_render_ui_time,
+            self.local_state.last_render_time,
+            self.local_state.last_render_ui_time,
             frame_time,
         );
+
+        self.swap_states();
 
         Ok(())
     }
@@ -213,6 +220,8 @@ impl Game {
 
     fn update(&mut self) -> Result<(), String> {
         if !self.is_paused {
+            GraphicsCommands::set_clear_color(&self.clear_color.to_array())
+                .enqueue(&mut self.local_state.commands);
             // self.player.update(&self.time);
             // let player_chunk_pos = self.player.get_position().chunk_pos();
             // self.world.update(&self.time, player_chunk_pos)?;
@@ -227,31 +236,35 @@ impl Game {
     }
 
     fn handle_inputs(&mut self) {
-        let inputs = self.input_system.get_inputs();
+        // let inputs = self.input_system.get_inputs();
 
-        for event in inputs.get_events() {
-            match event {
-                InputEventType::KeyDown(event) => {
-                    if inputs.is_key_down("Escape") {
-                        self.is_paused = !self.is_paused;
-                    }
-                    if inputs.is_key_down("F2") {
-                        self.gui_state.show_info = !self.gui_state.show_info;
-                        event.prevent_default();
-                    }
-                }
-                _ => {}
-            }
-        }
+        // for event in inputs.get_events() {
+        //     match event {
+        //         InputEventType::KeyDown(event) => {
+        //             if inputs.is_key_down("Escape") {
+        //                 self.is_paused = !self.is_paused;
+        //             }
+        //             if inputs.is_key_down("F2") {
+        //                 self.gui_state.show_info = !self.gui_state.show_info;
+        //                 event.prevent_default();
+        //             }
+        //         }
+        //         _ => {}
+        //     }
+        // }
 
-        match self.gui_state.eats_input() {
-            true => {}
-            false => {
-                self.camera.handle_inputs(&inputs);
-                // self.player.handle_inputs(&inputs);
-            }
-        }
+        // match self.gui_state.eats_input() {
+        //     true => {}
+        //     false => {
+        //         self.camera.handle_inputs(&inputs);
+        //         // self.player.handle_inputs(&inputs);
+        //     }
+        // }
 
-        self.input_system.clear_events();
+        // self.input_system.clear_events();
+    }
+
+    fn swap_states(&mut self) {
+        std::mem::swap(&mut self.local_state, &mut self.shared_state.lock())
     }
 }

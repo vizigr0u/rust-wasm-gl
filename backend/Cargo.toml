@@ -15,7 +15,7 @@ crate-type = ["cdylib", "rlib"]
 bitcode = "0.6"
 bytemuck = { version = "1.15", features = ["derive"] }
 cfg-if = "1.0.0"
-console_error_panic_hook = { version = "0.1", optional = true }
+console_error_panic_hook = { version = "0.1" }
 console_log = "1.0"
 egui = { version = "0.27", features = ['bytemuck', 'log', 'mint', "serde"] }
 egui-wgpu = { version = "0.27.2", features = ["winit"] }
@@ -85,7 +85,7 @@ incremental = false # Disable incremental compilation
 
 [features]
 default = ["wgpu", "glow"]
-wgpu = ["dep:console_error_panic_hook", "dep:wgpu", "instant/wasm-bindgen"]
+wgpu = ["dep:wgpu", "instant/wasm-bindgen"]
 glow = ["dep:glow"]
 
 # wgpu = ["dep:wgpu"]

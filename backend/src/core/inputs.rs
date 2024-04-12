@@ -1,10 +1,6 @@
-use std::{
-    cell::RefCell,
-    collections::HashSet,
-    rc::Rc,
-    sync::{Arc, Mutex},
-};
+use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
+use egui::mutex::Mutex;
 use glam::Vec2;
 use log::warn;
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
@@ -114,14 +110,14 @@ pub trait HandleInputs {
 
 #[derive(Debug)]
 pub struct InputSystem {
-    current_inputs: Rc<RefCell<InputState>>,
+    current_inputs: Arc<Mutex<InputState>>,
     closures: Vec<Arc<Mutex<Closure<dyn FnMut(JsValue)>>>>,
 }
 
 impl InputSystem {
     pub fn new() -> Result<Self, JsValue> {
         let mut system = Self {
-            current_inputs: Rc::new(RefCell::new(InputState::new())),
+            current_inputs: Arc::new(Mutex::new(InputState::new())),
             closures: Vec::new(),
         };
         system.sub_to_all_events()?;
@@ -130,7 +126,7 @@ impl InputSystem {
     }
 
     pub fn get_inputs(&self) -> InputState {
-        self.current_inputs.borrow().clone()
+        self.current_inputs.lock().clone()
     }
 
     pub fn clear_events(&mut self) {

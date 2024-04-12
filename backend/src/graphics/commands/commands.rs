@@ -1,4 +1,7 @@
-use super::resourcereference::{create_reference, ResourceReference, Texture};
+use super::{
+    resourcereference::{create_reference, ResourceReference, Texture},
+    CommandQueue,
+};
 use bitcode::{Decode, Encode};
 
 // region: command states
@@ -96,7 +99,7 @@ where
     C: Encode + Clone,
     GraphicsCommands<Command<C>>: Into<SerializedCommand>,
 {
-    pub fn enqueue(&self, queue: &mut Vec<SerializedCommand>) {
+    pub fn enqueue(&self, queue: &mut CommandQueue) {
         queue.push(<GraphicsCommands<Command<C>> as Into<SerializedCommand>>::into(self.clone()));
     }
 }
@@ -106,7 +109,7 @@ pub enum CommandType {
     Texture = 2,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SerializedCommand {
     pub command_type: u32,
     pub data: Vec<u8>,

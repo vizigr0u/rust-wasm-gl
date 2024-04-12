@@ -1,6 +1,7 @@
 use egui::mutex::Mutex;
 use graphics::{GameRenderer, Gl2Renderer, Renderer};
 use instant::Duration;
+use log::info;
 use render::GraphicsContext;
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use utils::get_canvas;
@@ -143,11 +144,16 @@ fn start() -> Result<(), JsValue> {
 
     let canvas = get_canvas()?;
     let renderer = Gl2Renderer::new(canvas)?;
+    info!("renderer created");
 
     let game = Arc::new(Mutex::new(Game::new()?));
-    let renderer = GameRenderer::new(game.clone(), renderer)?;
+    let renderer = GameRenderer::new(game.lock().state().clone(), renderer)?;
+
+    info!("game and game renderer created");
 
     main_loop(game, renderer)?;
+
+    info!("game loop started");
 
     {
         let event_loop = EventLoop::new().unwrap();
@@ -180,10 +186,11 @@ where
     let request_update = update.clone();
 
     *request_update.borrow_mut() = Some(Closure::new(move |time| {
-        {
-            renderer.borrow_mut().tick()?;
-            game.lock().tick(time)?;
-        }
+        let game = game.clone();
+        // thread::spawn(move || {
+        //     game.lock().tick(time);
+        // });
+        renderer.borrow_mut().tick()?;
 
         // Request the next animation frame.
         request_animation_frame(update.borrow().as_ref().unwrap());

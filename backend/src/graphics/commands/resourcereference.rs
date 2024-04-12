@@ -5,8 +5,13 @@ pub struct Texture;
 
 #[derive(Default, Clone, Copy)]
 pub struct ResourceReference<T> {
-    pub reference: usize,
+    reference: usize,
     phantom: PhantomData<T>,
+}
+impl<T> ResourceReference<T> {
+    pub fn reference(&self) -> usize {
+        self.reference
+    }
 }
 
 static NEXT_REFERENCE: Mutex<usize> = Mutex::new(0);

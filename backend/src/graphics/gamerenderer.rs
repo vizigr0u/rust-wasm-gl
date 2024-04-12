@@ -2,13 +2,16 @@ use std::{cell::RefCell, rc::Rc, sync::Arc};
 
 use egui::mutex::Mutex;
 use glam::Vec4;
+use log::info;
 use wasm_bindgen::JsValue;
 
 use crate::{
-    core::Game,
+    core::{Game, GameSharedState},
     graphics::{EguiRenderer, Renderer, TextureDef, TextureLoader, TextureType},
     utils::performance_now,
 };
+
+use super::commands::{self, CommandQueue};
 
 const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 const UV_CHECKER_PATH: &str = "data/textures/UV_checker_Map_byValle.jpg";
@@ -18,26 +21,28 @@ where
     R: Renderer,
     // G: EguiRenderer<R>,
 {
-    pub(super) game: Arc<Mutex<Game>>,
+    pub(super) game: Arc<Mutex<GameSharedState>>,
     pub(super) renderer: Rc<RefCell<R>>,
     pub(super) texture_loader: TextureLoader<R>,
     pub(super) loaded_textures: Vec<Rc<TextureDef<R>>>,
     // egui_renderer: Option<G>,
     // egui: Option<EguiBackend>,
     // world_renderer: WorldRenderer<R>,
+    local_state: GameSharedState,
 }
 
 impl<R> GameRenderer<R>
 where
     R: Renderer,
 {
-    pub fn new(game: Arc<Mutex<Game>>, renderer: R) -> Result<Self, JsValue> {
+    pub fn new(game: Arc<Mutex<GameSharedState>>, renderer: R) -> Result<Self, JsValue> {
         let renderer = Rc::new(RefCell::new(renderer));
         Ok(Self {
             game: game.clone(),
             renderer: renderer.clone(),
-            texture_loader: TextureLoader::new(10, renderer)?,
-            loaded_textures: Vec::new(),
+            texture_loader: TextureLoader::new(16, renderer)?,
+            loaded_textures: Vec::with_capacity(16),
+            local_state: Default::default(),
             // egui_renderer: None,
             // egui: EguiBackend::new(gl),
         })
@@ -60,6 +65,8 @@ where
 
     pub fn tick(&mut self) -> Result<(), String> {
         let _start = performance_now();
+        self.execute_game_commands();
+
         self.texture_loader.tick()?;
         let update_time = performance_now();
 
@@ -101,5 +108,11 @@ where
         // if let Some(egui) = &mut self.egui {
         //     egui.render_ui(gl, |ctx| {});
         // }
+    }
+
+    fn execute_game_commands(&mut self) {
+        std::mem::swap(&mut self.commands, &mut self.game.lock().commands);
+        info!("executing {} commands", self.commands.len());
+        self.commands.clear();
     }
 }

@@ -73,13 +73,7 @@ pub fn performance_now() -> f64 {
     get_performance().unwrap().now()
 }
 
-cfg_if::cfg_if! {
-    if #[cfg(feature = "console_log")] {
-        pub fn init_log() {
-            use log::Level;
-            console_log::init_with_level(Level::Trace).expect("error initializing log");
-        }
-    } else {
-        pub fn init_log() {}
-    }
+pub fn init_log() {
+    use log::Level;
+    console_log::init_with_level(Level::Trace).expect("error initializing log");
 }
