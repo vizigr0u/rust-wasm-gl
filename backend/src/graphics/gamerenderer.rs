@@ -1,8 +1,12 @@
-use std::{cell::RefCell, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    sync::{mpsc::Receiver, Arc},
+};
 
 use egui::mutex::Mutex;
 use glam::Vec4;
-use log::info;
+use log::{info, warn};
 use wasm_bindgen::JsValue;
 
 use crate::{
@@ -11,17 +15,22 @@ use crate::{
     utils::performance_now,
 };
 
-use super::commands::{self, CommandQueue};
+use super::commands::{self, CommandQueue, SerializedCommand};
 
 const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 const UV_CHECKER_PATH: &str = "data/textures/UV_checker_Map_byValle.jpg";
+
+#[derive(Default)]
+struct RenderState {
+    clear_color: Vec4,
+}
 
 pub struct GameRenderer<R>
 where
     R: Renderer,
     // G: EguiRenderer<R>,
 {
-    pub(super) game: Arc<Mutex<GameSharedState>>,
+    // pub(super) game_state: Arc<Mutex<GameSharedState>>,
     pub(super) renderer: Rc<RefCell<R>>,
     pub(super) texture_loader: TextureLoader<R>,
     pub(super) loaded_textures: Vec<Rc<TextureDef<R>>>,
@@ -29,22 +38,29 @@ where
     // egui: Option<EguiBackend>,
     // world_renderer: WorldRenderer<R>,
     local_state: GameSharedState,
+    render_state: RenderState,
+    command_receiver: Receiver<SerializedCommand>,
 }
 
 impl<R> GameRenderer<R>
 where
     R: Renderer,
 {
-    pub fn new(game: Arc<Mutex<GameSharedState>>, renderer: R) -> Result<Self, JsValue> {
+    pub fn new(
+        // game_state: Arc<Mutex<GameSharedState>>,
+        renderer: R,
+        command_receiver: Receiver<SerializedCommand>,
+    ) -> Result<Self, JsValue> {
         let renderer = Rc::new(RefCell::new(renderer));
         Ok(Self {
-            game: game.clone(),
+            // game_state: game_state.clone(),
             renderer: renderer.clone(),
             texture_loader: TextureLoader::new(16, renderer)?,
             loaded_textures: Vec::with_capacity(16),
             local_state: Default::default(),
-            // egui_renderer: None,
-            // egui: EguiBackend::new(gl),
+            render_state: Default::default(),
+            command_receiver, // egui_renderer: None,
+                              // egui: EguiBackend::new(gl),
         })
     }
 
@@ -65,7 +81,7 @@ where
 
     pub fn tick(&mut self) -> Result<(), String> {
         let _start = performance_now();
-        self.execute_game_commands();
+        self.execute_commands();
 
         self.texture_loader.tick()?;
         let update_time = performance_now();
@@ -77,9 +93,9 @@ where
 
         let frame_time = performance_now();
         {
-            let mut game = self.game.lock();
-            game.last_render_time = render_time - update_time;
-            game.last_render_ui_time = frame_time - render_time;
+            // let mut game = self.game_state.lock();
+            // game.last_render_time = render_time - update_time;
+            // game.last_render_ui_time = frame_time - render_time;
         }
 
         Ok(())
@@ -88,11 +104,7 @@ where
     fn render(&mut self) -> Result<(), String> {
         {
             let mut renderer = self.renderer.borrow_mut();
-            let mut color: Vec4 = Vec4::new(0.0, 0.0, 0.0, 1.0);
-            {
-                let game = self.game.lock();
-                color = game.clear_color;
-            }
+            let color = self.render_state.clear_color;
             renderer.clear(color.x, color.y, color.z, color.w);
         }
 
@@ -110,9 +122,16 @@ where
         // }
     }
 
-    fn execute_game_commands(&mut self) {
-        std::mem::swap(&mut self.commands, &mut self.game.lock().commands);
-        info!("executing {} commands", self.commands.len());
-        self.commands.clear();
+    fn execute_commands(&mut self) {
+        while let received = self.command_receiver.try_recv() {
+            match received {
+                Ok(c) => info!("Got Command: {:?}", c),
+                Err(_) => {
+                    break;
+                }
+            }
+        }
+        // info!("executing {} commands", self.commands.len());
+        // self.commands.clear();
     }
 }

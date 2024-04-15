@@ -21,6 +21,9 @@ impl CommandQueue {
     pub fn commands(&self) -> &Vec<SerializedCommand> {
         &self.0
     }
+    pub fn commands_mut(&mut self) -> &mut Vec<SerializedCommand> {
+        &mut self.0
+    }
     pub fn clear(&mut self) {
         self.0.clear()
     }

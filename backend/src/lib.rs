@@ -117,6 +117,7 @@ async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
     }
 }
 
+use std::sync::mpsc;
 use wasm_bindgen::prelude::*;
 
 use crate::core::Game;
@@ -135,6 +136,10 @@ mod utils;
 use wasm_bindgen::prelude::*;
 use winit::platform::web::WindowBuilderExtWebSys;
 
+struct Tick {
+    time: f64,
+}
+
 #[wasm_bindgen(start)]
 fn start() -> Result<(), JsValue> {
     utils::set_panic_hook();
@@ -146,12 +151,26 @@ fn start() -> Result<(), JsValue> {
     let renderer = Gl2Renderer::new(canvas)?;
     info!("renderer created");
 
-    let game = Arc::new(Mutex::new(Game::new()?));
-    let renderer = GameRenderer::new(game.lock().state().clone(), renderer)?;
+    use crate::graphics::commands::SerializedCommand;
+    let (graphics_sender, graphics_receiver) = mpsc::channel::<SerializedCommand>();
+    let (game_sender, game_tick_receiver) = mpsc::channel::<Tick>();
+
+    let renderer = GameRenderer::new(
+        /*game.lock().state().clone(), */ renderer,
+        graphics_receiver,
+    )?;
+
+    let game_graphics_sender = graphics_sender.clone();
+    thread::spawn(move || {
+        let mut game = Game::new(game_graphics_sender).unwrap();
+        for tick in game_tick_receiver {
+            game.tick(tick.time).unwrap()
+        }
+    });
 
     info!("game and game renderer created");
 
-    main_loop(game, renderer)?;
+    main_loop(game_sender, renderer)?;
 
     info!("game loop started");
 
@@ -175,7 +194,7 @@ fn request_animation_frame(f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>) {
         .unwrap();
 }
 
-fn main_loop<R>(game: Arc<Mutex<Game>>, renderer: GameRenderer<R>) -> Result<(), JsValue>
+fn main_loop<R>(game_sender: mpsc::Sender<Tick>, renderer: GameRenderer<R>) -> Result<(), JsValue>
 where
     R: Renderer + 'static,
 {
@@ -185,10 +204,11 @@ where
     /* Reference to closure requests for first frame and then it's dropped */
     let request_update = update.clone();
 
+    let game_sender = Rc::new(RefCell::new(game_sender.clone()));
     *request_update.borrow_mut() = Some(Closure::new(move |time| {
-        let game = game.clone();
+        let _ = game_sender.borrow().send(Tick { time });
         // thread::spawn(move || {
-        //     game.lock().tick(time);
+        // let _ = game.lock().tick(time);
         // });
         renderer.borrow_mut().tick()?;
 

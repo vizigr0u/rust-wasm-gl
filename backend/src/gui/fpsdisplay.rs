@@ -2,6 +2,7 @@ use std::{iter::Sum, ops::Div};
 
 use egui::{Button, Color32, RichText};
 use egui_plot::{Legend, Line, Plot};
+use instant::{Duration, Instant};
 
 const CHART_SIZE: usize = 40;
 const AVG_SIZE: usize = 3;
@@ -9,20 +10,25 @@ const BUFFER_SIZE: usize = CHART_SIZE * AVG_SIZE;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct PerformanceTime {
-    frame_time: f64,
-    update_time: f64,
-    render_time: f64,
+    frame_time: u128,
+    update_time: u128,
+    render_time: u128,
 }
 
 impl PerformanceTime {
-    pub fn new(start_time: f64, frame_time: f64, update_time: f64, render_time: f64) -> Self {
+    pub fn new(
+        start_time: Instant,
+        frame_time: Instant,
+        update_time: Instant,
+        render_time: Instant,
+    ) -> Self {
         Self {
-            frame_time: frame_time - start_time,
-            update_time: update_time - start_time,
-            render_time: render_time - update_time,
+            frame_time: frame_time.duration_since(start_time).as_micros(),
+            update_time: update_time.duration_since(frame_time).as_micros(),
+            render_time: render_time.duration_since(update_time).as_micros(),
         }
     }
-    pub fn get_ui_time(&self) -> f64 {
+    pub fn get_ui_time(&self) -> u128 {
         self.frame_time - self.update_time - self.render_time
     }
 }
@@ -47,9 +53,9 @@ impl<'a> Sum<&'a PerformanceTime> for PerformanceTime {
     }
 }
 
-impl Div<f64> for PerformanceTime {
+impl Div<u128> for PerformanceTime {
     type Output = PerformanceTime;
-    fn div(self, rhs: f64) -> Self::Output {
+    fn div(self, rhs: u128) -> Self::Output {
         PerformanceTime {
             frame_time: self.frame_time / rhs,
             update_time: self.update_time / rhs,
@@ -80,31 +86,35 @@ impl FpsDisplay {
 
     pub fn update_fps_report(
         &mut self,
-        start_time: f64,
-        update_time: f64,
-        render_time: f64,
-        render_ui_time: f64,
-        frame_time: f64,
+        start_time: Instant,
+        update_time: Instant,
+        // render_time: Instant,
+        // render_ui_time: Instant,
+        frame_time: Instant,
     ) {
-        self.tick_times[self.tick_index] =
-            PerformanceTime::new(start_time, frame_time, update_time, render_time);
+        self.tick_times[self.tick_index] = PerformanceTime::new(
+            start_time,
+            frame_time,
+            update_time,
+            Instant::now(), /*render_time*/
+        );
         if !self.buffer_was_filled && self.tick_index == BUFFER_SIZE - 1 {
             self.buffer_was_filled = true;
         }
         self.tick_index = (self.tick_index + 1) % self.tick_times.len();
         if !self.buffer_was_filled {
             self.avg_times =
-                self.tick_times.iter().sum::<PerformanceTime>() / self.tick_index as f64;
+                self.tick_times.iter().sum::<PerformanceTime>() / self.tick_index as u128;
         } else if self.tick_index == 0 {
             self.avg_times =
-                self.tick_times.iter().sum::<PerformanceTime>() / self.tick_times.len() as f64;
+                self.tick_times.iter().sum::<PerformanceTime>() / self.tick_times.len() as u128;
         }
     }
     pub fn get_debug_info(&self) -> String {
-        if self.avg_times.frame_time == 0.0 {
+        if self.avg_times.frame_time == 0 {
             return "???".to_string();
         }
-        format!("{:.1}", 1000.0 / self.avg_times.frame_time)
+        format!("{:.1}", 1000.0 / self.avg_times.frame_time as f64)
     }
 
     pub fn display(&mut self, ui: &mut egui::Ui) {
@@ -137,7 +147,7 @@ impl FpsDisplay {
                             let avg: PerformanceTime = (0..AVG_SIZE)
                                 .map(|j| self.tick_times[(i + j + self.tick_index) % BUFFER_SIZE])
                                 .sum::<PerformanceTime>()
-                                / AVG_SIZE as f64;
+                                / AVG_SIZE as _;
                             avg
                         })
                         .collect::<Vec<_>>();
@@ -146,7 +156,7 @@ impl FpsDisplay {
                             charts
                                 .iter()
                                 .enumerate()
-                                .map(|(i, &v)| [i as f64, v.update_time])
+                                .map(|(i, &v)| [i as f64, v.update_time as _])
                                 .collect::<Vec<_>>(),
                         )
                         .name(format!("script: {:.2}ms", self.avg_times.update_time)),
@@ -156,7 +166,7 @@ impl FpsDisplay {
                             charts
                                 .iter()
                                 .enumerate()
-                                .map(|(i, &v)| [i as f64, v.render_time])
+                                .map(|(i, &v)| [i as f64, v.render_time as _])
                                 .collect::<Vec<_>>(),
                         )
                         .name(format!("render: {:.2}ms", self.avg_times.render_time)),
@@ -166,7 +176,7 @@ impl FpsDisplay {
                             charts
                                 .iter()
                                 .enumerate()
-                                .map(|(i, &v)| [i as f64, v.get_ui_time()])
+                                .map(|(i, &v)| [i as f64, v.get_ui_time() as _])
                                 .collect::<Vec<_>>(),
                         )
                         .name(format!("UI: {:.2}ms", self.avg_times.get_ui_time())),

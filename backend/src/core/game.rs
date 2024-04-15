@@ -1,15 +1,23 @@
-use std::{cell::RefCell, default, fmt::Debug, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    default,
+    fmt::Debug,
+    rc::Rc,
+    sync::{mpsc::Sender, Arc},
+};
 
 use egui::{mutex::Mutex, FullOutput, RichText};
 use fastrand::Rng;
 use glam::{vec3, Vec3, Vec4};
+use instant::Instant;
+use log::info;
 use wasm_bindgen::JsValue;
 
 use crate::{
-    graphics::commands::{self, CommandQueue, GraphicsCommands},
+    graphics::commands::{self, CommandBuilder, CommandQueue, SerializedCommand},
     gui::FpsDisplay,
     objects::Camera,
-    utils::performance_now, // world::{GeneratorV0, TestGenerator, World},
+    // utils::performance_now, // world::{GeneratorV0, TestGenerator, World},
 };
 
 use super::Time;
@@ -30,7 +38,24 @@ enum State {
 pub struct GameSharedState {
     pub last_render_time: f64,
     pub last_render_ui_time: f64,
-    pub commands: CommandQueue,
+    // pub commands: CommandQueue,
+}
+
+struct GraphicsCommandQueue {
+    queue: CommandQueue,
+    graphics_sender: Sender<SerializedCommand>,
+}
+
+impl GraphicsCommandQueue {
+    fn clear(&mut self) {
+        self.queue.clear();
+    }
+    fn process(&mut self) {
+        for command in self.queue.commands_mut().drain(0..) {
+            info!("sending command: {:?}", command);
+            self.graphics_sender.send(command).unwrap();
+        }
+    }
 }
 
 pub struct Game {
@@ -51,7 +76,9 @@ pub struct Game {
     fps_display: FpsDisplay,
     pub clear_color: Vec4,
     local_state: GameSharedState,
-    shared_state: Arc<Mutex<GameSharedState>>,
+    // shared_state: Arc<Mutex<GameSharedState>>,
+    graphics_command_queue: GraphicsCommandQueue,
+    demo_has_sent_command: bool,
 }
 
 struct GuiState {
@@ -86,11 +113,11 @@ impl Default for GuiState {
 }
 
 impl Game {
-    pub fn state(&self) -> Arc<Mutex<GameSharedState>> {
-        self.shared_state.clone()
-    }
+    // pub fn state(&self) -> Arc<Mutex<GameSharedState>> {
+    //     self.shared_state.clone()
+    // }
 
-    pub fn new() -> Result<Self, JsValue> {
+    pub fn new(graphics_sender: Sender<SerializedCommand>) -> Result<Self, JsValue> {
         let seed = 0;
         let rng = Rng::with_seed(seed);
         let game = Game {
@@ -114,7 +141,12 @@ impl Game {
             egui_context: None,
             clear_color: Vec4::new(0.4, 0.6, 0.7, 1.0),
             local_state: GameSharedState::default(),
-            shared_state: Arc::new(Mutex::new(GameSharedState::default())),
+            // shared_state: Arc::new(Mutex::new(GameSharedState::default())),
+            graphics_command_queue: GraphicsCommandQueue {
+                queue: CommandQueue::default(),
+                graphics_sender,
+            },
+            demo_has_sent_command: false,
         };
 
         Ok(game)
@@ -139,7 +171,7 @@ impl Game {
     }
 
     fn tick_running(&mut self, time: f64) -> Result<(), String> {
-        let start = performance_now();
+        let start = Instant::now();
 
         self.time.update(time);
 
@@ -148,18 +180,20 @@ impl Game {
         self.update()?;
 
         self.update_gui();
-        let update_time = performance_now();
+        let update_time = Instant::now();
 
-        let frame_time = performance_now();
-        self.fps_display.update_fps_report(
-            start,
-            update_time,
-            self.local_state.last_render_time,
-            self.local_state.last_render_ui_time,
-            frame_time,
-        );
+        let frame_time = Instant::now();
+        if false {
+            self.fps_display.update_fps_report(
+                start,
+                update_time,
+                // self.local_state.last_render_time,
+                // self.local_state.last_render_ui_time,
+                frame_time,
+            );
+        }
 
-        self.swap_states();
+        self.share_state();
 
         Ok(())
     }
@@ -220,8 +254,11 @@ impl Game {
 
     fn update(&mut self) -> Result<(), String> {
         if !self.is_paused {
-            GraphicsCommands::set_clear_color(&self.clear_color.to_array())
-                .enqueue(&mut self.local_state.commands);
+            if !self.demo_has_sent_command {
+                CommandBuilder::set_clear_color(&self.clear_color.to_array())
+                    .enqueue(&mut self.graphics_command_queue.queue);
+                self.demo_has_sent_command = true;
+            }
             // self.player.update(&self.time);
             // let player_chunk_pos = self.player.get_position().chunk_pos();
             // self.world.update(&self.time, player_chunk_pos)?;
@@ -264,7 +301,8 @@ impl Game {
         // self.input_system.clear_events();
     }
 
-    fn swap_states(&mut self) {
-        std::mem::swap(&mut self.local_state, &mut self.shared_state.lock())
+    fn share_state(&mut self) {
+        // *self.shared_state.lock() = self.local_state.clone();
+        self.graphics_command_queue.process();
     }
 }

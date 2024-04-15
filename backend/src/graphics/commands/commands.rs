@@ -35,72 +35,70 @@ pub enum TextureCommand {
 // endregion
 
 #[derive(Default, Clone)]
-pub struct GraphicsCommands<S> {
+pub struct CommandBuilder<S> {
     data: S,
 }
 
-impl GraphicsCommands<Empty> {
-    pub fn set_clear_color(color: &[f32; 4]) -> GraphicsCommands<Command<BasicCommand>> {
+impl CommandBuilder<Empty> {
+    pub fn set_clear_color(color: &[f32; 4]) -> CommandBuilder<Command<BasicCommand>> {
         Self::command(BasicCommand::SetClearColor(color.clone()))
     }
-    pub fn create_texture() -> GraphicsCommands<ResourceCommand<Texture, TextureCommand>> {
+    pub fn create_texture() -> CommandBuilder<ResourceCommand<Texture, TextureCommand>> {
         let a = Self::create::<Texture>();
         a.command(TextureCommand::CreateTexture)
     }
-    pub fn with_texture(
-        texture: ResourceReference<Texture>,
-    ) -> GraphicsCommands<Resource<Texture>> {
+    pub fn with_texture(texture: ResourceReference<Texture>) -> CommandBuilder<Resource<Texture>> {
         Self::with_resource(texture)
     }
 
-    fn with_resource<R>(r: ResourceReference<R>) -> GraphicsCommands<Resource<R>>
+    fn with_resource<R>(r: ResourceReference<R>) -> CommandBuilder<Resource<R>>
     where
         R: Copy,
     {
-        GraphicsCommands::<Resource<R>> { data: Resource(r) }
+        CommandBuilder::<Resource<R>> { data: Resource(r) }
     }
-    fn create<R>() -> GraphicsCommands<Resource<R>>
+    fn create<R>() -> CommandBuilder<Resource<R>>
     where
         R: Default + Copy,
     {
-        GraphicsCommands::<Resource<R>> {
+        CommandBuilder::<Resource<R>> {
             data: Resource(create_reference::<R>()),
         }
     }
-    fn command<C>(command: C) -> GraphicsCommands<Command<C>>
+    fn command<C>(command: C) -> CommandBuilder<Command<C>>
     where
         C: Encode,
     {
-        GraphicsCommands::<Command<C>> {
+        CommandBuilder::<Command<C>> {
             data: Command(command),
         }
     }
 }
 
-impl<R> GraphicsCommands<Resource<R>>
+impl<R> CommandBuilder<Resource<R>>
 where
     R: Copy,
 {
     pub fn get_resource(&self) -> &ResourceReference<R> {
         &self.data.0
     }
-    fn command<C>(self, command: C) -> GraphicsCommands<ResourceCommand<R, C>>
+    fn command<C>(self, command: C) -> CommandBuilder<ResourceCommand<R, C>>
     where
         C: Encode,
     {
-        GraphicsCommands::<ResourceCommand<R, C>> {
+        CommandBuilder::<ResourceCommand<R, C>> {
             data: ResourceCommand(*self.get_resource(), command),
         }
     }
 }
 
-impl<C> GraphicsCommands<Command<C>>
+impl<C> CommandBuilder<Command<C>>
 where
     C: Encode + Clone,
-    GraphicsCommands<Command<C>>: Into<SerializedCommand>,
+    CommandBuilder<Command<C>>: Into<SerializedCommand>,
 {
     pub fn enqueue(&self, queue: &mut CommandQueue) {
-        queue.push(<GraphicsCommands<Command<C>> as Into<SerializedCommand>>::into(self.clone()));
+        queue.push(<CommandBuilder<Command<C>> as Into<SerializedCommand>>::into(self.clone()));
     }
 }
 
@@ -115,7 +113,7 @@ pub struct SerializedCommand {
     pub data: Vec<u8>,
 }
 
-impl Into<SerializedCommand> for GraphicsCommands<Command<BasicCommand>> {
+impl Into<SerializedCommand> for CommandBuilder<Command<BasicCommand>> {
     fn into(self) -> SerializedCommand {
         SerializedCommand {
             command_type: CommandType::Basic as u32,
@@ -123,3 +121,8 @@ impl Into<SerializedCommand> for GraphicsCommands<Command<BasicCommand>> {
         }
     }
 }
+
+// impl SerializedCommand {
+//     pub fn run
+
+// }
