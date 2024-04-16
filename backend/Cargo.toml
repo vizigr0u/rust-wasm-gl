@@ -67,6 +67,7 @@ features = [
     'MouseEvent',
     'WheelEvent',
     'KeyboardEvent',
+    'DedicatedWorkerGlobalScope',
 ]
 
 

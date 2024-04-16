@@ -1,11 +1,12 @@
 use egui::mutex::Mutex;
 use graphics::{GameRenderer, Gl2Renderer, Renderer};
-use instant::Duration;
+use instant::{Duration, Instant};
 use log::info;
 use render::GraphicsContext;
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use utils::get_canvas;
 use wasm_thread as thread;
+use web_sys::{DedicatedWorkerGlobalScope, WorkerGlobalScope};
 use winit::{
     dpi::PhysicalSize,
     event::{Event, WindowEvent},
@@ -30,11 +31,9 @@ async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
 
         {
             let state_clone = game_state.clone();
-            thread::spawn(move || {
-                while true {
-                    thread::sleep(Duration::from_secs(1));
-                    state_clone.lock().mouse_pos = (0.0, 0.0);
-                }
+            thread::spawn(move || loop {
+                thread::sleep(Duration::from_secs(1));
+                state_clone.lock().mouse_pos = (0.0, 0.0);
             });
         }
         let egui_ctx = egui::Context::default();
@@ -133,7 +132,6 @@ mod objects;
 mod utils;
 // mod world;
 
-use wasm_bindgen::prelude::*;
 use winit::platform::web::WindowBuilderExtWebSys;
 
 struct Tick {
@@ -168,11 +166,15 @@ fn start() -> Result<(), JsValue> {
         }
     });
 
+    thread::spawn(move || {
+        let _ = infinite_loop_render_test();
+    });
+
     info!("game and game renderer created");
 
-    main_loop(game_sender, renderer)?;
+    // main_loop(game_sender, renderer)?;
 
-    info!("game loop started");
+    // info!("game loop started");
 
     {
         let event_loop = EventLoop::new().unwrap();
@@ -187,11 +189,20 @@ fn start() -> Result<(), JsValue> {
     Ok(())
 }
 
-fn request_animation_frame(f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>) {
-    web_sys::window()
-        .unwrap()
-        .request_animation_frame(f.as_ref().unchecked_ref())
-        .unwrap();
+fn request_animation_frame(
+    f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>,
+) -> Result<i32, JsValue> {
+    info!("request_animation_frame");
+    match &web_sys::window() {
+        Some(window) => {
+            info!("got window");
+            window.request_animation_frame(f.as_ref().unchecked_ref())
+        }
+        None => {
+            info!("no window!");
+            Err(JsValue::from_str("no window!"))
+        }
+    }
 }
 
 fn main_loop<R>(game_sender: mpsc::Sender<Tick>, renderer: GameRenderer<R>) -> Result<(), JsValue>
@@ -220,4 +231,71 @@ where
     request_animation_frame(request_update.borrow().as_ref().unwrap());
 
     Ok(())
+}
+
+enum GlobalProxy {
+    Window(web_sys::Window),
+    WorkerGlobalScope(DedicatedWorkerGlobalScope),
+    //... more scopes
+}
+
+impl GlobalProxy {
+    fn request_animation_frame(
+        &self,
+        f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>,
+    ) -> Result<i32, JsValue> {
+        match self {
+            GlobalProxy::Window(window) => {
+                info!("request_animation_frame for window");
+                window.request_animation_frame(f.as_ref().unchecked_ref())
+            }
+            GlobalProxy::WorkerGlobalScope(scope) => {
+                info!("request_animation_frame for worker");
+                scope.request_animation_frame(f.as_ref().unchecked_ref())
+            } //... more of that
+        }
+    }
+}
+
+fn self_() -> Result<GlobalProxy, JsValue> {
+    let global = js_sys::global();
+    // how to properly detect this in wasm_bindgen?
+    if js_sys::eval("typeof DedicatedWorkerGlobalScope !== 'undefined'")?
+        .as_bool()
+        .unwrap()
+    {
+        Ok(global
+            .dyn_into::<DedicatedWorkerGlobalScope>()
+            .map(GlobalProxy::WorkerGlobalScope)?)
+    } else {
+        Ok(global
+            .dyn_into::<web_sys::Window>()
+            .map(GlobalProxy::Window)?)
+    }
+}
+
+fn infinite_loop_render_test() {
+    info!("infinite_loop_render_test");
+
+    let update: Rc<RefCell<Option<Closure<dyn FnMut(f64) -> Result<(), JsValue>>>>> =
+        Rc::new(RefCell::new(None));
+    /* Reference to closure requests for first frame and then it's dropped */
+    let request_update = update.clone();
+    *request_update.borrow_mut() = Some(Closure::new(move |time| {
+        info!("Ticking Test - time: {time} - instant {:?}", Instant::now());
+
+        // Request the next animation frame.
+        let scope = self_().unwrap();
+        scope.request_animation_frame(update.borrow().as_ref().expect("no inner update"))?;
+        Ok(())
+    }));
+
+    info!("requesting first frame");
+    let scope = self_().unwrap();
+    scope
+        .request_animation_frame(request_update.borrow().as_ref().expect("no first update"))
+        .expect("no first request");
+    loop {
+        thread::sleep(Duration::from_millis(1));
+    }
 }
