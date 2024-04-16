@@ -27,7 +27,7 @@ egui_plot = "0.27"
 fastrand = { version = "2.0", default-features = false, features = ["js"] }
 getrandom = { version = "0.2", features = ["js"] }
 glam = "0.27"
-gloo = { version = "0.11.0", features = ['gloo-events'] }
+gloo = { version = "0.11.0" }
 glow = { version = "0.13", optional = true }
 instant = { version = "0.1.12", optional = true } # wgpu depends on parking_lot, which depends on instant but without the wasm-bindgen feature
 itertools = "0.12"
@@ -67,6 +67,7 @@ features = [
     'MouseEvent',
     'WheelEvent',
     'KeyboardEvent',
+    'DedicatedWorkerGlobalScope',
 ]
 
 

@@ -14,7 +14,7 @@ pub fn set_panic_hook() {
     //
     // For more details see
     // https://github.com/rustwasm/console_error_panic_hook#readme
-    #[cfg(feature = "console_error_panic_hook")]
+    // #[cfg(feature = "console_error_panic_hook")]
     console_error_panic_hook::set_once();
 }
 
@@ -36,6 +36,15 @@ pub fn get_canvas() -> Result<web_sys::HtmlCanvasElement, JsValue> {
     let document = get_document()?;
     document
         .get_element_by_id("canvas")
+        .ok_or("cannot find canvas")?
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .map_err(|_| "canvas isnt a Canvas Element".into())
+}
+
+pub fn get_canvas_by_id(id: &str) -> Result<web_sys::HtmlCanvasElement, JsValue> {
+    let document = get_document()?;
+    document
+        .get_element_by_id(id)
         .ok_or("cannot find canvas")?
         .dyn_into::<web_sys::HtmlCanvasElement>()
         .map_err(|_| "canvas isnt a Canvas Element".into())
