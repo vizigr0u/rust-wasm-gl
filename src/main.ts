@@ -6,5 +6,5 @@ import init, { } from '../backend/pkg';
 
 init().then((p) => {
   console.log('init wasm-pack');
-  console.debug(p);
+  // console.debug(p);
 });
