@@ -6,7 +6,7 @@ use render::GraphicsContext;
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 use utils::get_canvas;
 use wasm_thread as thread;
-use web_sys::{DedicatedWorkerGlobalScope, WorkerGlobalScope};
+use web_sys::DedicatedWorkerGlobalScope;
 use winit::{
     dpi::PhysicalSize,
     event::{Event, WindowEvent},
@@ -225,43 +225,43 @@ where
     Ok(())
 }
 
-// enum GlobalProxy {
-//     Window(web_sys::Window),
-//     WorkerGlobalScope(DedicatedWorkerGlobalScope),
-//     //... more scopes
-// }
+enum GlobalProxy {
+    Window(web_sys::Window),
+    WorkerGlobalScope(DedicatedWorkerGlobalScope),
+    //... more scopes
+}
 
-// impl GlobalProxy {
-//     fn request_animation_frame(
-//         &self,
-//         f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>,
-//     ) -> Result<i32, JsValue> {
-//         match self {
-//             GlobalProxy::Window(window) => {
-//                 info!("request_animation_frame for window");
-//                 window.request_animation_frame(f.as_ref().unchecked_ref())
-//             }
-//             GlobalProxy::WorkerGlobalScope(scope) => {
-//                 info!("request_animation_frame for worker");
-//                 scope.request_animation_frame(f.as_ref().unchecked_ref())
-//             } //... more of that
-//         }
-//     }
-// }
+impl GlobalProxy {
+    fn request_animation_frame(
+        &self,
+        f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>,
+    ) -> Result<i32, JsValue> {
+        match self {
+            GlobalProxy::Window(window) => {
+                info!("request_animation_frame for window");
+                window.request_animation_frame(f.as_ref().unchecked_ref())
+            }
+            GlobalProxy::WorkerGlobalScope(scope) => {
+                info!("request_animation_frame for worker");
+                scope.request_animation_frame(f.as_ref().unchecked_ref())
+            } //... more of that
+        }
+    }
+}
 
-// fn self_() -> Result<GlobalProxy, JsValue> {
-//     let global = js_sys::global();
-//     // how to properly detect this in wasm_bindgen?
-//     if js_sys::eval("typeof DedicatedWorkerGlobalScope !== 'undefined'")?
-//         .as_bool()
-//         .unwrap()
-//     {
-//         Ok(global
-//             .dyn_into::<DedicatedWorkerGlobalScope>()
-//             .map(GlobalProxy::WorkerGlobalScope)?)
-//     } else {
-//         Ok(global
-//             .dyn_into::<web_sys::Window>()
-//             .map(GlobalProxy::Window)?)
-//     }
-// }
+fn self_() -> Result<GlobalProxy, JsValue> {
+    let global = js_sys::global();
+    // how to properly detect this in wasm_bindgen?
+    if js_sys::eval("typeof DedicatedWorkerGlobalScope !== 'undefined'")?
+        .as_bool()
+        .unwrap()
+    {
+        Ok(global
+            .dyn_into::<DedicatedWorkerGlobalScope>()
+            .map(GlobalProxy::WorkerGlobalScope)?)
+    } else {
+        Ok(global
+            .dyn_into::<web_sys::Window>()
+            .map(GlobalProxy::Window)?)
+    }
+}
