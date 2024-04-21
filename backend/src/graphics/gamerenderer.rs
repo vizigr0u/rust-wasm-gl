@@ -8,10 +8,11 @@ use egui::mutex::Mutex;
 use glam::Vec4;
 use log::{info, warn};
 use wasm_bindgen::JsValue;
+use web_sys::HtmlCanvasElement;
 
 use crate::{
     core::{Game, GameSharedState},
-    graphics::{EguiRenderer, Renderer, TextureDef, TextureLoader, TextureType},
+    graphics::{EguiRenderer, Renderer, TextureType},
     utils::GlobalProxy,
 };
 
@@ -32,8 +33,8 @@ where
 {
     // pub(super) game_state: Arc<Mutex<GameSharedState>>,
     pub(super) renderer: Rc<RefCell<R>>,
-    pub(super) texture_loader: TextureLoader<R>,
-    pub(super) loaded_textures: Vec<Rc<TextureDef<R>>>,
+    // pub(super) texture_loader: TextureLoader<R>,
+    // pub(super) loaded_textures: Vec<Rc<TextureDef<R>>>,
     // egui_renderer: Option<G>,
     // egui: Option<EguiBackend>,
     // world_renderer: WorldRenderer<R>,
@@ -47,18 +48,18 @@ impl<R> GameRenderer<R>
 where
     R: Renderer,
 {
-    pub fn new(
+    pub async fn from_canvas(
         // game_state: Arc<Mutex<GameSharedState>>,
-        renderer: R,
+        canvas: HtmlCanvasElement,
         command_receiver: Receiver<SerializedCommand>,
     ) -> Result<Self, JsValue> {
-        let renderer = Rc::new(RefCell::new(renderer));
+        let renderer = Rc::new(RefCell::new(R::from_canvas(canvas).await?));
         Ok(Self {
             context: GlobalProxy::new()?,
             // game_state: game_state.clone(),
             renderer: renderer.clone(),
-            texture_loader: TextureLoader::new(16, renderer)?,
-            loaded_textures: Vec::with_capacity(16),
+            // texture_loader: TextureLoader::new(16, renderer)?,
+            // loaded_textures: Vec::with_capacity(16),
             local_state: Default::default(),
             render_state: Default::default(),
             command_receiver, // egui_renderer: None,
@@ -71,8 +72,8 @@ where
             (BLOCKS_ATLAS_PATH, TextureType::Texture2DArray(16)),
             (UV_CHECKER_PATH, TextureType::Texture2D),
         ] {
-            let key = self.texture_loader.load(path, t)?;
-            self.loaded_textures.push(Rc::new((t, key)));
+            // let key = self.texture_loader.load(path, t)?;
+            // self.loaded_textures.push(Rc::new((t, key)));
         }
 
         // self.world
@@ -85,7 +86,7 @@ where
         let _start = self.context.performance_now();
         self.execute_commands();
 
-        self.texture_loader.tick()?;
+        // self.texture_loader.tick()?;
         let update_time = self.context.performance_now();
 
         self.render()?;
@@ -106,8 +107,10 @@ where
     fn render(&mut self) -> Result<(), String> {
         {
             let mut renderer = self.renderer.borrow_mut();
+            renderer.begin_render();
             let color = self.render_state.clear_color;
             renderer.clear(color.x, color.y, color.z, color.w);
+            renderer.end_render();
         }
 
         // self.world.render(gl, &self.camera);

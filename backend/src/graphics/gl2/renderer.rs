@@ -1,7 +1,7 @@
 use glow::{HasContext, WebBufferKey, WebProgramKey, WebTextureKey, WebVertexArrayKey};
 use wasm_bindgen::JsValue;
 
-use crate::graphics::{RenderFlag, Renderer, TextureType, VertexDataType};
+use crate::graphics::{RenderFlag, Renderer, TextureType, TodoRenderer, VertexDataType};
 
 use super::utils;
 
@@ -16,21 +16,20 @@ impl Gl2Renderer {
     }
 }
 
-impl Renderer for Gl2Renderer {
+impl Into<u32> for TextureType {
+    fn into(self) -> u32 {
+        match self {
+            TextureType::Texture2D => glow::TEXTURE_2D,
+            TextureType::Texture2DArray(_) => glow::TEXTURE_2D_ARRAY,
+        }
+    }
+}
+
+impl TodoRenderer for Gl2Renderer {
+    type ShaderProgramKey = WebProgramKey;
     type TextureKey = WebTextureKey;
     type BufferKey = WebBufferKey;
     type VertexArrayKey = WebVertexArrayKey;
-    type ShaderProgramKey = WebProgramKey;
-
-    fn new(canvas: web_sys::HtmlCanvasElement) -> Result<Self, JsValue> {
-        let gl = utils::get_webgl2_context(canvas)?;
-        unsafe {
-            gl.enable(glow::DEPTH_TEST);
-            gl.depth_func(glow::LESS);
-            gl.enable(glow::CULL_FACE);
-        }
-        Ok(Gl2Renderer { gl })
-    }
 
     fn create_texture(&mut self) -> Self::TextureKey {
         unsafe { self.gl.create_texture().expect("Can't create texture") }
@@ -126,6 +125,18 @@ impl Renderer for Gl2Renderer {
             self.gl.generate_mipmap(texture_u32);
         }
     }
+}
+
+impl Renderer for Gl2Renderer {
+    async fn from_canvas(canvas: web_sys::HtmlCanvasElement) -> Result<Self, JsValue> {
+        let gl = utils::get_webgl2_context(canvas)?;
+        unsafe {
+            gl.enable(glow::DEPTH_TEST);
+            gl.depth_func(glow::LESS);
+            gl.enable(glow::CULL_FACE);
+        }
+        Ok(Gl2Renderer { gl })
+    }
 
     fn set_flag(&mut self, flag: RenderFlag, enabled: bool) {
         let value = match flag {
@@ -147,6 +158,10 @@ impl Renderer for Gl2Renderer {
                 .clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
         }
     }
+
+    fn begin_render(&mut self) {}
+
+    fn end_render(&mut self) {}
 }
 
 fn get_glow_vertex_data_type(data_type: VertexDataType) -> u32 {

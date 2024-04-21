@@ -1,7 +1,8 @@
-use crate::gamestate::GameState;
+use crate::graphics::Renderer;
 use egui::mutex::Mutex;
 use log::info;
 use std::{borrow::Cow, mem, sync::Arc};
+use wasm_bindgen::JsValue;
 use web_sys::HtmlCanvasElement;
 use wgpu::{util::DeviceExt, SurfaceTarget};
 
@@ -54,7 +55,7 @@ const VERTICES: &[Vertex] = &[
     },
 ];
 
-pub struct GraphicsContext<'w> {
+pub struct WgpuRenderer<'w> {
     #[allow(dead_code)]
     instance: wgpu::Instance,
     #[allow(dead_code)]
@@ -65,14 +66,43 @@ pub struct GraphicsContext<'w> {
     config: wgpu::SurfaceConfiguration,
     draw_state: DrawState,
     render_pipeline: wgpu::RenderPipeline,
-    game_state: Arc<Mutex<GameState>>,
     vertex_buffer: wgpu::Buffer,
     num_vertices: u32,
     gui_renderer: egui_wgpu::Renderer,
 }
 
-impl<'w> GraphicsContext<'w> {
-    pub async fn new(canvas: HtmlCanvasElement, game_state: Arc<Mutex<GameState>>) -> Self {
+impl Renderer for WgpuRenderer<'_> {
+    async fn from_canvas(
+        canvas: web_sys::HtmlCanvasElement,
+    ) -> Result<Self, wasm_bindgen::prelude::JsValue>
+    where
+        Self: Sized,
+    {
+        WgpuRenderer::new(canvas).await
+    }
+
+    fn set_flag(&mut self, flag: crate::graphics::RenderFlag, enabled: bool) {
+        todo!()
+    }
+
+    fn clear(&mut self, r: f32, g: f32, b: f32, a: f32) {
+        self.draw_state.clear_color = wgpu::Color {
+            r: r as _,
+            g: g as _,
+            b: b as _,
+            a: a as _,
+        };
+    }
+
+    fn begin_render(&mut self) {}
+
+    fn end_render(&mut self) {
+        self.render().expect("Failed to render");
+    }
+}
+
+impl<'w> WgpuRenderer<'w> {
+    pub async fn new(canvas: HtmlCanvasElement) -> Result<Self, JsValue> {
         let instance = wgpu::Instance::default();
         let (width, height) = (canvas.width(), canvas.height());
 
@@ -109,7 +139,9 @@ impl<'w> GraphicsContext<'w> {
         // Load the shaders from disk
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../shaders/shader.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!(
+                "../../../shaders/shader.wgsl"
+            ))),
         });
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -159,7 +191,7 @@ impl<'w> GraphicsContext<'w> {
 
         let gui_renderer = egui_wgpu::Renderer::new(&device, swapchain_format, None, 1);
 
-        Self {
+        Ok(Self {
             instance,
             adapter,
             surface,
@@ -170,11 +202,10 @@ impl<'w> GraphicsContext<'w> {
                 clear_color: DEFAULT_CLEAR_COLOR,
             },
             render_pipeline,
-            game_state,
             gui_renderer,
             vertex_buffer,
             num_vertices: VERTICES.len() as u32,
-        }
+        })
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -219,15 +250,7 @@ impl<'w> GraphicsContext<'w> {
         self.render()
     }
 
-    fn update(&mut self) {
-        let state = self.game_state.lock();
-        self.draw_state.clear_color = wgpu::Color {
-            r: state.mouse_pos.0 / self.config.width as f64, //self.size.width as f64,
-            g: state.mouse_pos.1 / self.config.height as f64, // self.size.height as f64,
-            b: 1.0,
-            a: 1.0,
-        };
-    }
+    fn update(&mut self) {}
 
     pub fn reset_swap_chain(&mut self) {
         self.surface.configure(&self.device, &self.config);

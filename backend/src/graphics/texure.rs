@@ -7,16 +7,7 @@ pub enum TextureType {
     Texture2DArray(u32),
 }
 
-pub type TextureDef<R>
-where
-    R: Renderer,
-= (TextureType, R::TextureKey);
-
-impl Into<u32> for TextureType {
-    fn into(self) -> u32 {
-        match self {
-            TextureType::Texture2D => glow::TEXTURE_2D,
-            TextureType::Texture2DArray(_) => glow::TEXTURE_2D_ARRAY,
-        }
-    }
-}
+// pub type TextureDef<R>
+// where
+//     R: Renderer,
+// = (TextureType, R::TextureKey);

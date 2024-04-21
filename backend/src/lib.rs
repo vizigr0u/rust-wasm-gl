@@ -1,8 +1,7 @@
 use egui::mutex::Mutex;
-use graphics::{GameRenderer, Gl2Renderer, Renderer};
+use graphics::{GameRenderer, Gl2Renderer, WgpuRenderer};
 use instant::Duration;
-use log::info;
-use render::GraphicsContext;
+use log::{info, warn};
 use std::sync::Arc;
 use utils::get_canvas_by_id;
 use wasm_thread as thread;
@@ -20,22 +19,17 @@ async fn run_wgpu(event_loop: EventLoop<()>, winit_window: Window) {
         .expect("Unable to create global proxy")
         .get_window()
         .expect("Unable to get window");
-    let canvas = get_canvas_by_id(&window, "canvas").expect("Unable to get canvas");
-    let gl2_renderer = Gl2Renderer::new(canvas).expect("Unable to create renderer");
-    info!("gl2_renderer created");
+    let webgl2_canvas = get_canvas_by_id(&window, "canvas").expect("Unable to get canvas");
 
-    use crate::graphics::commands::SerializedCommand;
     let (graphics_sender, graphics_receiver) = mpsc::channel::<SerializedCommand>();
-    let (game_sender, game_tick_receiver) = mpsc::channel::<Tick>();
+    let (webgl2_sender, webgl2_receiver) = mpsc::channel::<SerializedCommand>();
+    let (wgpu_sender, wgpu_receiver) = mpsc::channel::<SerializedCommand>();
 
-    let mut game_gl2_renderer = GameRenderer::new(
-        /*game.lock().state().clone(), */ gl2_renderer,
-        graphics_receiver,
-    )
-    .expect("Unable to create GL2 Game renderer");
+    let (game_sender, game_tick_receiver) = mpsc::channel::<Tick>();
 
     let game_graphics_sender = graphics_sender.clone();
 
+    // Spawn game thread
     thread::spawn(move || {
         info!("Starting game script loop");
         let mut game = Game::new(game_graphics_sender).expect("Unable to create game");
@@ -44,22 +38,32 @@ async fn run_wgpu(event_loop: EventLoop<()>, winit_window: Window) {
         }
     });
 
-    let window = &winit_window;
-    if let Some(canvas) = window.canvas() {
-        let game_state = Arc::new(Mutex::new(gamestate::GameState {
-            mouse_pos: (0.0, 0.0),
-            gui_state: None,
-        }));
-
-        let mut graphics_context = GraphicsContext::new(canvas, game_state.clone()).await;
-
-        {
-            let state_clone = game_state.clone();
-            thread::spawn(move || loop {
-                thread::sleep(Duration::from_secs(1));
-                state_clone.lock().mouse_pos = (0.0, 0.0);
-            });
+    // Dispatcher
+    thread::spawn(move || {
+        info!("Starting dispatcher");
+        while let Ok(c) = graphics_receiver.recv() {
+            wgpu_sender.send(c.clone()).unwrap();
+            webgl2_sender.send(c).unwrap();
         }
+    });
+
+    let mut game_gl2_renderer =
+        GameRenderer::<Gl2Renderer>::from_canvas(webgl2_canvas, webgl2_receiver)
+            .await
+            .expect("Unable to create GL2 Game renderer");
+
+    let window = &winit_window;
+    if let Some(wgpu_canvas) = window.canvas() {
+        // let game_state = Arc::new(Mutex::new(gamestate::GameState {
+        //     mouse_pos: (0.0, 0.0),
+        //     gui_state: None,
+        // }));
+
+        let mut wgpu_renderer =
+            GameRenderer::<WgpuRenderer>::from_canvas(wgpu_canvas, wgpu_receiver)
+                .await
+                .expect("Unable to create GL2 Game renderer");
+
         let egui_ctx = egui::Context::default();
         // let e = egui_wgpu::winit::Painter::new(
         //     egui_wgpu::WgpuConfiguration {
@@ -82,15 +86,15 @@ async fn run_wgpu(event_loop: EventLoop<()>, winit_window: Window) {
                     window_id,
                 } if window_id == window.id() => {
                     match &event {
-                        WindowEvent::Resized(physical_size) => {
-                            graphics_context.resize(*physical_size)
+                        WindowEvent::Resized(_physical_size) => {
+                            // graphics_context.resize(*physical_size)
                         }
                         WindowEvent::ScaleFactorChanged { .. } => {
-                            graphics_context.resize(window.inner_size());
+                            // graphics_context.resize(window.inner_size());
                         }
                         WindowEvent::CloseRequested => event_loop_window_target.exit(),
-                        WindowEvent::CursorMoved { position, .. } => {
-                            game_state.lock().mouse_pos = (position.x, position.y);
+                        WindowEvent::CursorMoved { .. } => {
+                            // game_state.lock().mouse_pos = (position.x, position.y);
                         }
                         WindowEvent::KeyboardInput {
                             event: key_event, ..
@@ -105,28 +109,26 @@ async fn run_wgpu(event_loop: EventLoop<()>, winit_window: Window) {
                             }
                         }
                         WindowEvent::RedrawRequested => {
-                            let raw_input = egui::RawInput::default();
-                            game_state.lock().gui_state = Some(egui_ctx.run(raw_input, |ctx| {
-                                egui::CentralPanel::default().show(&ctx, |ui| {
-                                    ui.label("Hello world!");
-                                    if ui.button("Click me").clicked() {
-                                        // take some action here
-                                    }
-                                });
-                            }));
                             let _ = game_sender.send(Tick {});
-                            game_gl2_renderer.tick();
-                            match graphics_context.tick() {
+                            match game_gl2_renderer.tick() {
                                 Ok(_) => {}
-                                // Recreate the swap_chain if lost
-                                Err(wgpu::SurfaceError::Lost) => {
-                                    graphics_context.reset_swap_chain()
-                                }
-                                Err(wgpu::SurfaceError::OutOfMemory) => {
-                                    event_loop_window_target.exit()
-                                }
-                                Err(e) => eprintln!("Some unhandled error {:?}", e),
-                            }
+                                Err(s) => warn!("game_gl2_renderer tick error: {}", s),
+                            };
+                            match wgpu_renderer.tick() {
+                                Ok(_) => {}
+                                Err(s) => warn!("wgpu_renderer tick error: {}", s),
+                            };
+                            // match graphics_context.tick() {
+                            //     Ok(_) => {}
+                            //     // Recreate the swap_chain if lost
+                            //     Err(wgpu::SurfaceError::Lost) => {
+                            //         graphics_context.reset_swap_chain()
+                            //     }
+                            //     Err(wgpu::SurfaceError::OutOfMemory) => {
+                            //         event_loop_window_target.exit()
+                            //     }
+                            //     Err(e) => eprintln!("Some unhandled error {:?}", e),
+                            // }
                         }
                         _ => {}
                     }
@@ -145,10 +147,9 @@ async fn run_wgpu(event_loop: EventLoop<()>, winit_window: Window) {
 use std::sync::mpsc;
 use wasm_bindgen::prelude::*;
 
-use crate::{core::Game, utils::GlobalProxy};
+use crate::{core::Game, graphics::commands::SerializedCommand, utils::GlobalProxy};
 
 mod gamestate;
-mod render;
 
 mod core;
 mod graphics;
