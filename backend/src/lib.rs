@@ -3,11 +3,11 @@ use graphics::{GameRenderer, Gl2Renderer, Renderer};
 use instant::Duration;
 use log::info;
 use render::GraphicsContext;
-use std::{cell::RefCell, rc::Rc, sync::Arc};
-use utils::get_canvas;
+use std::sync::Arc;
+use utils::get_canvas_by_id;
 use wasm_thread as thread;
 use winit::{
-    dpi::PhysicalSize,
+    dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::EventLoop,
     keyboard::{KeyCode, PhysicalKey},
@@ -15,18 +15,43 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
-    let window = &window;
+async fn run_wgpu(event_loop: EventLoop<()>, winit_window: Window) {
+    let window = GlobalProxy::new()
+        .expect("Unable to create global proxy")
+        .get_window()
+        .expect("Unable to get window");
+    let canvas = get_canvas_by_id(&window, "canvas").expect("Unable to get canvas");
+    let gl2_renderer = Gl2Renderer::new(canvas).expect("Unable to create renderer");
+    info!("gl2_renderer created");
+
+    use crate::graphics::commands::SerializedCommand;
+    let (graphics_sender, graphics_receiver) = mpsc::channel::<SerializedCommand>();
+    let (game_sender, game_tick_receiver) = mpsc::channel::<Tick>();
+
+    let mut game_gl2_renderer = GameRenderer::new(
+        /*game.lock().state().clone(), */ gl2_renderer,
+        graphics_receiver,
+    )
+    .expect("Unable to create GL2 Game renderer");
+
+    let game_graphics_sender = graphics_sender.clone();
+
+    thread::spawn(move || {
+        info!("Starting game script loop");
+        let mut game = Game::new(game_graphics_sender).expect("Unable to create game");
+        for _ in game_tick_receiver {
+            game.tick().unwrap()
+        }
+    });
+
+    let window = &winit_window;
     if let Some(canvas) = window.canvas() {
-        let offscreen_canvas = canvas
-            .transfer_control_to_offscreen()
-            .expect("canvas transfer failed");
         let game_state = Arc::new(Mutex::new(gamestate::GameState {
             mouse_pos: (0.0, 0.0),
             gui_state: None,
         }));
 
-        let mut graphics_context = GraphicsContext::new(offscreen_canvas, game_state.clone()).await;
+        let mut graphics_context = GraphicsContext::new(canvas, game_state.clone()).await;
 
         {
             let state_clone = game_state.clone();
@@ -89,6 +114,8 @@ async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
                                     }
                                 });
                             }));
+                            let _ = game_sender.send(Tick {});
+                            game_gl2_renderer.tick();
                             match graphics_context.tick() {
                                 Ok(_) => {}
                                 // Recreate the swap_chain if lost
@@ -118,7 +145,7 @@ async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
 use std::sync::mpsc;
 use wasm_bindgen::prelude::*;
 
-use crate::core::Game;
+use crate::{core::Game, utils::GlobalProxy};
 
 mod gamestate;
 mod render;
@@ -131,12 +158,9 @@ mod objects;
 mod utils;
 // mod world;
 
-use wasm_bindgen::prelude::*;
 use winit::platform::web::WindowBuilderExtWebSys;
 
-struct Tick {
-    time: f64,
-}
+struct Tick {}
 
 #[wasm_bindgen(start)]
 fn start() -> Result<(), JsValue> {
@@ -145,77 +169,13 @@ fn start() -> Result<(), JsValue> {
 
     utils::init_log();
 
-    let canvas = get_canvas()?;
-    let renderer = Gl2Renderer::new(canvas)?;
-    info!("renderer created");
-
-    use crate::graphics::commands::SerializedCommand;
-    let (graphics_sender, graphics_receiver) = mpsc::channel::<SerializedCommand>();
-    let (game_sender, game_tick_receiver) = mpsc::channel::<Tick>();
-
-    let renderer = GameRenderer::new(
-        /*game.lock().state().clone(), */ renderer,
-        graphics_receiver,
-    )?;
-
-    let game_graphics_sender = graphics_sender.clone();
-    thread::spawn(move || {
-        let mut game = Game::new(game_graphics_sender).unwrap();
-        for tick in game_tick_receiver {
-            game.tick(tick.time).unwrap()
-        }
-    });
-
-    info!("game and game renderer created");
-
-    main_loop(game_sender, renderer)?;
-
-    info!("game loop started");
-
-    {
-        let event_loop = EventLoop::new().unwrap();
-        let window = WindowBuilder::new()
-            .with_append(true)
-            .with_inner_size(PhysicalSize::new(800, 600))
-            .build(&event_loop)
-            .unwrap();
-        wasm_bindgen_futures::spawn_local(run_wgpu(event_loop, window));
-    }
-
-    Ok(())
-}
-
-fn request_animation_frame(f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>) {
-    web_sys::window()
-        .unwrap()
-        .request_animation_frame(f.as_ref().unchecked_ref())
+    let event_loop = EventLoop::new().unwrap();
+    let window = WindowBuilder::new()
+        .with_append(true)
+        .with_inner_size(LogicalSize::new(800, 600))
+        .build(&event_loop)
         .unwrap();
-}
-
-fn main_loop<R>(game_sender: mpsc::Sender<Tick>, renderer: GameRenderer<R>) -> Result<(), JsValue>
-where
-    R: Renderer + 'static,
-{
-    let renderer = Rc::new(RefCell::new(renderer));
-    let update: Rc<RefCell<Option<Closure<dyn FnMut(f64) -> Result<(), JsValue>>>>> =
-        Rc::new(RefCell::new(None));
-    /* Reference to closure requests for first frame and then it's dropped */
-    let request_update = update.clone();
-
-    let game_sender = Rc::new(RefCell::new(game_sender.clone()));
-    *request_update.borrow_mut() = Some(Closure::new(move |time| {
-        let _ = game_sender.borrow().send(Tick { time });
-        // thread::spawn(move || {
-        // let _ = game.lock().tick(time);
-        // });
-        renderer.borrow_mut().tick()?;
-
-        // Request the next animation frame.
-        request_animation_frame(update.borrow().as_ref().unwrap());
-        Ok(())
-    }));
-
-    request_animation_frame(request_update.borrow().as_ref().unwrap());
+    wasm_bindgen_futures::spawn_local(run_wgpu(event_loop, window));
 
     Ok(())
 }

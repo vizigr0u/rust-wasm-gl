@@ -9,7 +9,7 @@ use wasm_bindgen::{closure::Closure, JsValue};
 use web_sys::HtmlImageElement;
 
 use super::{Renderer, TextureType};
-use crate::utils::{get_document, get_performance};
+use crate::utils::GlobalProxy;
 
 #[derive(Debug)]
 enum TextureStatus {
@@ -36,6 +36,7 @@ where
 {
     pool: Rc<RefCell<Vec<LoadingTexture<R>>>>,
     renderer: Rc<RefCell<R>>,
+    context: GlobalProxy,
 }
 
 const TEXTURE_CONTAINER_ID: &str = "textures_container";
@@ -46,7 +47,11 @@ where
     R: Renderer,
 {
     pub fn new(pool_size: usize, renderer: Rc<RefCell<R>>) -> Result<Self, JsValue> {
-        let document = get_document()?;
+        let context = GlobalProxy::new()?;
+        let document = context
+            .get_window()?
+            .document()
+            .ok_or("document should exist")?;
         // let body = document.body().ok_or("document should have a body")?;
         let container = document
             .get_element_by_id(TEXTURE_CONTAINER_ID)
@@ -72,7 +77,11 @@ where
             .collect();
         let pool = Rc::new(RefCell::new(pool));
 
-        Ok(TextureLoader { pool, renderer })
+        Ok(TextureLoader {
+            pool,
+            renderer,
+            context,
+        })
     }
 
     // pub fn get_num_loading(&self) -> usize {
@@ -104,7 +113,7 @@ where
                     .set_onload(Some(rc_closure.borrow().as_ref().unchecked_ref()));
 
                 loading_tex.img.set_src(src);
-                let start_time: f64 = get_performance()?.now(); // TODO
+                let start_time = self.context.performance_now(); // TODO
                 loading_tex.status = TextureStatus::Busy(start_time, rc_closure);
 
                 {
@@ -147,7 +156,7 @@ where
                         let img = &tex.img;
                         let key = tex.key;
                         let t = tex.texture_type;
-                        let now: f64 = get_performance()?.now();
+                        let now = self.context.performance_now();
                         let total_time = now - *start_time;
                         info!(
                             "Texture loaded: {} ({}x{}) in {}ms",

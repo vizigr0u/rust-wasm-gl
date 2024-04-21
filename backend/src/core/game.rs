@@ -17,6 +17,7 @@ use crate::{
     graphics::commands::{self, CommandBuilder, CommandQueue, SerializedCommand},
     gui::FpsDisplay,
     objects::Camera,
+    utils::GlobalProxy,
     // utils::performance_now, // world::{GeneratorV0, TestGenerator, World},
 };
 
@@ -59,6 +60,7 @@ impl GraphicsCommandQueue {
 }
 
 pub struct Game {
+    context: GlobalProxy,
     seed: u64,
     rng: Rng,
     current_state: State,
@@ -120,8 +122,11 @@ impl Game {
 
     pub fn new(graphics_sender: Sender<SerializedCommand>) -> Result<Self, JsValue> {
         let seed = 0;
+        let context = GlobalProxy::new()?;
+        let time = Time::new(context.performance_now());
         let rng = Rng::with_seed(seed);
         let game = Game {
+            context,
             seed,
             rng,
             current_state: State::Loading,
@@ -134,7 +139,7 @@ impl Game {
             }),
             // input_system: InputSystem::new()?,
             is_paused: false,
-            time: Time::default(),
+            time,
             gui_state: GuiState::default(),
             // gizmo: Gizmo::new(Vec3::ZERO, 10.0),
             // player: Player::new(vec3(0.0, 16.0, 0.0)),
@@ -158,24 +163,24 @@ impl Game {
         Ok(State::Running)
     }
 
-    pub fn tick(&mut self, time: f64) -> Result<(), String> {
+    pub fn tick(&mut self) -> Result<(), String> {
         match self.current_state {
             State::Loading => {
                 let load_state = self.tick_loading()?;
                 self.current_state = load_state;
             }
             State::Running => {
-                self.tick_running(time)?;
+                self.tick_running()?;
             }
         }
 
         Ok(())
     }
 
-    fn tick_running(&mut self, time: f64) -> Result<(), String> {
+    fn tick_running(&mut self) -> Result<(), String> {
         let start = Instant::now();
 
-        self.time.update(time);
+        self.time.update(self.context.performance_now());
 
         self.handle_inputs();
 
@@ -256,13 +261,13 @@ impl Game {
 
     fn update(&mut self) -> Result<(), String> {
         if !self.is_paused {
-            if self.next_color_sent_time <= self.time.time() {
+            if self.next_color_sent_time <= self.time.elapsed() {
                 self.clear_color.x = self.rng.f32();
                 self.clear_color.y = self.rng.f32();
                 self.clear_color.z = self.rng.f32();
                 CommandBuilder::set_clear_color(&self.clear_color.to_array())
                     .enqueue(&mut self.graphics_command_queue.queue);
-                self.next_color_sent_time = self.time.time() + 300.0;
+                self.next_color_sent_time = self.time.elapsed() + 300.0;
             }
             // self.player.update(&self.time);
             // let player_chunk_pos = self.player.get_position().chunk_pos();

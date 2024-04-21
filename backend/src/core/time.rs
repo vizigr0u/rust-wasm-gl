@@ -1,26 +1,28 @@
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Time {
-    previous_time: Option<f64>,
+    initial_time: f64,
+    elapsed_time: f64,
     delta_time: f64,
 }
 
 impl Time {
-    pub fn update(&mut self, time: f64) {
-        if let Some(previous_time) = self.previous_time {
-            self.delta_time = time - previous_time;
+    pub fn new(initial_time: f64) -> Self {
+        Self {
+            initial_time,
+            elapsed_time: 0.0,
+            delta_time: 0.0,
         }
-        self.previous_time = Some(time);
+    }
+    pub fn update(&mut self, current_time: f64) {
+        self.delta_time = current_time - self.elapsed_time;
+        self.elapsed_time = current_time - self.initial_time;
     }
 
-    pub fn delta_time(&self) -> f64 {
+    pub fn delta(&self) -> f64 {
         self.delta_time
     }
 
-    pub fn time(&self) -> f64 {
-        self.previous_time.unwrap_or(0.0)
+    pub fn elapsed(&self) -> f64 {
+        self.elapsed_time
     }
-
-    // pub fn time(&self) -> f64 {
-    //     self.previous_time.unwrap_or(0.0)
-    // }
 }

@@ -12,7 +12,7 @@ use wasm_bindgen::JsValue;
 use crate::{
     core::{Game, GameSharedState},
     graphics::{EguiRenderer, Renderer, TextureDef, TextureLoader, TextureType},
-    utils::performance_now,
+    utils::GlobalProxy,
 };
 
 use super::commands::{self, CommandQueue, SerializedCommand};
@@ -40,6 +40,7 @@ where
     local_state: GameSharedState,
     render_state: RenderState,
     command_receiver: Receiver<SerializedCommand>,
+    context: GlobalProxy,
 }
 
 impl<R> GameRenderer<R>
@@ -53,6 +54,7 @@ where
     ) -> Result<Self, JsValue> {
         let renderer = Rc::new(RefCell::new(renderer));
         Ok(Self {
+            context: GlobalProxy::new()?,
             // game_state: game_state.clone(),
             renderer: renderer.clone(),
             texture_loader: TextureLoader::new(16, renderer)?,
@@ -80,18 +82,18 @@ where
     }
 
     pub fn tick(&mut self) -> Result<(), String> {
-        let _start = performance_now();
+        let _start = self.context.performance_now();
         self.execute_commands();
 
         self.texture_loader.tick()?;
-        let update_time = performance_now();
+        let update_time = self.context.performance_now();
 
         self.render()?;
-        let render_time = performance_now();
+        let render_time = self.context.performance_now();
 
         self.draw_ui();
 
-        let frame_time = performance_now();
+        let frame_time = self.context.performance_now();
         {
             // let mut game = self.game_state.lock();
             // game.last_render_time = render_time - update_time;

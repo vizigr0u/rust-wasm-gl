@@ -2,7 +2,7 @@ use crate::gamestate::GameState;
 use egui::mutex::Mutex;
 use log::info;
 use std::{borrow::Cow, mem, sync::Arc};
-use web_sys::OffscreenCanvas;
+use web_sys::HtmlCanvasElement;
 use wgpu::{util::DeviceExt, SurfaceTarget};
 
 const DEFAULT_CLEAR_COLOR: wgpu::Color = wgpu::Color {
@@ -72,12 +72,12 @@ pub struct GraphicsContext<'w> {
 }
 
 impl<'w> GraphicsContext<'w> {
-    pub async fn new(canvas: OffscreenCanvas, game_state: Arc<Mutex<GameState>>) -> Self {
+    pub async fn new(canvas: HtmlCanvasElement, game_state: Arc<Mutex<GameState>>) -> Self {
         let instance = wgpu::Instance::default();
         let (width, height) = (canvas.width(), canvas.height());
 
         let surface = instance
-            .create_surface(SurfaceTarget::OffscreenCanvas(canvas))
+            .create_surface(SurfaceTarget::Canvas(canvas))
             .expect("Failed to create surface");
 
         let adapter = instance
