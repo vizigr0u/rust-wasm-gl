@@ -60,6 +60,7 @@ impl GraphicsCommandQueue {
 
 pub struct Game {
     seed: u64,
+    rng: Rng,
     current_state: State,
 
     // world: World<WorldGenerator>,
@@ -78,7 +79,7 @@ pub struct Game {
     local_state: GameSharedState,
     // shared_state: Arc<Mutex<GameSharedState>>,
     graphics_command_queue: GraphicsCommandQueue,
-    demo_has_sent_command: bool,
+    next_color_sent_time: f64,
 }
 
 struct GuiState {
@@ -122,6 +123,7 @@ impl Game {
         let rng = Rng::with_seed(seed);
         let game = Game {
             seed,
+            rng,
             current_state: State::Loading,
 
             // world: World::new(make_generator(rng)),
@@ -146,7 +148,7 @@ impl Game {
                 queue: CommandQueue::default(),
                 graphics_sender,
             },
-            demo_has_sent_command: false,
+            next_color_sent_time: 0.0,
         };
 
         Ok(game)
@@ -254,10 +256,13 @@ impl Game {
 
     fn update(&mut self) -> Result<(), String> {
         if !self.is_paused {
-            if !self.demo_has_sent_command {
+            if self.next_color_sent_time <= self.time.time() {
+                self.clear_color.x = self.rng.f32();
+                self.clear_color.y = self.rng.f32();
+                self.clear_color.z = self.rng.f32();
                 CommandBuilder::set_clear_color(&self.clear_color.to_array())
                     .enqueue(&mut self.graphics_command_queue.queue);
-                self.demo_has_sent_command = true;
+                self.next_color_sent_time = self.time.time() + 300.0;
             }
             // self.player.update(&self.time);
             // let player_chunk_pos = self.player.get_position().chunk_pos();

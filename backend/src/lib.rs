@@ -30,11 +30,9 @@ async fn run_wgpu(event_loop: EventLoop<()>, window: Window) {
 
         {
             let state_clone = game_state.clone();
-            thread::spawn(move || {
-                while true {
-                    thread::sleep(Duration::from_secs(1));
-                    state_clone.lock().mouse_pos = (0.0, 0.0);
-                }
+            thread::spawn(move || loop {
+                thread::sleep(Duration::from_secs(1));
+                state_clone.lock().mouse_pos = (0.0, 0.0);
             });
         }
         let egui_ctx = egui::Context::default();

@@ -123,9 +123,9 @@ where
     }
 
     fn execute_commands(&mut self) {
-        while let received = self.command_receiver.try_recv() {
-            match received {
-                Ok(c) => info!("Got Command: {:?}", c),
+        loop {
+            match self.command_receiver.try_recv() {
+                Ok(c) => self.execute_command(c),
                 Err(_) => {
                     break;
                 }
@@ -133,5 +133,22 @@ where
         }
         // info!("executing {} commands", self.commands.len());
         // self.commands.clear();
+    }
+
+    fn execute_command(&mut self, c: SerializedCommand) {
+        match c.command_type {
+            1 => match c.parse_basic() {
+                Ok(basic) => match basic {
+                    commands::BasicCommand::SetClearColor(color) => {
+                        self.render_state.clear_color =
+                            Vec4::new(color[0], color[1], color[2], color[3]);
+                    }
+                },
+                Err(_) => todo!(),
+            },
+            _ => {
+                info!("Unknown Command: {:?}", c);
+            }
+        }
     }
 }

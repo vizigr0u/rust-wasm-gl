@@ -122,6 +122,12 @@ impl Into<SerializedCommand> for CommandBuilder<Command<BasicCommand>> {
     }
 }
 
+impl SerializedCommand {
+    pub fn parse_basic(&self) -> Result<BasicCommand, String> {
+        bitcode::decode::<BasicCommand>(&self.data).map_err(|e| e.to_string())
+    }
+}
+
 // impl SerializedCommand {
 //     pub fn run
 
