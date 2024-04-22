@@ -14,14 +14,13 @@ use log::info;
 use wasm_bindgen::JsValue;
 
 use crate::{
-    graphics::commands::{self, CommandBuilder, CommandQueue, SerializedCommand},
+    graphics::{Graphics, GraphicsCommand},
     gui::FpsDisplay,
     objects::Camera,
-    utils::GlobalProxy,
-    // utils::performance_now, // world::{GeneratorV0, TestGenerator, World},
+    utils::GlobalProxy, // utils::performance_now, // world::{GeneratorV0, TestGenerator, World},
 };
 
-use super::Time;
+use super::{CommandQueue, Time};
 
 // type WorldGenerator = GeneratorV0;
 
@@ -40,23 +39,6 @@ pub struct GameSharedState {
     pub last_render_time: f64,
     pub last_render_ui_time: f64,
     // pub commands: CommandQueue,
-}
-
-struct GraphicsCommandQueue {
-    queue: CommandQueue,
-    graphics_sender: Sender<SerializedCommand>,
-}
-
-impl GraphicsCommandQueue {
-    fn clear(&mut self) {
-        self.queue.clear();
-    }
-    fn process(&mut self) {
-        for command in self.queue.commands_mut().drain(0..) {
-            info!("sending command: {:?}", command);
-            self.graphics_sender.send(command).unwrap();
-        }
-    }
 }
 
 pub struct Game {
@@ -80,7 +62,7 @@ pub struct Game {
     pub clear_color: Vec4,
     local_state: GameSharedState,
     // shared_state: Arc<Mutex<GameSharedState>>,
-    graphics_command_queue: GraphicsCommandQueue,
+    graphics: CommandQueue<Graphics>,
     next_color_sent_time: f64,
 }
 
@@ -120,7 +102,7 @@ impl Game {
     //     self.shared_state.clone()
     // }
 
-    pub fn new(graphics_sender: Sender<SerializedCommand>) -> Result<Self, JsValue> {
+    pub fn new(graphics_sender: Sender<GraphicsCommand>) -> Result<Self, JsValue> {
         let seed = 0;
         let context = GlobalProxy::new()?;
         let time = Time::new(context.performance_now());
@@ -149,10 +131,7 @@ impl Game {
             clear_color: Vec4::new(0.4, 0.6, 0.7, 1.0),
             local_state: GameSharedState::default(),
             // shared_state: Arc::new(Mutex::new(GameSharedState::default())),
-            graphics_command_queue: GraphicsCommandQueue {
-                queue: CommandQueue::default(),
-                graphics_sender,
-            },
+            graphics: CommandQueue::new(graphics_sender),
             next_color_sent_time: 0.0,
         };
 
@@ -265,8 +244,7 @@ impl Game {
                 self.clear_color.x = self.rng.f32();
                 self.clear_color.y = self.rng.f32();
                 self.clear_color.z = self.rng.f32();
-                CommandBuilder::set_clear_color(&self.clear_color.to_array())
-                    .enqueue(&mut self.graphics_command_queue.queue);
+                self.graphics.set_clear_color(&self.clear_color.to_array());
                 self.next_color_sent_time = self.time.elapsed() + 300.0;
             }
             // self.player.update(&self.time);
@@ -313,6 +291,6 @@ impl Game {
 
     fn share_state(&mut self) {
         // *self.shared_state.lock() = self.local_state.clone();
-        self.graphics_command_queue.process();
+        self.graphics.send_commands();
     }
 }

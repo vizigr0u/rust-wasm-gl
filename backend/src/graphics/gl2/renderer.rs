@@ -1,3 +1,6 @@
+use std::default;
+
+use glam::Vec4;
 use glow::{HasContext, WebBufferKey, WebProgramKey, WebTextureKey, WebVertexArrayKey};
 use wasm_bindgen::JsValue;
 
@@ -8,6 +11,7 @@ use super::utils;
 #[derive(Debug)]
 pub struct Gl2Renderer {
     gl: glow::Context,
+    clear_color: Vec4,
 }
 
 impl Gl2Renderer {
@@ -27,17 +31,17 @@ impl Into<u32> for TextureType {
 
 impl TodoRenderer for Gl2Renderer {
     type ShaderProgramKey = WebProgramKey;
-    type TextureKey = WebTextureKey;
-    type BufferKey = WebBufferKey;
+    type TextureRef = WebTextureKey;
+    type BufferRef = WebBufferKey;
     type VertexArrayKey = WebVertexArrayKey;
 
-    fn create_texture(&mut self) -> Self::TextureKey {
+    fn create_texture(&mut self) -> Self::TextureRef {
         unsafe { self.gl.create_texture().expect("Can't create texture") }
     }
 
     fn load_texture(
         &mut self,
-        key: Option<Self::TextureKey>,
+        key: Option<Self::TextureRef>,
         texture_type: TextureType,
         data: &[u8],
         width: i32,
@@ -79,7 +83,7 @@ impl TodoRenderer for Gl2Renderer {
 
     fn load_texture_from_image(
         &mut self,
-        key: Option<Self::TextureKey>,
+        key: Option<Self::TextureRef>,
         texture_type: TextureType,
         img: &web_sys::HtmlImageElement,
     ) {
@@ -135,7 +139,10 @@ impl Renderer for Gl2Renderer {
             gl.depth_func(glow::LESS);
             gl.enable(glow::CULL_FACE);
         }
-        Ok(Gl2Renderer { gl })
+        Ok(Gl2Renderer {
+            gl,
+            clear_color: Vec4::ZERO,
+        })
     }
 
     fn set_flag(&mut self, flag: RenderFlag, enabled: bool) {
@@ -151,15 +158,18 @@ impl Renderer for Gl2Renderer {
         }
     }
 
-    fn clear(&mut self, r: f32, g: f32, b: f32, a: f32) {
+    fn set_clear_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
+        self.clear_color = Vec4::new(r, g, b, a);
+    }
+
+    fn begin_render(&mut self) {
         unsafe {
+            let (r, g, b, a) = self.clear_color.into();
             self.gl.clear_color(r, g, b, a);
             self.gl
                 .clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
         }
     }
-
-    fn begin_render(&mut self) {}
 
     fn end_render(&mut self) {}
 }

@@ -1,5 +1,6 @@
+use core::commands::SerializedCommand;
 use egui::mutex::Mutex;
-use graphics::{GameRenderer, Gl2Renderer, WgpuRenderer};
+use graphics::{GameRenderer, Gl2Renderer, GraphicsCommand, WgpuRenderer};
 use instant::Duration;
 use log::{info, warn};
 use std::sync::Arc;
@@ -21,9 +22,9 @@ async fn run_wgpu(event_loop: EventLoop<()>, winit_window: Window) {
         .expect("Unable to get window");
     let webgl2_canvas = get_canvas_by_id(&window, "canvas").expect("Unable to get canvas");
 
-    let (graphics_sender, graphics_receiver) = mpsc::channel::<SerializedCommand>();
-    let (webgl2_sender, webgl2_receiver) = mpsc::channel::<SerializedCommand>();
-    let (wgpu_sender, wgpu_receiver) = mpsc::channel::<SerializedCommand>();
+    let (graphics_sender, graphics_receiver) = mpsc::channel::<GraphicsCommand>();
+    let (webgl2_sender, webgl2_receiver) = mpsc::channel::<GraphicsCommand>();
+    let (wgpu_sender, wgpu_receiver) = mpsc::channel::<GraphicsCommand>();
 
     let (game_sender, game_tick_receiver) = mpsc::channel::<Tick>();
 
@@ -147,7 +148,7 @@ async fn run_wgpu(event_loop: EventLoop<()>, winit_window: Window) {
 use std::sync::mpsc;
 use wasm_bindgen::prelude::*;
 
-use crate::{core::Game, graphics::commands::SerializedCommand, utils::GlobalProxy};
+use crate::{core::Game, utils::GlobalProxy};
 
 mod gamestate;
 

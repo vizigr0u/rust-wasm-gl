@@ -1,7 +1,7 @@
 use crate::graphics::Renderer;
-use egui::mutex::Mutex;
+use glam::{vec3, Vec3};
 use log::info;
-use std::{borrow::Cow, mem, sync::Arc};
+use std::{borrow::Cow, mem};
 use wasm_bindgen::JsValue;
 use web_sys::HtmlCanvasElement;
 use wgpu::{util::DeviceExt, SurfaceTarget};
@@ -20,8 +20,8 @@ struct DrawState {
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
+    position: Vec3,
+    color: Vec3,
 }
 
 unsafe impl bytemuck::Pod for Vertex {}
@@ -42,16 +42,16 @@ impl Vertex {
 
 const VERTICES: &[Vertex] = &[
     Vertex {
-        position: [0.0, 0.5, 0.0],
-        color: [1.0, 0.0, 0.0],
+        position: vec3(0.0, 0.5, 0.0),
+        color: vec3(1.0, 0.0, 0.0),
     },
     Vertex {
-        position: [-0.5, -0.5, 0.0],
-        color: [0.0, 1.0, 0.0],
+        position: vec3(-0.5, -0.5, 0.0),
+        color: vec3(0.0, 1.0, 0.0),
     },
     Vertex {
-        position: [0.5, -0.5, 0.0],
-        color: [0.0, 0.0, 1.0],
+        position: vec3(0.5, -0.5, 0.0),
+        color: vec3(0.0, 0.0, 1.0),
     },
 ];
 
@@ -85,7 +85,7 @@ impl Renderer for WgpuRenderer<'_> {
         todo!()
     }
 
-    fn clear(&mut self, r: f32, g: f32, b: f32, a: f32) {
+    fn set_clear_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
         self.draw_state.clear_color = wgpu::Color {
             r: r as _,
             g: g as _,

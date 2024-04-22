@@ -19,19 +19,19 @@ pub trait Renderer {
     fn begin_render(&mut self);
     fn end_render(&mut self);
     fn set_flag(&mut self, flag: RenderFlag, enabled: bool);
-    fn clear(&mut self, r: f32, g: f32, b: f32, a: f32);
+    fn set_clear_color(&mut self, r: f32, g: f32, b: f32, a: f32);
 }
 
 pub trait TodoRenderer {
-    type ShaderProgramKey: Debug + Copy;
-    type TextureKey: Debug + Copy;
-    type BufferKey: Debug + Copy;
-    type VertexArrayKey: Debug + Copy;
+    type ShaderProgramKey: Copy;
+    type TextureRef: Copy;
+    type BufferRef: Copy;
+    type VertexArrayKey: Copy;
 
-    fn create_texture(&mut self) -> Self::TextureKey;
+    fn create_texture(&mut self) -> Self::TextureRef;
     fn load_texture(
         &mut self,
-        key: Option<Self::TextureKey>,
+        key: Option<Self::TextureRef>,
         texture_type: TextureType,
         data: &[u8],
         width: i32,
@@ -39,9 +39,9 @@ pub trait TodoRenderer {
     );
     fn load_texture_from_image(
         &mut self,
-        key: Option<Self::TextureKey>,
+        key: Option<Self::TextureRef>,
         texture_type: TextureType,
         img: &HtmlImageElement,
     );
-    fn bind_texture(&mut self, texture_type: TextureType, key: Option<Self::TextureKey>);
+    fn bind_texture(&mut self, texture_type: TextureType, key: Option<Self::TextureRef>);
 }

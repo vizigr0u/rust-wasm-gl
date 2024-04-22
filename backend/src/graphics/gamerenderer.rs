@@ -1,30 +1,24 @@
-use std::{
-    cell::RefCell,
-    rc::Rc,
-    sync::{mpsc::Receiver, Arc},
-};
+use std::sync::mpsc::Receiver;
 
-use egui::mutex::Mutex;
-use glam::Vec4;
 use log::{info, warn};
 use wasm_bindgen::JsValue;
 use web_sys::HtmlCanvasElement;
 
 use crate::{
-    core::{Game, GameSharedState},
+    core::{commands::SerializedCommand, Game, GameSharedState},
     graphics::{EguiRenderer, Renderer, TextureType},
     utils::GlobalProxy,
 };
 
-use super::commands::{self, CommandQueue, SerializedCommand};
+use super::{BasicCommand, Graphics};
 
 const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 const UV_CHECKER_PATH: &str = "data/textures/UV_checker_Map_byValle.jpg";
 
-#[derive(Default)]
-struct RenderState {
-    clear_color: Vec4,
-}
+// #[derive(Default)]
+// struct RenderState {
+//     clear_color: Vec4,
+// }
 
 pub struct GameRenderer<R>
 where
@@ -32,15 +26,15 @@ where
     // G: EguiRenderer<R>,
 {
     // pub(super) game_state: Arc<Mutex<GameSharedState>>,
-    pub(super) renderer: Rc<RefCell<R>>,
+    pub(super) renderer: R,
     // pub(super) texture_loader: TextureLoader<R>,
     // pub(super) loaded_textures: Vec<Rc<TextureDef<R>>>,
     // egui_renderer: Option<G>,
     // egui: Option<EguiBackend>,
     // world_renderer: WorldRenderer<R>,
-    local_state: GameSharedState,
-    render_state: RenderState,
-    command_receiver: Receiver<SerializedCommand>,
+    // local_state: GameSharedState,
+    // render_state: RenderState,
+    command_receiver: Receiver<SerializedCommand<Graphics>>,
     context: GlobalProxy,
 }
 
@@ -51,17 +45,17 @@ where
     pub async fn from_canvas(
         // game_state: Arc<Mutex<GameSharedState>>,
         canvas: HtmlCanvasElement,
-        command_receiver: Receiver<SerializedCommand>,
+        command_receiver: Receiver<SerializedCommand<Graphics>>,
     ) -> Result<Self, JsValue> {
-        let renderer = Rc::new(RefCell::new(R::from_canvas(canvas).await?));
+        let renderer = R::from_canvas(canvas).await?;
         Ok(Self {
             context: GlobalProxy::new()?,
             // game_state: game_state.clone(),
-            renderer: renderer.clone(),
+            renderer,
             // texture_loader: TextureLoader::new(16, renderer)?,
             // loaded_textures: Vec::with_capacity(16),
-            local_state: Default::default(),
-            render_state: Default::default(),
+            // local_state: Default::default(),
+            // render_state: Default::default(),
             command_receiver, // egui_renderer: None,
                               // egui: EguiBackend::new(gl),
         })
@@ -106,11 +100,8 @@ where
 
     fn render(&mut self) -> Result<(), String> {
         {
-            let mut renderer = self.renderer.borrow_mut();
-            renderer.begin_render();
-            let color = self.render_state.clear_color;
-            renderer.clear(color.x, color.y, color.z, color.w);
-            renderer.end_render();
+            self.renderer.begin_render();
+            self.renderer.end_render();
         }
 
         // self.world.render(gl, &self.camera);
@@ -140,20 +131,16 @@ where
         // self.commands.clear();
     }
 
-    fn execute_command(&mut self, c: SerializedCommand) {
-        match c.command_type {
-            1 => match c.parse_basic() {
-                Ok(basic) => match basic {
-                    commands::BasicCommand::SetClearColor(color) => {
-                        self.render_state.clear_color =
-                            Vec4::new(color[0], color[1], color[2], color[3]);
-                    }
-                },
-                Err(_) => todo!(),
+    fn execute_command(&mut self, c: SerializedCommand<Graphics>) {
+        match c.parse() {
+            Ok(basic) => match basic {
+                BasicCommand::SetClearColor(color) => {
+                    self.renderer
+                        .set_clear_color(color[0], color[1], color[2], color[3]);
+                }
+                BasicCommand::CreateTexture(_t) => todo!(),
             },
-            _ => {
-                info!("Unknown Command: {:?}", c);
-            }
+            Err(e) => warn!("Failed to parse graphics command {:?}: {e}", c),
         }
     }
 }

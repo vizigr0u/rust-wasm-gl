@@ -1,7 +1,7 @@
 mod eguirenderer;
 // mod gameobjectrenderer;
-pub mod commands;
 mod gamerenderer;
+mod graphicscommandqueue;
 mod mesh;
 // mod meshrenderer;
 mod renderer;
@@ -11,6 +11,7 @@ mod texure;
 
 pub use eguirenderer::*;
 pub use gamerenderer::*;
+pub use graphicscommandqueue::*;
 pub use mesh::*;
 // pub use meshrenderer::*;
 pub use renderer::*;
