@@ -41,6 +41,11 @@ wasm_thread = { version = "0.3.0", features = ["es_modules"] }
 winit = "0.29.15"
 wgpu = { version = "0.19.3", features = ["webgpu"], optional = true }
 
+[patch.crates-io]
+wasm_thread = { git = "https://github.com/vizigr0u/wasm_thread", rev = "90c7f2b", features = [
+    "keep_worker_alive",
+] }
+
 [dependencies.web-sys]
 version = "0.3"
 features = [
