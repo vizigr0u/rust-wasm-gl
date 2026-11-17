@@ -85,7 +85,7 @@ impl EguiBackend {
     {
         let raw_input: egui::RawInput = self.gather_input();
 
-        let full_output = self.egui_ctx.run(raw_input, |ctx| {
+        let full_output = self.egui_ctx.run_pass(raw_input, |ctx| {
             build_gui(ctx);
         });
         self.handle_platform_output(full_output.platform_output);
@@ -101,11 +101,17 @@ impl EguiBackend {
     fn paint(
         &mut self,
         gl: &glow::Context,
-        textures_delta: egui::TexturesDelta,
+        mut textures_delta: egui::TexturesDelta,
         clipped_primitives: Vec<egui::ClippedPrimitive>,
     ) {
         // self.debug_paint(&textures_delta, &clipped_primitives);
         self.update_textures(gl, &textures_delta);
+        for id in &textures_delta.free {
+            if let Some(key) = self.textures.remove(id) {
+                unsafe { gl.delete_texture(key) };
+            }
+        }
+        textures_delta.clear();
         for primitive in &clipped_primitives {
             match &primitive.primitive {
                 Primitive::Mesh(p) => {
@@ -152,70 +158,75 @@ impl EguiBackend {
     }
 
     fn make_projection(&self, width: f32, height: f32) -> glam::Mat4 {
-        glam::Mat4::orthographic_rh_gl(0.0, width, height, 0.0, -1.0, 1.0)
+        glam::camera::rh::proj::opengl::orthographic(0.0, width, height, 0.0, -1.0, 1.0)
     }
 
     fn update_textures(&mut self, gl: &glow::Context, textures_delta: &egui::TexturesDelta) {
         unsafe {
-            for (id, img_delta) in &textures_delta.set {
-                if !img_delta.is_whole() {
-                    warn!("Partial update of texture {:?} not supported", id);
-                    continue;
+            for (id, deltas) in &textures_delta.set {
+                for img_delta in deltas {
+                    if let Some(pos) = img_delta.pos {
+                        let Some(key) = self.textures.get(id).copied() else {
+                            warn!("Partial update of unknown texture {:?}", id);
+                            continue;
+                        };
+                        gl.bind_texture(glow::TEXTURE_2D, Some(key));
+                        match &img_delta.image {
+                            egui::ImageData::Color(image) => {
+                                let data: &[u8] = bytemuck::cast_slice(image.pixels.as_ref());
+                                gl.tex_sub_image_2d(
+                                    glow::TEXTURE_2D,
+                                    0,
+                                    pos[0] as _,
+                                    pos[1] as _,
+                                    image.width() as _,
+                                    image.height() as _,
+                                    glow::RGBA,
+                                    glow::UNSIGNED_BYTE,
+                                    glow::PixelUnpackData::Slice(Some(data)),
+                                );
+                            }
+                        }
+                        continue;
+                    }
+                    let options = &img_delta.options;
+                    if let Some(old) = self.textures.remove(id) {
+                        gl.delete_texture(old);
+                    }
+                    let key: WebTextureKey = gl.create_texture().expect("Can't create texture");
+                    gl.bind_texture(glow::TEXTURE_2D, Some(key));
+                    let wrap_mode = wrap_to_glow(options.wrap_mode);
+                    gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, wrap_mode as i32);
+                    gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, wrap_mode as i32);
+                    gl.tex_parameter_i32(
+                        glow::TEXTURE_2D,
+                        glow::TEXTURE_MIN_FILTER,
+                        filter_to_glow(options.minification) as i32,
+                    );
+                    gl.tex_parameter_i32(
+                        glow::TEXTURE_2D,
+                        glow::TEXTURE_MAG_FILTER,
+                        filter_to_glow(options.magnification) as i32,
+                    );
+                    let (internal_format, src_format) = (glow::SRGB8_ALPHA8, glow::RGBA); // if not SRGB : (glow::RGBA8, glow::RGBA);
+                    match &img_delta.image {
+                        egui::ImageData::Color(image) => {
+                            let data: &[u8] = bytemuck::cast_slice(image.pixels.as_ref());
+                            gl.tex_image_2d(
+                                glow::TEXTURE_2D,
+                                0,
+                                internal_format as _,
+                                image.width() as _,
+                                image.height() as _,
+                                0,
+                                src_format,
+                                glow::UNSIGNED_BYTE,
+                                glow::PixelUnpackData::Slice(Some(data)),
+                            );
+                        }
+                    };
+                    self.textures.insert(*id, key);
                 }
-                info!("loading texture: {:?}", id);
-                let options = &img_delta.options;
-                let key: WebTextureKey = gl.create_texture().expect("Can't create texture");
-                gl.bind_texture(glow::TEXTURE_2D, Some(key));
-                let wrap_mode = wrap_to_glow(options.wrap_mode);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, wrap_mode as i32);
-                gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, wrap_mode as i32);
-                gl.tex_parameter_i32(
-                    glow::TEXTURE_2D,
-                    glow::TEXTURE_MIN_FILTER,
-                    filter_to_glow(options.minification) as i32,
-                );
-                gl.tex_parameter_i32(
-                    glow::TEXTURE_2D,
-                    glow::TEXTURE_MAG_FILTER,
-                    filter_to_glow(options.magnification) as i32,
-                );
-                let (internal_format, src_format) = (glow::SRGB8_ALPHA8, glow::RGBA); // if not SRGB : (glow::RGBA8, glow::RGBA);
-                match &img_delta.image {
-                    egui::ImageData::Color(image) => {
-                        let data: &[u8] = bytemuck::cast_slice(image.pixels.as_ref());
-                        gl.tex_image_2d(
-                            glow::TEXTURE_2D,
-                            0,
-                            internal_format as _,
-                            image.width() as _,
-                            image.height() as _,
-                            0,
-                            src_format,
-                            glow::UNSIGNED_BYTE,
-                            Some(data),
-                        );
-                        self.textures.insert(*id, key);
-                    }
-                    egui::ImageData::Font(image) => {
-                        gl.tex_image_2d(
-                            glow::TEXTURE_2D,
-                            0,
-                            internal_format as _,
-                            image.width() as _,
-                            image.height() as _,
-                            0,
-                            src_format,
-                            glow::UNSIGNED_BYTE,
-                            Some(
-                                &image
-                                    .srgba_pixels(None)
-                                    .flat_map(|p| p.to_array())
-                                    .collect::<Vec<_>>(),
-                            ),
-                        );
-                    }
-                };
-                self.textures.insert(*id, key);
             }
         }
     }

@@ -142,33 +142,33 @@ impl FpsDisplay {
                         .collect::<Vec<_>>();
                     plot_ui.line(
                         Line::new(
+                            format!("script: {:.2}ms", self.avg_times.update_time),
                             charts
                                 .iter()
                                 .enumerate()
                                 .map(|(i, &v)| [i as f64, v.update_time])
                                 .collect::<Vec<_>>(),
-                        )
-                        .name(format!("script: {:.2}ms", self.avg_times.update_time)),
+                        ),
                     );
                     plot_ui.line(
                         Line::new(
+                            format!("render: {:.2}ms", self.avg_times.render_time),
                             charts
                                 .iter()
                                 .enumerate()
                                 .map(|(i, &v)| [i as f64, v.render_time])
                                 .collect::<Vec<_>>(),
-                        )
-                        .name(format!("render: {:.2}ms", self.avg_times.render_time)),
+                        ),
                     );
                     plot_ui.line(
                         Line::new(
+                            format!("UI: {:.2}ms", self.avg_times.get_ui_time()),
                             charts
                                 .iter()
                                 .enumerate()
                                 .map(|(i, &v)| [i as f64, v.get_ui_time()])
                                 .collect::<Vec<_>>(),
-                        )
-                        .name(format!("UI: {:.2}ms", self.avg_times.get_ui_time())),
+                        ),
                     );
                 });
         }

@@ -6,6 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-glam = "0.27.0"
-itertools = "0.12.1"
+glam = "0.34"
+itertools = "0.15"
 # backend = { path = "../backend" }

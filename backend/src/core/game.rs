@@ -238,9 +238,9 @@ impl Game {
                 }
                 if self.gui_state.show_info {
                     // egui::Window::new("Game Info").show(ctx, |ui| {
-                        egui::Area::new("my_area".into())
+                        egui::Area::new(egui::Id::new("my_area"))
                             .show(ctx, |ui| {
-                                egui::Frame::none()
+                                egui::Frame::new()
                                 .fill(egui::Color32::from_rgba_unmultiplied(20, 20, 20, 100))
                                 .show(ui, |ui| {
                                     self.fps_display.display(ui);

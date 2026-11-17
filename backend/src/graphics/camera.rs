@@ -50,7 +50,7 @@ impl Camera {
                 MIN_CAMERA_DISTANCE,
                 MAX_CAMERA_DISTANCE,
             ),
-            projection: Mat4::perspective_rh_gl(
+            projection: glam::camera::rh::proj::opengl::perspective(
                 f32::to_radians(45.0),
                 800.0 / 600.0,
                 NEAR_VIEW,
@@ -65,7 +65,7 @@ impl Camera {
         // let velocity = velocity.normalize_or_zero() * self.camera_speed;
         // self.position += velocity * (time.delta_time() as f32 / 5.0);
         let position = self.target + self.target_offset;
-        self.look_at = Mat4::look_at_rh(position, self.target, Vec3::Y);
+        self.look_at = glam::camera::rh::view::look_at_mat4(position, self.target, Vec3::Y);
     }
 }
 

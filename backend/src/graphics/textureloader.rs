@@ -113,7 +113,7 @@ impl TextureLoader {
                                 0,
                                 glow::RGBA,
                                 glow::UNSIGNED_BYTE,
-                                Some(&EMPTY_TEXTURE),
+                                glow::PixelUnpackData::Slice(Some(&EMPTY_TEXTURE)),
                             );
                         }
                         TextureType::Texture2DArray(_) => gl.tex_image_3d(
@@ -126,7 +126,7 @@ impl TextureLoader {
                             0,
                             glow::RGBA,
                             glow::UNSIGNED_BYTE,
-                            Some(&EMPTY_TEXTURE),
+                            glow::PixelUnpackData::Slice(Some(&EMPTY_TEXTURE)),
                         ),
                     }
 
