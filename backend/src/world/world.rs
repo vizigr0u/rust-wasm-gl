@@ -58,6 +58,7 @@ where
     chunks_to_load: Vec<ChunkPos>,
     render_data: WorldRenderData,
     render_frame_delay: usize,
+    render_dirty: bool,
     player_chunk_pos: ChunkPos,
 }
 
@@ -80,6 +81,7 @@ where
             chunks_to_load: Vec::with_capacity(MAX_MESH_TO_KEEP * 2),
             render_data: WorldRenderData::new(),
             render_frame_delay: 0,
+            render_dirty: false,
             player_chunk_pos: ChunkPos::default(),
         }
     }
@@ -128,10 +130,14 @@ where
             geom_changed = true;
         }
 
+        if geom_changed {
+            self.render_dirty = true;
+        }
         if self.render_frame_delay > 0 {
             self.render_frame_delay -= 1;
         }
-        if geom_changed && self.render_frame_delay == 0 {
+        if self.render_dirty && self.render_frame_delay == 0 {
+            self.render_dirty = false;
             self.render_data
                 .gather_draw_data(gl, player_chunk_pos, &self.chunks);
             self.render_frame_delay = FRAME_RENDER_DELAY;
