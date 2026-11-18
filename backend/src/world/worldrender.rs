@@ -134,10 +134,8 @@ impl WorldRenderData {
             let num_verts = self.vertex_data_cache.len();
             let num_locs = self.location_data_cache.len();
             info!(
-                "Uploaded {} vertices and {} locations for {} quads",
-                num_verts,
-                num_locs / 3,
-                num_verts
+                "Uploaded {} vertex words and {} locations for {} quads",
+                num_verts, num_locs, self.num_quads_to_draw
             );
             if num_verts >= 4 && num_locs >= 4 {
                 info!(
