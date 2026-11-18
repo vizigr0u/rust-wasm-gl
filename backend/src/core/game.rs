@@ -187,12 +187,16 @@ impl Game {
         for event in inputs.get_events() {
             match event {
                 InputEventType::KeyDown(event) => {
-                    if inputs.is_key_down("Escape") {
-                        self.is_paused = !self.is_paused;
+                    if event.repeat() {
+                        continue;
                     }
-                    if inputs.is_key_down("F2") {
-                        self.gui_state.show_info = !self.gui_state.show_info;
-                        event.prevent_default();
+                    match event.code().as_str() {
+                        "Escape" => self.is_paused = !self.is_paused,
+                        "F2" => {
+                            self.gui_state.show_info = !self.gui_state.show_info;
+                            event.prevent_default();
+                        }
+                        _ => {}
                     }
                 }
                 _ => {}
