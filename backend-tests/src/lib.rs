@@ -35,6 +35,14 @@ mod tests {
     }
 
     #[test]
+    fn test_num_chunks_per_page_is_volume() {
+        assert_eq!(
+            NUM_CHUNKS_PER_PAGE as i32,
+            CHUNK_PAGE_SIZE.x * CHUNK_PAGE_SIZE.y * CHUNK_PAGE_SIZE.z
+        );
+    }
+
+    #[test]
     #[should_panic]
     fn test_page_index_out_of_bounds() {
         let _ = PageChunkOffset::from_page_index(NUM_CHUNKS_PER_PAGE.into());

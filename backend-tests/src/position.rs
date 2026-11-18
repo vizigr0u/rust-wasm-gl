@@ -31,7 +31,7 @@ pub const CHUNK_PAGE_SIZE: IVec3 = IVec3 {
 };
 
 pub const NUM_CHUNKS_PER_PAGE: usize =
-    (CHUNK_PAGE_SIZE.x * CHUNK_PAGE_SIZE.y * CHUNK_PAGE_SIZE.y) as usize;
+    (CHUNK_PAGE_SIZE.x * CHUNK_PAGE_SIZE.y * CHUNK_PAGE_SIZE.z) as usize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct BlockPos(IVec3);
