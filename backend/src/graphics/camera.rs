@@ -1,7 +1,5 @@
-use core::num;
 
 use glam::{Mat4, Quat, Vec3};
-use log::info;
 
 use crate::core::{HandleInputs, InputEventType, InputState, Time};
 
@@ -20,6 +18,8 @@ const WHEEL_ZOOM_FACTOR: f32 = 1.15;
 // const MIN_MOUSE_SENSITIVITY: f32 = 0.01;
 // const MOUSE_SENSITIVITY_FACTOR: f32 = 0.5;
 
+const MAX_PITCH: f32 = 89.0 * std::f32::consts::PI / 180.0;
+
 const NEAR_VIEW: f32 = 0.1;
 const FAR_VIEW: f32 = 1000.0;
 
@@ -37,7 +37,62 @@ pub struct Camera {
 
 impl Default for Camera {
     fn default() -> Self {
-        Self::new(Vec3::ZERO)
+        Self::new(Vec3::new(0.0, 0.0, 10.0))
+    }
+}
+
+/// Rotate `offset` up/down by `pitch` radians (positive lowers the camera),
+/// keeping elevation within +/- MAX_PITCH so `look_at` with up=Y never degenerates.
+fn apply_pitch(offset: Vec3, pitch: f32) -> Vec3 {
+    let len = offset.length();
+    if len <= f32::EPSILON {
+        return offset;
+    }
+    let forward = offset / len;
+    let elevation = forward.y.clamp(-1.0, 1.0).asin();
+    let new_elevation = (elevation - pitch).clamp(-MAX_PITCH, MAX_PITCH);
+    let effective = elevation - new_elevation;
+    let horizontal = Vec3::new(forward.x, 0.0, forward.z);
+    // Looking straight along Y: no defined right axis, nudge using +Z.
+    let horizontal = if horizontal.length_squared() < 1e-12 {
+        Vec3::Z
+    } else {
+        horizontal.normalize()
+    };
+    let right = Vec3::Y.cross(horizontal);
+    Quat::from_axis_angle(right, effective) * offset
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_camera_has_finite_offset() {
+        let c = Camera::default();
+        assert!(c.target_offset.is_finite());
+        assert!(c.target_offset.length() >= MIN_CAMERA_DISTANCE);
+    }
+
+    #[test]
+    fn pitch_never_crosses_pole() {
+        let mut o = Vec3::new(0.0, 1.0, 10.0);
+        for _ in 0..50 {
+            o = apply_pitch(o, -1.0); // keep raising
+            assert!(o.is_finite());
+            assert!(o.y / o.length() <= MAX_PITCH.sin() + 1e-4);
+        }
+        for _ in 0..100 {
+            o = apply_pitch(o, 1.0); // keep lowering
+            assert!(o.is_finite());
+            assert!(o.y / o.length() >= -MAX_PITCH.sin() - 1e-4);
+        }
+    }
+
+    #[test]
+    fn pitch_preserves_length() {
+        let o = Vec3::new(3.0, 4.0, 5.0);
+        assert!((apply_pitch(o, 0.3).length() - o.length()).abs() < 1e-3);
     }
 }
 
@@ -93,16 +148,10 @@ impl HandleInputs for Camera {
                         let pitch = -(e.movement_y() as f32) * speed.to_radians();
 
                         let yaw_rotation = Quat::from_rotation_y(yaw);
-                        let forward = self.target_offset.normalize();
-                        let pitch_rotation = if forward.dot(Vec3::Y).abs() > 0.99 {
-                            let right = Vec3::Y.cross(forward).normalize();
-                            let pitch = pitch.clamp(-0.1, 0.1);
-                            Quat::from_axis_angle(right, pitch)
-                        } else {
-                            let right = Vec3::Y.cross(forward).normalize();
-                            Quat::from_axis_angle(right, pitch)
-                        };
-                        self.target_offset = pitch_rotation * yaw_rotation * self.target_offset;
+                        // Yaw first, then pitch with the elevation clamped so the
+                        // camera never reaches or crosses the pole.
+                        let yawed = yaw_rotation * self.target_offset;
+                        self.target_offset = apply_pitch(yawed, pitch);
                     }
                 }
                 InputEventType::MouseWheel(e) => {
