@@ -59,9 +59,12 @@ fn main_loop(game: Game, gl: glow::Context) -> Result<(), JsValue> {
 
     *request_update.borrow_mut() = Some(Closure::new(move |time| {
         let gl = &context.borrow();
-        game.borrow_mut().tick(gl, time)?;
+        if let Err(err) = game.borrow_mut().tick(gl, time) {
+            // Log and keep the loop alive instead of dying silently.
+            web_sys::console::error_2(&"Game tick failed:".into(), &JsValue::from(err));
+        }
 
-        // Request the next animation frame.
+        // Always request the next animation frame.
         request_animation_frame(update.borrow().as_ref().unwrap());
         Ok(())
     }));
