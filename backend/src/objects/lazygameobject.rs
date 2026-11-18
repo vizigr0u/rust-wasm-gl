@@ -1,16 +1,13 @@
 use std::rc::Rc;
 
-use glow::HasContext;
-use log::info;
 
 use crate::{
     core::Time,
     graphics::{Camera, MeshRenderer},
-    utils::GlState,
     world::ChunkPos,
 };
 
-use super::{player, GameObject, Transform};
+use super::GameObject;
 
 pub trait MakeRenderer {
     fn make_renderer(&self, gl: &glow::Context) -> Result<Rc<MeshRenderer>, String>;

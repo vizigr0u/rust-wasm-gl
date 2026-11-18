@@ -19,7 +19,7 @@ use crate::{
     world::{WorldGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y},
 };
 
-use super::{BlockPos, ChunkDrawData, ChunkPos, ChunkStreamer, WorldRenderData};
+use super::{ChunkDrawData, ChunkPos, ChunkStreamer, WorldRenderData};
 
 type OffsetPriority = Vec<IVec3>;
 

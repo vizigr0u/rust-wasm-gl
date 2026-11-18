@@ -116,7 +116,7 @@ impl Camera {
         }
     }
 
-    pub fn update(&mut self, time: &Time) {
+    pub fn update(&mut self, _time: &Time) {
         // let velocity = velocity.normalize_or_zero() * self.camera_speed;
         // self.position += velocity * (time.delta_time() as f32 / 5.0);
         let position = self.target + self.target_offset;

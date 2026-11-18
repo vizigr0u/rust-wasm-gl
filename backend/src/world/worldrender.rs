@@ -1,17 +1,16 @@
 use std::{collections::HashMap, rc::Rc};
 
-use glam::{IVec3, Vec3};
+use glam::Vec3;
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 use log::info;
 
 use crate::{
-    graphics::{Camera, ShaderDef, ShaderProgram, Side, TextureType, UniformTypes, VertexAttrType},
+    graphics::{Camera, ShaderDef, ShaderProgram, Side, TextureType, UniformTypes},
     shader_def,
-    utils::make_quad,
     world::{Chunk, CHUNK_SIZE},
 };
 
-use super::{make_base_quad_data, BlockPos, ChunkPos};
+use super::{make_base_quad_data, ChunkPos};
 
 
 #[derive(Debug)]

@@ -9,9 +9,9 @@ use wasm_bindgen::JsValue;
 use crate::{
     graphics::{Camera, TextureDef, TextureLoader, TextureType},
     gui::{EguiBackend, FpsDisplay},
-    objects::{Gizmo, Player, Transform},
+    objects::{Gizmo, Player},
     utils::performance_now,
-    world::{GeneratorV0, TestGenerator, World},
+    world::{GeneratorV0, World},
 };
 
 use super::{HandleInputs, InputEventType, InputSystem, Time};

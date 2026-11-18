@@ -1,5 +1,5 @@
 use fastrand::Rng;
-use glam::{IVec3, U16Vec3, Vec3};
+use glam::{U16Vec3, Vec3};
 use itertools::iproduct;
 
 use crate::graphics::Side;
@@ -130,7 +130,6 @@ impl Chunk {
         if self.is_empty() {
             return result;
         }
-        let mut data: Vec<i32> = Vec::with_capacity(BLOCKS_PER_CHUNK * 6);
         if Self::TEST_ONE_CUBE {
             let (top, side, bottom) = BlockType::Grass.into();
             let offset = U16Vec3::new(0, 0, 0);

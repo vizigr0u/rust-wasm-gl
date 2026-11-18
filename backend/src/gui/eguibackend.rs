@@ -2,13 +2,13 @@ use std::{collections::HashMap, convert::TryInto, rc::Rc};
 
 use crate::core::{HandleInputs, InputEventType, InputState};
 use crate::shader_def;
-use crate::utils::{GlRenderFlags, GlState};
+use crate::utils::GlRenderFlags;
 use crate::{core::Time, graphics::MeshRenderer};
 
 use crate::graphics::{Mesh, ShaderDef, UniformTypes, VertexAttrType};
 use egui::{epaint::Primitive, Event, Key, TextureFilter, TextureId, TextureWrapMode};
 use glow::{HasContext, WebTextureKey};
-use log::{info, warn};
+use log::warn;
 use web_sys::{KeyboardEvent, MouseEvent};
 
 // struct DemoData {

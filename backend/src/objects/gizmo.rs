@@ -6,7 +6,6 @@ use log::info;
 use super::{GameObject, LazyRenderGameObject, MakeRenderer};
 
 use crate::{
-    core::Time,
     graphics::{Mesh, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
     objects::gameobject::Transform,
     shader_def,

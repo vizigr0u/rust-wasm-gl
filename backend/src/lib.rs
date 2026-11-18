@@ -42,7 +42,7 @@ fn start() -> Result<(), JsValue> {
 
     let gl = get_webgl2_context()?;
 
-    let mut game = Game::new()?;
+    let game = Game::new()?;
 
     main_loop(game, gl)?;
 

@@ -1,8 +1,7 @@
 use fastrand::Rng;
-use glam::{vec3, IVec3, U16Vec3};
-use log::info;
+use glam::{IVec3, U16Vec3};
 
-use super::{BlockPos, BlockType, Chunk, ChunkPos, WorldGenerator, CHUNK_SIZE};
+use super::{BlockType, Chunk, ChunkPos, WorldGenerator, CHUNK_SIZE};
 
 #[derive(Debug)]
 pub struct GeneratorV0 {

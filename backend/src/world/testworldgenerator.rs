@@ -1,6 +1,5 @@
 use fastrand::Rng;
-use glam::{IVec3, U16Vec3};
-use log::info;
+use glam::U16Vec3;
 
 use super::{BlockType, Chunk, ChunkPos, WorldGenerator, CHUNK_SIZE};
 

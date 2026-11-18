@@ -1,7 +1,6 @@
 use fastrand::Rng;
-use glam::IVec3;
 
-use super::{Chunk, ChunkPage, ChunkPos};
+use super::{Chunk, ChunkPos};
 
 pub trait WorldGenerator {
     fn generate(&mut self, chunk_pos: ChunkPos) -> Chunk;

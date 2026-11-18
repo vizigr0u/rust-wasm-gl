@@ -1,17 +1,16 @@
-use std::cmp::Ordering;
 
-use glam::{ivec2, ivec3, IVec2, IVec3};
+use glam::{ivec2, IVec2, IVec3};
 use itertools::Itertools;
 use log::{info, warn};
 
 use crate::{
     math::AABB,
-    world::{ChunkPos, PageChunkOffset, MAX_CHUNK_Y},
+    world::{ChunkPos, PageChunkOffset},
 };
 
 use super::{
-    position::{PagePos, CHUNK_PAGE_SIZE, NUM_CHUNKS_PER_PAGE},
-    Chunk, WorldGenerator, MIN_CHUNK_Y,
+    position::{PagePos, NUM_CHUNKS_PER_PAGE},
+    Chunk, WorldGenerator,
 };
 
 const PAGE_LOAD_PER_FRAME: usize = 1;
