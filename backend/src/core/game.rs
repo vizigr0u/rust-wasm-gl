@@ -171,7 +171,7 @@ impl Game {
             self.player.update(&self.time);
             let player_chunk_pos = self.player.get_position().chunk_pos();
             self.world.update(gl, &self.time, player_chunk_pos)?;
-            self.gizmo.update(&self.time, player_chunk_pos);
+            self.gizmo.update(&self.time);
         }
 
         self.camera.target = self.player.get_screen_position();
@@ -230,8 +230,9 @@ impl Game {
         }
         self.world.render(gl, &self.camera);
 
-        self.player.render(gl, &self.camera);
-        self.gizmo.render_lazy(gl, &self.camera);
+        let player_chunk = self.player.get_position().chunk_pos();
+        self.player.render(gl, &self.camera, player_chunk);
+        self.gizmo.render_lazy(gl, &self.camera, player_chunk);
 
         Ok(())
     }

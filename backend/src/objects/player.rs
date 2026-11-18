@@ -10,7 +10,7 @@ use crate::{
     graphics::{Camera, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
     objects::gameobject::Transform,
     shader_def, utils,
-    world::WorldPos,
+    world::{ChunkPos, WorldPos},
 };
 
 const MAX_SPEED: f32 = 10.0;
@@ -64,7 +64,7 @@ impl Player {
     // }
 
     pub fn update(&mut self, time: &Time) {
-        self.0.update(time, self.get_position().chunk_pos());
+        self.0.update(time);
     }
 
     pub fn get_screen_position(&self) -> Vec3 {
@@ -74,8 +74,8 @@ impl Player {
         }
     }
 
-    pub fn render(&mut self, gl: &glow::Context, camera: &Camera) {
-        self.0.render_lazy(gl, camera);
+    pub fn render(&mut self, gl: &glow::Context, camera: &Camera, player_chunk: ChunkPos) {
+        self.0.render_lazy(gl, camera, player_chunk);
     }
 
     pub fn get_position(&self) -> WorldPos {

@@ -40,14 +40,11 @@ pub trait Transform {
 #[derive(Debug)]
 pub struct GameObject {
     position: WorldPos,
-    player_chunk: ChunkPos,
     rotation: Quat,
     scale: Vec3,
     velocity: Vec3,
     renderer: Rc<MeshRenderer>,
 
-    transform: Mat4,
-    transform_dirty: bool,
     texture: Rc<TextureDef>,
 }
 
@@ -55,34 +52,17 @@ impl GameObject {
     pub fn new(texture: &Rc<TextureDef>, renderer: &Rc<MeshRenderer>) -> Self {
         GameObject {
             position: WorldPos::ZERO,
-            player_chunk: IVec3::ZERO.into(),
             rotation: Quat::IDENTITY,
             scale: Vec3::ONE,
             texture: texture.clone(),
-            transform: Mat4::IDENTITY,
             renderer: renderer.clone(),
-            transform_dirty: true,
             velocity: Vec3::ZERO,
         }
     }
 
-    pub fn update(&mut self, time: &Time, player_chunk: ChunkPos) {
+    pub fn update(&mut self, time: &Time) {
         if time.delta_time() > 0.0 && self.velocity != Vec3::ZERO {
             self.position += self.velocity * time.delta_time() as f32 * 0.001;
-            self.transform_dirty = true;
-        }
-        self.set_current_player_chunk(player_chunk);
-        if self.transform_dirty {
-            let screen_pos = self.position.to_screen_pos(self.player_chunk);
-            self.transform =
-                Mat4::from_scale_rotation_translation(self.scale, self.rotation, screen_pos);
-        }
-    }
-
-    fn set_current_player_chunk(&mut self, chunk: ChunkPos) {
-        if chunk != self.player_chunk {
-            self.player_chunk = chunk;
-            self.transform_dirty = true;
         }
     }
 
@@ -90,14 +70,19 @@ impl GameObject {
         &self.renderer
     }
 
-    pub fn render(&self, gl: &glow::Context, camera: &Camera) {
+    pub fn render(&self, gl: &glow::Context, camera: &Camera, player_chunk: ChunkPos) {
         unsafe {
             let program = self.renderer.get_program();
             program.gl_use(gl);
 
             program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
             program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
-            program.set_matrix(gl, UniformTypes::ModelMatrix, &self.transform);
+            let transform = Mat4::from_scale_rotation_translation(
+                self.scale,
+                self.rotation,
+                self.position.to_screen_pos(player_chunk),
+            );
+            program.set_matrix(gl, UniformTypes::ModelMatrix, &transform);
 
             let (tex_type, key) = *self.texture;
             if key != WebTextureKey::default() {
@@ -122,7 +107,6 @@ impl Transform for GameObject {
 
     fn set_position(&mut self, position: WorldPos) {
         self.position = position;
-        self.transform_dirty = true;
     }
 
     fn get_rotation(&self) -> Quat {
@@ -131,12 +115,10 @@ impl Transform for GameObject {
 
     fn set_rotation(&mut self, rotation: Quat) {
         self.rotation = rotation;
-        self.transform_dirty = true;
     }
 
     fn set_scale(&mut self, scale: Vec3) {
         self.scale = scale;
-        self.transform_dirty = true;
     }
 
     fn get_scale(&self) -> Vec3 {

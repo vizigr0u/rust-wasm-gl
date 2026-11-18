@@ -34,11 +34,11 @@ where
         self.gameobject.as_ref()
     }
 
-    pub fn render_lazy(&mut self, gl: &glow::Context, camera: &Camera) {
+    pub fn render_lazy(&mut self, gl: &glow::Context, camera: &Camera, player_chunk: ChunkPos) {
         if self.gameobject.is_none() {
             self.load(gl);
         }
-        self.gameobject.as_ref().unwrap().render(gl, camera);
+        self.gameobject.as_ref().unwrap().render(gl, camera, player_chunk);
     }
 
     pub fn load(&mut self, gl: &glow::Context) {
@@ -51,9 +51,9 @@ where
         self.gameobject = Some(gameobject);
     }
 
-    pub fn update(&mut self, time: &Time, player_chunk: ChunkPos) {
+    pub fn update(&mut self, time: &Time) {
         if let Some(go) = self.gameobject.as_mut() {
-            go.update(time, player_chunk);
+            go.update(time);
         }
     }
 }
