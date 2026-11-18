@@ -19,7 +19,7 @@ impl WorldGenerator for GeneratorV0 {
         if chunk_position.as_vec().y < -2 || chunk_position.as_vec().y > 2 {
             return Chunk::empty();
         }
-        let mut res = Chunk::new(false);
+        let mut res = Chunk::empty(); // `set` clears the empty flag on first solid block
         let amplitude = 10.0;
         let frequency = 0.03;
 
@@ -46,5 +46,22 @@ impl WorldGenerator for GeneratorV0 {
             }
         }
         res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generated_chunk_emptiness_matches_content() {
+        let mut g = GeneratorV0::new(Rng::with_seed(1));
+        // far above terrain: all air -> must be flagged empty
+        let air = g.generate(IVec3::new(0, 2, 0).into());
+        assert_eq!(air.is_empty(), air.blocks.iter().all(|b| *b == BlockType::Empty));
+        // terrain chunk: must be non-empty
+        let ground = g.generate(IVec3::new(0, -1, 0).into());
+        assert!(ground.blocks.iter().any(|b| *b != BlockType::Empty));
+        assert!(!ground.is_empty());
     }
 }
