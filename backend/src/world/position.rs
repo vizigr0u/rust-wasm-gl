@@ -49,7 +49,7 @@ impl BlockPos {
 pub struct ChunkPos(IVec3);
 
 impl ChunkPos {
-    pub fn get_center_block_pos(&self) -> BlockPos {
+    pub fn get_origin_block_pos(&self) -> BlockPos {
         BlockPos(self.0 * CHUNK_SIZE as i32)
     }
     pub fn get_page_pos_with_offset(&self) -> (PagePos, PageChunkOffset) {
@@ -65,8 +65,7 @@ impl ChunkPos {
         self.0
     }
     pub fn iter_block_pos(&self) -> impl Iterator<Item = BlockPos> {
-        let center_pos = self.get_center_block_pos().0;
-        let first_pos = center_pos - IVec3::ONE * (CHUNK_SIZE as i32 / 2);
+        let first_pos = self.get_origin_block_pos().0;
         iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE)
             .map(move |(x, y, z)| first_pos + ivec3(x as _, y as _, z as _))
             .map(|v| BlockPos(v))
@@ -148,8 +147,19 @@ impl Add<Vec3> for WorldPos {
     type Output = WorldPos;
     fn add(self, rhs: Vec3) -> Self::Output {
         let offset = self.offset + rhs;
-        let chunks_to_add = offset.round().as_ivec3() / CHUNK_SIZE as i32;
-        let expected_offset = offset - chunks_to_add.as_vec3() * CHUNK_SIZE as f32;
+        // Corner convention: chunk N covers [16N, 16N+16), so offset wraps into [0, 16).
+        let cs = CHUNK_SIZE as f32;
+        let mut chunks_to_add = (offset / cs).floor().as_ivec3();
+        let mut expected_offset = offset - chunks_to_add.as_vec3() * cs;
+        // f32 edge: a tiny negative offset can round up to exactly 16.0.
+        if expected_offset.x >= cs {
+            expected_offset.x -= cs;
+            chunks_to_add.x += 1;
+        }
+        if expected_offset.z >= cs {
+            expected_offset.z -= cs;
+            chunks_to_add.z += 1;
+        }
         let chunk_pos = self.chunk_pos.safe_add(ChunkPos(chunks_to_add));
         let chunks_added = chunk_pos.0 - self.chunk_pos.0;
         let dv = chunks_to_add - chunks_added;

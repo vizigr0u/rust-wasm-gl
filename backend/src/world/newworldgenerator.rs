@@ -23,8 +23,7 @@ impl WorldGenerator for GeneratorV0 {
         let amplitude = 10.0;
         let frequency = 0.03;
 
-        let first_block =
-            chunk_position.get_center_block_pos().as_vec() - (CHUNK_SIZE as i32 / 2) * IVec3::ONE;
+        let first_block = chunk_position.get_origin_block_pos().as_vec();
         for block_pos in chunk_position.iter_block_pos() {
             let pos = block_pos.as_vec();
             let offset: U16Vec3 = (pos - first_block).as_u16vec3();

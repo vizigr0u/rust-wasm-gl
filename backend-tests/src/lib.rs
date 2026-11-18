@@ -9,7 +9,7 @@ mod tests {
     use glam::{ivec2, ivec3, vec3, IVec3};
 
     use crate::{
-        BlockPos, ChunkPos, PageChunkOffset, PagePos, WorldPos, CHUNK_PAGE_SIZE, CHUNK_SIZE,
+        BlockPos, ChunkPos, PageChunkOffset, BLOCKS_PER_CHUNK, PagePos, WorldPos, CHUNK_PAGE_SIZE, CHUNK_SIZE,
         MAX_BLOCK_Y, MAX_CHUNK_Y, MIN_BLOCK_Y, MIN_CHUNK_Y, NUM_CHUNKS_PER_PAGE,
     };
 
@@ -239,6 +239,46 @@ mod tests {
         for (a, b, expected) in tests {
             let (a, b, expected) = (to_pos(a), to_pos(b), to_pos(expected));
             assert_eq!(a + b, expected);
+        }
+    }
+
+    #[test]
+    fn test_world_pos_offset_invariant() {
+        for d in [0.3, -0.3, 16.0, -16.0, 100.5, -100.5, -1e-7, 1e-7, 15.999, 33.0] {
+            let p = WorldPos::ZERO + vec3(d, 0.0, d);
+            let o = p.offset();
+            assert!(o.x >= 0.0 && o.x < 16.0, "x {d} -> {o:?}");
+            assert!(o.z >= 0.0 && o.z < 16.0, "z {d} -> {o:?}");
+        }
+    }
+
+    #[test]
+    fn test_world_pos_wrap() {
+        let p = WorldPos::ZERO + vec3(15.9, 0.0, 0.0) + vec3(0.2, 0.0, 0.0);
+        assert_eq!(p.chunk_pos().as_vec().x, 1);
+        assert!((p.offset().x - 0.1).abs() < 1e-4);
+        let p = WorldPos::ZERO + vec3(0.1, 0.0, 0.0) + vec3(-0.2, 0.0, 0.0);
+        assert_eq!(p.chunk_pos().as_vec().x, -1);
+        assert!((p.offset().x - 15.9).abs() < 1e-4);
+    }
+
+    #[test]
+    fn test_world_pos_no_early_wrap() {
+        for x in 9..16 {
+            let p = WorldPos::ZERO + vec3(x as f32, 0.0, x as f32);
+            assert_eq!(p.chunk_pos().as_vec(), ivec3(0, 0, 0));
+        }
+    }
+
+    #[test]
+    fn test_iter_block_pos_corner() {
+        let chunk: ChunkPos = ivec3(2, 0, -3).into();
+        let blocks: Vec<_> = chunk.iter_block_pos().collect();
+        assert_eq!(blocks.len(), BLOCKS_PER_CHUNK);
+        assert_eq!(blocks[0].as_vec(), ivec3(32, 0, -48));
+        assert_eq!(blocks[blocks.len() - 1].as_vec(), ivec3(47, 15, -33));
+        for b in blocks {
+            assert_eq!(Into::<ChunkPos>::into(b), chunk);
         }
     }
 

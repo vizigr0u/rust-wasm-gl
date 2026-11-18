@@ -68,6 +68,10 @@ impl WorldRenderData {
         (self.peak_vertex_len, self.peak_location_len)
     }
 
+    // INTENTIONAL: cull faces relative to the *player* chunk, not the camera.
+    // The orbit camera is a debug view: holes seen from far away show what the
+    // player's own view culls. Do not "fix" (bugs.md #19) until a player-attached
+    // camera exists; then this debug camera can keep showing the culling.
     fn is_visible(player_chunk_pos: ChunkPos, data_pos: ChunkPos, side: Side) -> bool {
         match side {
             Side::Front => player_chunk_pos.as_vec().z >= data_pos.as_vec().z,
@@ -91,7 +95,7 @@ impl WorldRenderData {
         }
         let data = &data.vertex_data[side as usize];
         self.vertex_data_cache.extend_from_slice(data);
-        let block_pos_f3 = data_pos.get_center_block_pos().as_vec3();
+        let block_pos_f3 = data_pos.get_origin_block_pos().as_vec3();
         self.location_data_cache
             .extend(std::iter::repeat(block_pos_f3).take(data.len()));
         data.len()
@@ -108,19 +112,17 @@ impl WorldRenderData {
         self.location_data_cache.clear();
         for (chunk_pos, draw_data) in loaded_chunks {
             if let Some(draw_data) = draw_data {
-                let mut quad_count: usize = 0;
-                quad_count +=
-                    self.add_if_visible(&draw_data, Side::Front, player_chunk_pos, *chunk_pos);
-                quad_count +=
-                    self.add_if_visible(&draw_data, Side::Back, player_chunk_pos, *chunk_pos);
-                quad_count +=
-                    self.add_if_visible(&draw_data, Side::Left, player_chunk_pos, *chunk_pos);
-                quad_count +=
-                    self.add_if_visible(&draw_data, Side::Right, player_chunk_pos, *chunk_pos);
-                quad_count +=
-                    self.add_if_visible(&draw_data, Side::Top, player_chunk_pos, *chunk_pos);
-                quad_count +=
-                    self.add_if_visible(&draw_data, Side::Bottom, player_chunk_pos, *chunk_pos);
+                let quad_count: usize = [
+                    Side::Front,
+                    Side::Back,
+                    Side::Left,
+                    Side::Right,
+                    Side::Top,
+                    Side::Bottom,
+                ]
+                .into_iter()
+                .map(|side| self.add_if_visible(draw_data, side, player_chunk_pos, *chunk_pos))
+                .sum();
                 self.num_quads_to_draw += quad_count as i32;
             }
         }
