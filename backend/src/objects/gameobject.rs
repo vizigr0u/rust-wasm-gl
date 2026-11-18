@@ -17,6 +17,8 @@ use crate::world::ChunkPos;
 use crate::world::WorldPos;
 use crate::world::CHUNK_SIZE;
 
+const MAX_DELTA_MS: f32 = 100.0;
+
 pub trait Transform {
     fn get_position(&self) -> WorldPos;
     fn set_position(&mut self, position: WorldPos);
@@ -62,7 +64,9 @@ impl GameObject {
 
     pub fn update(&mut self, time: &Time) {
         if time.delta_time() > 0.0 && self.velocity != Vec3::ZERO {
-            self.position += self.velocity * time.delta_time() as f32 * 0.001;
+            // Clamp dt (ms) so a hidden tab doesn't teleport the object.
+            let dt = (time.delta_time() as f32).min(MAX_DELTA_MS);
+            self.position += self.velocity * dt * 0.001;
         }
     }
 

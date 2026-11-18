@@ -89,21 +89,24 @@ impl Player {
 impl HandleInputs for Player {
     fn handle_inputs(&mut self, inputs: &crate::core::InputState) {
         if let Some(go) = self.0.gameobject.as_mut() {
-            let mut velocity = Vec3::ZERO;
-            if inputs.is_key_down("KeyW") {
-                velocity.x = 1.0;
-            }
-            if inputs.is_key_down("KeyS") {
-                velocity.x = -1.0;
-            }
-            if inputs.is_key_down("KeyD") {
-                velocity.z = 1.0;
-            }
-            if inputs.is_key_down("KeyA") {
-                velocity.z = -1.0;
-            }
-            go.set_velocity(velocity * MAX_SPEED);
+            let axis = |pos: &str, neg: &str| {
+                inputs.is_key_down(pos) as i32 as f32 - inputs.is_key_down(neg) as i32 as f32
+            };
+            let velocity = Vec3::new(axis("KeyW", "KeyS"), 0.0, axis("KeyD", "KeyA"));
+            go.set_velocity(velocity.normalize_or_zero() * MAX_SPEED);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn diagonal_is_normalized() {
+        let v = Vec3::new(1.0, 0.0, 1.0).normalize_or_zero() * MAX_SPEED;
+        assert!((v.length() - MAX_SPEED).abs() < 1e-4);
+        assert_eq!(Vec3::ZERO.normalize_or_zero(), Vec3::ZERO);
     }
 }
 
