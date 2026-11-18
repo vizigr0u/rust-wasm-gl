@@ -11,9 +11,8 @@ use crate::{
     world::{Chunk, CHUNK_SIZE},
 };
 
-use super::{make_base_quad_data, BlockPos, ChunkPos, BLOCKS_PER_CHUNK};
+use super::{make_base_quad_data, BlockPos, ChunkPos};
 
-const MAX_MESH_TO_KEEP: usize = 1024;
 
 #[derive(Debug)]
 struct GraphicContext {
@@ -35,6 +34,8 @@ pub struct WorldRenderData {
     location_data_buffer: Option<WebBufferKey>,
     vertex_data_cache: Vec<i32>,
     location_data_cache: Vec<Vec3>,
+    peak_vertex_len: usize,
+    peak_location_len: usize,
 }
 
 impl ChunkDrawData {
@@ -52,9 +53,16 @@ impl WorldRenderData {
             num_quads_to_draw: 0,
             vertex_data_buffer: None,
             location_data_buffer: None,
-            vertex_data_cache: Vec::with_capacity(MAX_MESH_TO_KEEP * BLOCKS_PER_CHUNK * 6),
-            location_data_cache: Vec::with_capacity(MAX_MESH_TO_KEEP * BLOCKS_PER_CHUNK * 6),
+            vertex_data_cache: Vec::new(),
+            location_data_cache: Vec::new(),
+            peak_vertex_len: 0,
+            peak_location_len: 0,
         }
+    }
+
+    /// Peak (vertex i32 count, location Vec3 count) seen in a gather.
+    pub fn peak_cache_len(&self) -> (usize, usize) {
+        (self.peak_vertex_len, self.peak_location_len)
     }
 
     fn is_visible(player_chunk_pos: ChunkPos, data_pos: ChunkPos, side: Side) -> bool {
@@ -113,6 +121,9 @@ impl WorldRenderData {
                 self.num_quads_to_draw += quad_count as i32;
             }
         }
+
+        self.peak_vertex_len = self.peak_vertex_len.max(self.vertex_data_cache.len());
+        self.peak_location_len = self.peak_location_len.max(self.location_data_cache.len());
 
         // debug logs
         if true {
