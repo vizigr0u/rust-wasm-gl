@@ -13,7 +13,11 @@ use crate::utils::{get_document, get_performance};
 #[derive(Debug)]
 enum TextureStatus {
     Idle,
-    Busy(f64, Rc<RefCell<Closure<dyn FnMut()>>>),
+    Busy(
+        f64,
+        Rc<RefCell<Closure<dyn FnMut()>>>,
+        Rc<RefCell<Closure<dyn FnMut()>>>,
+    ),
 }
 
 #[derive(Debug)]
@@ -63,13 +67,13 @@ impl TextureLoader {
         Ok(TextureLoader { pool })
     }
 
-    // pub fn get_num_loading(&self) -> usize {
-    //     self.pool
-    //         .borrow()
-    //         .iter()
-    //         .filter(|tex| matches!(tex.status, TextureStatus::Busy(_, _)))
-    //         .count()
-    // }
+    pub fn get_num_loading(&self) -> usize {
+        self.pool
+            .borrow()
+            .iter()
+            .filter(|tex| matches!(tex.status, TextureStatus::Busy(..)))
+            .count()
+    }
 
     pub fn load(
         &mut self,
@@ -90,6 +94,14 @@ impl TextureLoader {
                     }) as Box<dyn FnMut()>)
                 };
 
+                let on_error = Closure::wrap(Box::new(move || {
+                    MessageSystem::add_failed_load(index);
+                }) as Box<dyn FnMut()>);
+                let rc_error = Rc::new(RefCell::new(on_error));
+                loading_tex
+                    .img
+                    .set_onerror(Some(rc_error.borrow().as_ref().unchecked_ref()));
+
                 let rc_closure = Rc::new(RefCell::new(on_load));
 
                 loading_tex
@@ -97,8 +109,8 @@ impl TextureLoader {
                     .set_onload(Some(rc_closure.borrow().as_ref().unchecked_ref()));
 
                 loading_tex.img.set_src(src);
-                let start_time: f64 = get_performance()?.now(); // TODO
-                loading_tex.status = TextureStatus::Busy(start_time, rc_closure);
+                let start_time: f64 = get_performance()?.now();
+                loading_tex.status = TextureStatus::Busy(start_time, rc_closure, rc_error);
                 unsafe {
                     let key = Some(gl.create_texture().expect("Can't create texture"));
                     gl.bind_texture(texture_type.into(), key);
@@ -145,12 +157,21 @@ impl TextureLoader {
 
     pub fn tick(&mut self, gl: &glow::Context) -> Result<(), String> {
         let completed_loads = MessageSystem::take_completed_loads();
+        let mut errors = "".to_string();
+
+        for index in MessageSystem::take_failed_loads() {
+            if let Some(tex) = self.pool.borrow_mut().get_mut(index) {
+                if matches!(tex.status, TextureStatus::Busy(..)) {
+                    errors = format!("{}, failed to load texture '{}'", errors, tex.img.src());
+                    // Free the slot; the texture stays the magenta placeholder.
+                    tex.status = TextureStatus::Idle;
+                }
+            }
+        }
 
         if completed_loads.len() > 0 {
             info!("{} new messages", completed_loads.len());
         }
-
-        let mut errors = "".to_string();
 
         for index in completed_loads {
             if let Some(tex) = self.pool.borrow_mut().get_mut(index) {
@@ -161,9 +182,9 @@ impl TextureLoader {
                             errors, index
                         );
                     }
-                    TextureStatus::Busy(start_time, _) => {
+                    TextureStatus::Busy(start_time, _, _) => {
                         let img = &tex.img;
-                        let now: f64 = get_performance()?.now();
+                        let now: f64 = get_performance().map(|p| p.now()).unwrap_or(*start_time);
                         let total_time = now - *start_time;
                         info!(
                             "Texture loaded: {} ({}x{}) in {}ms",
@@ -228,19 +249,29 @@ impl TextureLoader {
             }
         }
 
-        // Handle any additional logic, e.g., timeouts
-        Ok(())
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
     }
 }
 
 type MessageType = usize;
 static PENDING_MESSAGES: Mutex<Vec<MessageType>> = Mutex::new(Vec::new());
+static FAILED_MESSAGES: Mutex<Vec<MessageType>> = Mutex::new(Vec::new());
 
 struct MessageSystem {}
 
 impl MessageSystem {
     fn add_completed_load(msg: MessageType) {
         PENDING_MESSAGES.lock().unwrap().push(msg);
+    }
+    fn add_failed_load(msg: MessageType) {
+        FAILED_MESSAGES.lock().unwrap().push(msg);
+    }
+    fn take_failed_loads() -> Vec<MessageType> {
+        FAILED_MESSAGES.lock().unwrap().drain(..).collect()
     }
     fn take_completed_loads() -> Vec<MessageType> {
         PENDING_MESSAGES.lock().unwrap().drain(..).collect()

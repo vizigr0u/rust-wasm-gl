@@ -28,6 +28,7 @@ fn make_generator(rng: Rng) -> WorldGenerator {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum State {
     Loading,
+    WaitingForTextures,
     Running,
 }
 
@@ -109,6 +110,18 @@ impl Game {
             self.loaded_textures.push(Rc::new((t, key)));
         }
 
+        Ok(State::WaitingForTextures)
+    }
+
+    fn tick_waiting_for_textures(&mut self, gl: &glow::Context) -> Result<State, String> {
+        if let Err(e) = self.texture_loader.tick(gl) {
+            // Failed textures stay as placeholders; keep going.
+            log::error!("Texture load error: {}", e);
+        }
+        if self.texture_loader.get_num_loading() > 0 {
+            return Ok(State::WaitingForTextures);
+        }
+
         unsafe {
             gl.enable(glow::DEPTH_TEST);
             gl.depth_func(glow::LESS);
@@ -127,6 +140,9 @@ impl Game {
             State::Loading => {
                 let load_state = self.tick_loading(gl)?;
                 self.current_state = load_state;
+            }
+            State::WaitingForTextures => {
+                self.current_state = self.tick_waiting_for_textures(gl)?;
             }
             State::Running => {
                 self.tick_running(gl, time)?;
