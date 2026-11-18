@@ -210,6 +210,10 @@ impl Game {
                 }
             }
             false => {
+                // egui gets no input now; drop stale events so they don't replay every frame
+                if let Some(egui) = &mut self.egui {
+                    egui.clear_events();
+                }
                 self.camera.handle_inputs(&inputs);
                 self.player.handle_inputs(&inputs);
             }

@@ -277,6 +277,10 @@ impl EguiBackend {
         }
     }
 
+    pub fn clear_events(&mut self) {
+        self.current_events.clear();
+    }
+
     pub fn set_time(&mut self, time: &Time) {
         self.time = time.clone();
     }
