@@ -89,7 +89,7 @@ where
     pub fn get_info(&self) -> String {
         let quad_count = self.loaded_quads;
         let memory_used = (quad_count * QUAD_DATA_SIZE) as f32 / 1000000.0;
-        let loaded_meshes = self.chunks.values().map(|c| c.is_some()).count();
+        let loaded_meshes = self.chunks.values().filter(|c| c.is_some()).count();
         let (peak_v, peak_l) = self.render_data.peak_cache_len();
         format!(
             "Loaded {loaded_meshes}/{} chunks\nStreaming: {}\n{quad_count} vertices - {memory_used:.3} MB\nPeak gather: {peak_v} verts, {peak_l} locs",
