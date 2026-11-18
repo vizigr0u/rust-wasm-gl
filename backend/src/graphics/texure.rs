@@ -9,9 +9,9 @@ pub enum TextureType {
 
 pub type TextureDef = (TextureType, WebTextureKey);
 
-impl Into<u32> for TextureType {
-    fn into(self) -> u32 {
-        match self {
+impl From<TextureType> for u32 {
+    fn from(val: TextureType) -> Self {
+        match val {
             TextureType::Texture2D => glow::TEXTURE_2D,
             TextureType::Texture2DArray(_) => glow::TEXTURE_2D_ARRAY,
         }

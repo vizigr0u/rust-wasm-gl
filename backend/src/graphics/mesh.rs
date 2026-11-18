@@ -112,9 +112,9 @@ pub const SIDE_NORMS: [Vec3; 6] = [
 
 type Norm = Vec3;
 
-impl Into<Norm> for Side {
-    fn into(self) -> Norm {
-        SIDE_NORMS[self as usize]
+impl From<Side> for Norm {
+    fn from(val: Side) -> Self {
+        SIDE_NORMS[val as usize]
     }
 }
 

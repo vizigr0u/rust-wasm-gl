@@ -338,29 +338,29 @@ impl TryInto<Event> for &InputEventType {
             InputEventType::KeyDown(event) => Event::Key {
                 key: try_parse_key(event.key())?,
                 pressed: true,
-                modifiers: get_key_modifiers(&event),
+                modifiers: get_key_modifiers(event),
                 physical_key: None,
                 repeat: event.repeat(),
             },
             InputEventType::KeyUp(event) => Event::Key {
                 key: try_parse_key(event.key())?,
                 pressed: false,
-                modifiers: get_key_modifiers(&event),
+                modifiers: get_key_modifiers(event),
                 physical_key: None,
                 repeat: event.repeat(),
             },
-            InputEventType::MouseMove(event) => Event::PointerMoved(mouse_event_to_pos2(&event)),
+            InputEventType::MouseMove(event) => Event::PointerMoved(mouse_event_to_pos2(event)),
             InputEventType::MouseDown(event) => Event::PointerButton {
-                pos: mouse_event_to_pos2(&event),
+                pos: mouse_event_to_pos2(event),
                 button: try_parse_mouse_button(event.button())?,
                 pressed: true,
-                modifiers: get_mouse_modifiers(&event),
+                modifiers: get_mouse_modifiers(event),
             },
             InputEventType::MouseUp(event) => Event::PointerButton {
-                pos: mouse_event_to_pos2(&event),
+                pos: mouse_event_to_pos2(event),
                 button: try_parse_mouse_button(event.button())?,
                 pressed: false,
-                modifiers: get_mouse_modifiers(&event),
+                modifiers: get_mouse_modifiers(event),
             },
             InputEventType::MouseWheel(event) => {
                 let unit = match event.delta_mode() {
@@ -374,7 +374,7 @@ impl TryInto<Event> for &InputEventType {
                     delta: egui::vec2(-event.delta_x() as f32, -event.delta_y() as f32),
                     phase: egui::TouchPhase::Move,
                     source: egui::MouseWheelSource::Unknown,
-                    modifiers: get_mouse_modifiers(&event),
+                    modifiers: get_mouse_modifiers(event),
                 }
             }
             _ => Err(ConversionError::Unhandled)?,
@@ -416,7 +416,7 @@ fn try_parse_key(key: String) -> Result<egui::Key, ConversionError> {
     if key == "Shift" || key == "Control" || key == "Alt" || key == "Meta" {
         Err(ConversionError::IgnoredKey(key))
     } else {
-        Key::from_name(key.as_str()).ok_or_else(|| ConversionError::KeyNotFound(key))
+        Key::from_name(key.as_str()).ok_or(ConversionError::KeyNotFound(key))
     }
 }
 

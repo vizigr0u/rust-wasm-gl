@@ -2,7 +2,6 @@ use std::{collections::HashMap, rc::Rc};
 
 use glam::Vec3;
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
-use log::info;
 
 use crate::{
     graphics::{Camera, ShaderDef, ShaderProgram, Side, TextureType, UniformTypes},
@@ -97,7 +96,7 @@ impl WorldRenderData {
         self.vertex_data_cache.extend_from_slice(data);
         let block_pos_f3 = data_pos.get_origin_block_pos().as_vec3();
         self.location_data_cache
-            .extend(std::iter::repeat(block_pos_f3).take(data.len()));
+            .extend(std::iter::repeat_n(block_pos_f3, data.len()));
         data.len()
     }
 
@@ -136,7 +135,7 @@ impl WorldRenderData {
                 gl.bind_buffer(glow::ARRAY_BUFFER, self.vertex_data_buffer);
                 gl.buffer_data_u8_slice(
                     glow::ARRAY_BUFFER,
-                    &self.vertex_data_cache.align_to::<u8>().1,
+                    self.vertex_data_cache.align_to::<u8>().1,
                     glow::STATIC_DRAW,
                 );
             }
@@ -146,7 +145,7 @@ impl WorldRenderData {
                 gl.bind_buffer(glow::ARRAY_BUFFER, self.location_data_buffer);
                 gl.buffer_data_u8_slice(
                     glow::ARRAY_BUFFER,
-                    &self.location_data_cache.align_to::<u8>().1,
+                    self.location_data_cache.align_to::<u8>().1,
                     glow::STATIC_DRAW,
                 );
             }
@@ -225,7 +224,7 @@ impl WorldRenderData {
                 gl.disable(glow::BLEND);
                 gl.bind_vertex_array(self.vertex_array);
                 {
-                    let num_quads = self.num_quads_to_draw as i32;
+                    let num_quads = self.num_quads_to_draw;
                     gl.draw_arrays_instanced(glow::TRIANGLE_STRIP, 0, 4, num_quads);
                 }
                 gl.bind_vertex_array(None);

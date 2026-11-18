@@ -102,7 +102,7 @@ impl MeshRenderer {
 
             let layout_size: usize = mesh.layout.iter().map(|(_type, size)| size).sum();
 
-            if mesh.get_data().len() % layout_size != 0 {
+            if !mesh.get_data().len().is_multiple_of(layout_size) {
                 warn!(
                     "Mesh data of size {} doesn't match layout size of {}.",
                     mesh.get_data().len(),
@@ -116,7 +116,7 @@ impl MeshRenderer {
             for &(data_type, size) in mesh.layout.iter() {
                 match self.program.get_attr_location(data_type) {
                     Some(&location) => {
-                        let location = location as u32;
+                        let location = location;
                         gl.vertex_attrib_pointer_f32(
                             location,
                             size as _,

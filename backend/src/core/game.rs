@@ -201,21 +201,18 @@ impl Game {
         let inputs = self.input_system.get_inputs();
 
         for event in inputs.get_events() {
-            match event {
-                InputEventType::KeyDown(event) => {
-                    if event.repeat() {
-                        continue;
-                    }
-                    match event.code().as_str() {
-                        "Escape" => self.is_paused = !self.is_paused,
-                        "F2" => {
-                            self.gui_state.show_info = !self.gui_state.show_info;
-                            event.prevent_default();
-                        }
-                        _ => {}
-                    }
+            if let InputEventType::KeyDown(event) = event {
+                if event.repeat() {
+                    continue;
                 }
-                _ => {}
+                match event.code().as_str() {
+                    "Escape" => self.is_paused = !self.is_paused,
+                    "F2" => {
+                        self.gui_state.show_info = !self.gui_state.show_info;
+                        event.prevent_default();
+                    }
+                    _ => {}
+                }
             }
         }
 
@@ -259,7 +256,7 @@ impl Game {
     }
 
     fn render(&mut self, gl: &glow::Context) -> Result<(), String> {
-        self.texture_loader.tick(&gl)?;
+        self.texture_loader.tick(gl)?;
         self.sync_canvas_size(gl);
         unsafe {
             gl.clear_color(0.0, 0.0, 0.0, 1.0);

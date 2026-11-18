@@ -169,7 +169,7 @@ impl TextureLoader {
             }
         }
 
-        if completed_loads.len() > 0 {
+        if !completed_loads.is_empty() {
             info!("{} new messages", completed_loads.len());
         }
 
@@ -222,7 +222,7 @@ impl TextureLoader {
                                         internal_format as _,
                                         src_format,
                                         src_type,
-                                        &img,
+                                        img,
                                     );
                                 }
                                 TextureType::Texture2DArray(depth) => gl
@@ -236,7 +236,7 @@ impl TextureLoader {
                                         0,
                                         src_format,
                                         glow::UNSIGNED_BYTE,
-                                        &img,
+                                        img,
                                     ),
                             }
 

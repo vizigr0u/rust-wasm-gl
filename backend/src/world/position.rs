@@ -68,7 +68,7 @@ impl ChunkPos {
         let first_pos = self.get_origin_block_pos().0;
         iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE)
             .map(move |(x, y, z)| first_pos + ivec3(x as _, y as _, z as _))
-            .map(|v| BlockPos(v))
+            .map(BlockPos)
     }
     pub fn safe_add(&self, other: ChunkPos) -> ChunkPos {
         let v = self.0 + other.0;
@@ -122,10 +122,10 @@ impl WorldPos {
     }
 }
 
-impl Into<WorldPos> for ChunkPos {
-    fn into(self) -> WorldPos {
+impl From<ChunkPos> for WorldPos {
+    fn from(val: ChunkPos) -> Self {
         WorldPos {
-            chunk_pos: self,
+            chunk_pos: val,
             offset: Vec3::ZERO,
         }
     }
@@ -164,8 +164,8 @@ impl Add<Vec3> for WorldPos {
         let chunks_added = chunk_pos.0 - self.chunk_pos.0;
         let dv = chunks_to_add - chunks_added;
         let offset = expected_offset + (dv.as_vec3() * CHUNK_SIZE as f32);
-        let res = WorldPos { chunk_pos, offset };
-        res
+        
+        WorldPos { chunk_pos, offset }
     }
 }
 
@@ -176,8 +176,8 @@ impl Add<WorldPos> for WorldPos {
         let new_chunk_pos = self.chunk_pos.safe_add(rhs.chunk_pos);
         let dv = (self.chunk_pos.0 + rhs.chunk_pos.0) - new_chunk_pos.0;
         let world_pos: WorldPos = new_chunk_pos.into();
-        let res = world_pos + (offset + (dv.as_vec3() * CHUNK_SIZE as f32));
-        res
+        
+        world_pos + (offset + (dv.as_vec3() * CHUNK_SIZE as f32))
     }
 }
 
@@ -186,16 +186,16 @@ pub struct PageIndex(usize);
 
 impl PageIndex {}
 
-impl Into<PageIndex> for usize {
-    fn into(self) -> PageIndex {
-        debug_assert!(self < NUM_CHUNKS_PER_PAGE, "Page index out of bounds");
-        PageIndex(self)
+impl From<usize> for PageIndex {
+    fn from(val: usize) -> Self {
+        debug_assert!(val < NUM_CHUNKS_PER_PAGE, "Page index out of bounds");
+        PageIndex(val)
     }
 }
 
-impl Into<usize> for PageIndex {
-    fn into(self) -> usize {
-        self.0
+impl From<PageIndex> for usize {
+    fn from(val: PageIndex) -> Self {
+        val.0
     }
 }
 
@@ -258,73 +258,73 @@ impl PagePos {
     }
 }
 
-impl Into<PagePos> for ChunkPos {
-    fn into(self) -> PagePos {
+impl From<ChunkPos> for PagePos {
+    fn from(val: ChunkPos) -> Self {
         PagePos(ivec2(
-            proper_rescale_i32(self.0.x + CHUNK_PAGE_SIZE.x / 2, CHUNK_PAGE_SIZE.x),
-            proper_rescale_i32(self.0.z + CHUNK_PAGE_SIZE.z / 2, CHUNK_PAGE_SIZE.z),
+            proper_rescale_i32(val.0.x + CHUNK_PAGE_SIZE.x / 2, CHUNK_PAGE_SIZE.x),
+            proper_rescale_i32(val.0.z + CHUNK_PAGE_SIZE.z / 2, CHUNK_PAGE_SIZE.z),
         ))
     }
 }
 
-impl Into<IVec2> for PagePos {
-    fn into(self) -> IVec2 {
-        self.0
+impl From<PagePos> for IVec2 {
+    fn from(val: PagePos) -> Self {
+        val.0
     }
 }
 
-impl Into<PagePos> for IVec2 {
-    fn into(self) -> PagePos {
-        PagePos(self)
+impl From<IVec2> for PagePos {
+    fn from(val: IVec2) -> Self {
+        PagePos(val)
     }
 }
 
-impl Into<IVec3> for ChunkPos {
-    fn into(self) -> IVec3 {
-        self.0
+impl From<ChunkPos> for IVec3 {
+    fn from(val: ChunkPos) -> Self {
+        val.0
     }
 }
 
-impl Into<ChunkPos> for IVec3 {
-    fn into(self) -> ChunkPos {
-        debug_assert!(self.y >= MIN_CHUNK_Y);
-        debug_assert!(self.y < MAX_CHUNK_Y);
+impl From<IVec3> for ChunkPos {
+    fn from(val: IVec3) -> Self {
+        debug_assert!(val.y >= MIN_CHUNK_Y);
+        debug_assert!(val.y < MAX_CHUNK_Y);
 
-        ChunkPos(self)
+        ChunkPos(val)
     }
 }
 
-impl Into<IVec3> for PageChunkOffset {
-    fn into(self) -> IVec3 {
-        self.0
+impl From<PageChunkOffset> for IVec3 {
+    fn from(val: PageChunkOffset) -> Self {
+        val.0
     }
 }
 
-impl Into<PageChunkOffset> for IVec3 {
-    fn into(self) -> PageChunkOffset {
-        debug_assert!(self.y >= -CHUNK_PAGE_SIZE.y);
-        debug_assert!(self.y < CHUNK_PAGE_SIZE.y);
-        PageChunkOffset(self)
+impl From<IVec3> for PageChunkOffset {
+    fn from(val: IVec3) -> Self {
+        debug_assert!(val.y >= -CHUNK_PAGE_SIZE.y);
+        debug_assert!(val.y < CHUNK_PAGE_SIZE.y);
+        PageChunkOffset(val)
     }
 }
 
-impl Into<ChunkPos> for BlockPos {
-    fn into(self) -> ChunkPos {
-        ChunkPos(proper_rescale_ivec3(self.0, CHUNK_SIZE as i32))
+impl From<BlockPos> for ChunkPos {
+    fn from(val: BlockPos) -> Self {
+        ChunkPos(proper_rescale_ivec3(val.0, CHUNK_SIZE as i32))
     }
 }
 
-impl Into<IVec3> for BlockPos {
-    fn into(self) -> IVec3 {
-        self.0
+impl From<BlockPos> for IVec3 {
+    fn from(val: BlockPos) -> Self {
+        val.0
     }
 }
 
-impl Into<BlockPos> for IVec3 {
-    fn into(self) -> BlockPos {
-        debug_assert!(self.y >= MIN_BLOCK_Y);
-        debug_assert!(self.y < MAX_BLOCK_Y);
-        BlockPos(self)
+impl From<IVec3> for BlockPos {
+    fn from(val: IVec3) -> Self {
+        debug_assert!(val.y >= MIN_BLOCK_Y);
+        debug_assert!(val.y < MAX_BLOCK_Y);
+        BlockPos(val)
     }
 }
 

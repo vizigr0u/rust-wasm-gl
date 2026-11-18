@@ -170,8 +170,8 @@ impl HandleInputs for Camera {
         // }
         for e in inputs.get_events() {
             match e {
-                InputEventType::MouseMove(e) => {
-                    if e.buttons() % 2 == 1 {
+                InputEventType::MouseMove(e)
+                    if e.buttons() % 2 == 1 => {
                         let speed = self.mouse_sensitivity;
                         let yaw = -(e.movement_x() as f32) * speed.to_radians();
                         let pitch = -(e.movement_y() as f32) * speed.to_radians();
@@ -182,7 +182,6 @@ impl HandleInputs for Camera {
                         let yawed = yaw_rotation * self.target_offset;
                         self.target_offset = apply_pitch(yawed, pitch);
                     }
-                }
                 InputEventType::MouseWheel(e) => {
                     let factor = if e.delta_y() >= 0.0 {
                         WHEEL_ZOOM_FACTOR

@@ -19,9 +19,9 @@ pub enum BlockType {
     Gold,
 }
 
-impl Into<BlockType> for u8 {
-    fn into(self) -> BlockType {
-        match self {
+impl From<u8> for BlockType {
+    fn from(val: u8) -> Self {
+        match val {
             0 => BlockType::Empty,
             1 => BlockType::Grass,
             2 => BlockType::Dirt,
@@ -197,9 +197,9 @@ fn chunk_index_from_offset(offset: &U16Vec3) -> usize {
 
 type BlockSideTextures = (BlockSideTexture, BlockSideTexture, BlockSideTexture);
 
-impl Into<BlockSideTextures> for BlockType {
-    fn into(self) -> BlockSideTextures {
-        match self {
+impl From<BlockType> for BlockSideTextures {
+    fn from(val: BlockType) -> Self {
+        match val {
             BlockType::Grass => (
                 BlockSideTexture::GrassTop,
                 BlockSideTexture::GrassSide,
@@ -302,9 +302,9 @@ where
             let mut result: i32 = 0;
             // 32 bit layout
             // -----ttt tttnnnzz zzzzyyyy yyxxxxxx
-            result |= (pos.x & 63) as i32;
-            result |= (pos.y as i32 & 63) << 6;
-            result |= (pos.z as i32 & 63) << 12;
+            result |= (pos.x & 63);
+            result |= (pos.y & 63) << 6;
+            result |= (pos.z & 63) << 12;
             result |= (norm & 7) << 18;
             result |= (texture as i32 & 63) << 21;
             // {

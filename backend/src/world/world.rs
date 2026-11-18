@@ -33,7 +33,7 @@ fn make_offset_priority(size: i32) -> OffsetPriority {
             }
         }
     }
-    offsets.sort_by(|p, q| p.length_squared().cmp(&q.length_squared()));
+    offsets.sort_by_key(|p| p.length_squared());
     // info!(
     //     "offset: {}, {}, ..., {}, {}",
     //     offsets[0],
@@ -149,7 +149,7 @@ where
     }
 
     fn load_some_chunks(&mut self) -> usize {
-        if self.chunks_to_load.len() == 0 {
+        if self.chunks_to_load.is_empty() {
             return 0;
         }
         let chunks_to_load: Vec<ChunkPos> = self
@@ -182,7 +182,7 @@ where
         {
             let mut chunks_we_can_unload = Vec::with_capacity(MAX_MESH_TO_KEEP * 2);
             for (&chunk_pos, c) in self.chunks.iter() {
-                if let Some(_) = &c {
+                if c.is_some() {
                     if new_chunk_pos.distance_squared(chunk_pos) > MAX_LOAD_CHUNK_DISTANCE_SQUARED {
                         chunks_we_can_unload.push(chunk_pos);
                     }

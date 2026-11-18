@@ -69,7 +69,7 @@ impl ShaderProgram {
     pub fn set_matrix(&self, gl: &glow::Context, matrix_type: UniformTypes, value: &Mat4) {
         let location = self.get_uniform_location(matrix_type);
         unsafe {
-            gl.uniform_matrix_4_f32_slice(location, false, &value.to_cols_array().as_slice())
+            gl.uniform_matrix_4_f32_slice(location, false, value.to_cols_array().as_slice())
         };
     }
 
@@ -105,7 +105,7 @@ impl ShaderDef {
 
         let mut attribute_locations = HashMap::new();
         for (attr_type, attr_name) in self.attributes.iter() {
-            let location = gl.get_attrib_location(program, *attr_name).ok_or(format!(
+            let location = gl.get_attrib_location(program, attr_name).ok_or(format!(
                 "Error getting attribute '{}' in ({}, {})",
                 attr_name, self.vertex_filename, self.fragment_filename
             ))?;
@@ -114,7 +114,7 @@ impl ShaderDef {
 
         let mut uniform_locations = HashMap::new();
         for (u_type, u_name) in self.uniforms.iter() {
-            let location = gl.get_uniform_location(program, *u_name).ok_or(format!(
+            let location = gl.get_uniform_location(program, u_name).ok_or(format!(
                 "Error getting uniform '{}' in ({}, {})",
                 u_name, self.vertex_filename, self.fragment_filename
             ))?;

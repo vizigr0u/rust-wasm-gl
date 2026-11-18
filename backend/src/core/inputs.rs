@@ -106,8 +106,8 @@ impl InputState {
 impl Clone for InputState {
     fn clone(&self) -> Self {
         Self {
-            mouse_pos: self.mouse_pos.clone(),
-            mouse_delta: self.mouse_delta.clone(),
+            mouse_pos: self.mouse_pos,
+            mouse_delta: self.mouse_delta,
             mouse_down: self.mouse_down,
             keys_down: self.keys_down.clone(),
             current_events: self.current_events.clone(),

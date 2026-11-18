@@ -124,7 +124,7 @@ where
             self.on_new_page_index(player_page_index, player_chunk_pos);
         }
         let mut new_pages_loaded = 0;
-        if self.pages_to_load.len() > 0 {
+        if !self.pages_to_load.is_empty() {
             if self.chunk_page_pool.len() < self.pages_to_load.len() {
                 info!("Streaming: Pool size too small - trying to free some pages");
                 self.free_some_pages(PAGE_LOAD_PER_FRAME, player_chunk_pos);

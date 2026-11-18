@@ -109,7 +109,7 @@ impl FpsDisplay {
             self.buffer_was_filled = true;
         }
         // Refresh often (every REFRESH_EVERY frames) instead of once per full buffer.
-        if self.tick_index % REFRESH_EVERY == 0 {
+        if self.tick_index.is_multiple_of(REFRESH_EVERY) {
             let count = if self.buffer_was_filled {
                 self.tick_times.len()
             } else {
