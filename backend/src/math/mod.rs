@@ -1,3 +1,1 @@
-mod aabb;
-
-pub use aabb::AABB;
+pub use voxel_core::math::*;

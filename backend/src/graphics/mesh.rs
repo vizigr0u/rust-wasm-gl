@@ -3,7 +3,7 @@
 
 use glam::Vec3;
 
-use crate::world::BlockSideTexture;
+use crate::world::{BlockSideTexture, Side, SIDE_NORMS};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum VertexDataType {
@@ -88,33 +88,6 @@ impl Mesh {
             indices: None,
             primitive_type: glow::TRIANGLES,
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum Side {
-    Top = 0,
-    Bottom,
-    Front,
-    Back,
-    Right,
-    Left,
-}
-
-pub const SIDE_NORMS: [Vec3; 6] = [
-    Vec3::Y,
-    Vec3::NEG_Y,
-    Vec3::Z,
-    Vec3::NEG_Z,
-    Vec3::X,
-    Vec3::NEG_X,
-];
-
-type Norm = Vec3;
-
-impl From<Side> for Norm {
-    fn from(val: Side) -> Self {
-        SIDE_NORMS[val as usize]
     }
 }
 

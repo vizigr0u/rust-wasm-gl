@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["voxel-core", "backend"]
+
+[profile.dev]
+opt-level = 0           # do not optimize for debug
+debug = true            # print debug info
+debug-assertions = true # enable debug assertions
+overflow-checks = true  # check for overflows
+
+[profile.release]
+opt-level = "s"     # optimize for small code size.
+lto = true          # Enable link time optimizations
+debug = false       # Strip debug information
+codegen-units = 1   # More aggressive optimizations at the cost of compilation time
+incremental = false # Disable incremental compilation

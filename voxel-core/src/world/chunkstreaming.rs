@@ -3,14 +3,11 @@ use glam::{ivec2, IVec2, IVec3};
 use itertools::Itertools;
 use log::{info, warn};
 
-use crate::{
-    math::AABB,
-    world::{ChunkPos, PageChunkOffset},
-};
+use crate::math::AABB;
 
 use super::{
     position::{PagePos, NUM_CHUNKS_PER_PAGE},
-    Chunk, WorldGenerator,
+    Chunk, ChunkPos, PageChunkOffset, WorldGenerator,
 };
 
 const PAGE_LOAD_PER_FRAME: usize = 1;

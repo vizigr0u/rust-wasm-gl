@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "wasm": "wasm-pack build --dev ./backend --target web",
-    "test": "cd ./backend-tests && cargo test",
+    "test": "cargo test -p voxel-core",
     "wasm-release": "wasm-pack build --release ./backend --target web",
-    "debug-wasm": "wasm-bindgen --keep-debug --out-dir ./backend/pkg ./backend/target/wasm32-unknown-unknown/debug/backend.wasm --target web",
+    "debug-wasm": "wasm-bindgen --keep-debug --out-dir ./backend/pkg ./target/wasm32-unknown-unknown/debug/backend.wasm --target web",
     "dev": "pnpm wasm && vite",
     "build": "pnpm wasm-release && tsc && vite build",
     "preview": "vite preview"

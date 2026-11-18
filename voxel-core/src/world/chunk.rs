@@ -2,7 +2,7 @@ use fastrand::Rng;
 use glam::{U16Vec3, Vec3};
 use itertools::iproduct;
 
-use crate::graphics::Side;
+use super::Side;
 
 use super::{BLOCKS_PER_CHUNK, CHUNK_SIZE};
 

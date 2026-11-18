@@ -1,0 +1,11 @@
+[package]
+name = "voxel-core"
+version = "0.1.0"
+edition = "2021"
+description = "Platform-independent voxel world logic (positions, chunks, streaming, generation)"
+
+[dependencies]
+fastrand = { version = "2.0.1", default-features = false }
+glam = "0.34"
+itertools = "0.15"
+log = "0.4.21"

@@ -52,6 +52,7 @@ impl WorldGenerator for GeneratorV0 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use glam::IVec3;
 
     #[test]
     fn generated_chunk_emptiness_matches_content() {

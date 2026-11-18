@@ -4,9 +4,9 @@ use glam::Vec3;
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 
 use crate::{
-    graphics::{Camera, ShaderDef, ShaderProgram, Side, TextureType, UniformTypes},
+    graphics::{Camera, ShaderDef, ShaderProgram, TextureType, UniformTypes},
     shader_def,
-    world::{Chunk, CHUNK_SIZE},
+    world::{Chunk, Side, CHUNK_SIZE},
 };
 
 use super::{make_base_quad_data, ChunkPos};

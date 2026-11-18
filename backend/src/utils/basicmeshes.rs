@@ -4,8 +4,8 @@
 use glam::Vec3;
 
 use crate::{
-    graphics::{uv_definitions, Mesh, Side, SideVertices, VertexAttrType},
-    world::BlockSideTexture,
+    graphics::{uv_definitions, Mesh, SideVertices, VertexAttrType},
+    world::{BlockSideTexture, Side},
 };
 
 pub fn make_quad() -> Mesh {
