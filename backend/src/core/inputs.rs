@@ -71,6 +71,13 @@ impl InputState {
         &self.current_events
     }
 
+    /// Forget held keys/buttons (e.g. on window blur, when key-up events never arrive).
+    fn reset(&mut self) {
+        self.mouse_down = false;
+        self.mouse_delta = Vec2::ZERO;
+        self.keys_down.clear();
+    }
+
     fn add_event(&mut self, event: InputEventType) {
         match &event {
             InputEventType::MouseDown(_) => self.mouse_down = true,
@@ -139,6 +146,9 @@ impl InputSystem {
 
     fn sub_to_all_events(&mut self) -> Result<(), JsValue> {
         let canvas = &utils::get_canvas()?;
+        // Everything except mousedown/wheel goes on window, so releases and keys
+        // are seen even when the pointer left the canvas or the canvas lacks focus.
+        let window: &EventTarget = &web_sys::window().ok_or("no window")?.into();
         self.add_event_listener(
             canvas,
             "mousedown",
@@ -148,7 +158,7 @@ impl InputSystem {
             }),
         )?;
         self.add_event_listener(
-            canvas,
+            window,
             "mouseup",
             Box::new(|event: JsValue| {
                 let event: web_sys::MouseEvent = event.dyn_into().unwrap();
@@ -156,7 +166,7 @@ impl InputSystem {
             }),
         )?;
         self.add_event_listener(
-            canvas,
+            window,
             "mousemove",
             Box::new(|event: JsValue| {
                 let event: web_sys::MouseEvent = event.dyn_into().unwrap();
@@ -168,12 +178,13 @@ impl InputSystem {
             "wheel",
             Box::new(|event: JsValue| {
                 let event: web_sys::WheelEvent = event.dyn_into().unwrap();
+                event.prevent_default();
                 InputEventType::MouseWheel(Rc::new(event))
             }),
         )?;
 
         self.add_event_listener(
-            canvas,
+            window,
             "keydown",
             Box::new(|event: JsValue| {
                 let event: web_sys::KeyboardEvent = event.dyn_into().unwrap();
@@ -182,13 +193,21 @@ impl InputSystem {
         )?;
 
         self.add_event_listener(
-            canvas,
+            window,
             "keyup",
             Box::new(|event: JsValue| {
                 let event: web_sys::KeyboardEvent = event.dyn_into().unwrap();
                 InputEventType::KeyUp(Rc::new(event))
             }),
         )?;
+
+        // Clear sticky state when focus is lost.
+        let inputs = self.current_inputs.clone();
+        let closure = Closure::wrap(Box::new(move |_event: JsValue| {
+            inputs.borrow_mut().reset();
+        }) as Box<dyn FnMut(JsValue)>);
+        window.add_event_listener_with_callback("blur", closure.as_ref().unchecked_ref())?;
+        self.closures.push(Arc::new(Mutex::new(closure)));
 
         Ok(())
     }
