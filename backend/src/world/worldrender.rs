@@ -130,30 +130,6 @@ impl WorldRenderData {
         self.peak_vertex_len = self.peak_vertex_len.max(self.vertex_data_cache.len());
         self.peak_location_len = self.peak_location_len.max(self.location_data_cache.len());
 
-        // debug logs
-        if true {
-            let num_verts = self.vertex_data_cache.len();
-            let num_locs = self.location_data_cache.len();
-            info!(
-                "Uploaded {} vertex words and {} locations for {} quads",
-                num_verts, num_locs, self.num_quads_to_draw
-            );
-            if num_verts >= 4 && num_locs >= 4 {
-                info!(
-                    "verts: {:?}, {:?}, ... {:?}, {:?} - locs: {:?}, {:?}, {:?}, ... {:?}, {:?}, {:?}",
-                    self.vertex_data_cache[0],
-                    self.vertex_data_cache[1],
-                    self.vertex_data_cache[num_verts - 2],
-                    self.vertex_data_cache[num_verts - 1],
-                    self.location_data_cache[0],
-                    self.location_data_cache[1],
-                    self.location_data_cache[2],
-                    self.location_data_cache[num_locs - 3],
-                    self.location_data_cache[num_locs - 2],
-                    self.location_data_cache[num_locs - 1],
-                );
-            }
-        }
         unsafe {
             {
                 // upload vertex data
