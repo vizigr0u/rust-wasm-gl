@@ -78,7 +78,7 @@ impl ChunkPos {
 
 impl Hash for ChunkPos {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        ((self.0.x & 0xfff) << 20 | (self.0.y & 0xfff) << 10 | (self.0.z & 0xfff)).hash(state);
+        (self.0.x, self.0.y, self.0.z).hash(state);
     }
 }
 
