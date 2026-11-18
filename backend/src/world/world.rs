@@ -202,6 +202,8 @@ where
 
         // add new chunks
         {
+            // Rebuild queue: avoids duplicates and drops stale far chunks.
+            self.chunks_to_load.clear();
             for offset in &self.offset_priority {
                 let chunk_vec_pos = new_chunk_pos.as_vec() + *offset;
                 if chunk_vec_pos.y < MIN_CHUNK_Y || chunk_vec_pos.y >= MAX_CHUNK_Y {
