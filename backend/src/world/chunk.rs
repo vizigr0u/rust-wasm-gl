@@ -39,7 +39,7 @@ impl Into<BlockType> for u8 {
 #[derive(Debug, Clone)]
 pub struct Chunk {
     pub blocks: [BlockType; BLOCKS_PER_CHUNK],
-    is_emtpy: bool,
+    is_empty_flag: bool,
 }
 
 const OPTIMIZATION_LEVEL: usize = 1;
@@ -48,21 +48,21 @@ impl Default for Chunk {
     fn default() -> Self {
         Chunk {
             blocks: [BlockType::Empty; BLOCKS_PER_CHUNK],
-            is_emtpy: true,
+            is_empty_flag: true,
         }
     }
 }
 
 impl Chunk {
-    pub fn new(is_emtpy: bool) -> Chunk {
+    pub fn new(is_empty: bool) -> Chunk {
         Chunk {
-            is_emtpy,
+            is_empty_flag: is_empty,
             ..Default::default()
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.is_emtpy
+        self.is_empty_flag
     }
 
     pub fn random(rng: &mut Rng) -> Chunk {
@@ -94,6 +94,9 @@ impl Chunk {
         debug_assert!(offset.y < CHUNK_SIZE as u16);
         debug_assert!(offset.z < CHUNK_SIZE as u16);
         self.blocks[chunk_index_from_offset(&offset)] = block;
+        if block != BlockType::Empty {
+            self.is_empty_flag = false;
+        }
     }
 
     // fn at_mut(&mut self, offset: U16Vec3) -> &mut BlockType {
