@@ -6,17 +6,27 @@ use egui_plot::{Legend, Line, Plot};
 const CHART_SIZE: usize = 40;
 const AVG_SIZE: usize = 3;
 const BUFFER_SIZE: usize = CHART_SIZE * AVG_SIZE;
+const REFRESH_EVERY: usize = 10;
 
 #[derive(Debug, Default, Clone, Copy)]
 struct PerformanceTime {
     frame_time: f64,
     update_time: f64,
     render_time: f64,
+    /// Time since the previous frame started (real frame period).
+    interval: f64,
 }
 
 impl PerformanceTime {
-    pub fn new(start_time: f64, frame_time: f64, update_time: f64, render_time: f64) -> Self {
+    pub fn new(
+        start_time: f64,
+        frame_time: f64,
+        update_time: f64,
+        render_time: f64,
+        interval: f64,
+    ) -> Self {
         Self {
+            interval,
             frame_time: frame_time - start_time,
             update_time: update_time - start_time,
             render_time: render_time - update_time,
@@ -33,6 +43,7 @@ impl Sum<PerformanceTime> for PerformanceTime {
             frame_time: a.frame_time + b.frame_time,
             update_time: a.update_time + b.update_time,
             render_time: a.render_time + b.render_time,
+            interval: a.interval + b.interval,
         })
     }
 }
@@ -43,6 +54,7 @@ impl<'a> Sum<&'a PerformanceTime> for PerformanceTime {
             frame_time: a.frame_time + b.frame_time,
             update_time: a.update_time + b.update_time,
             render_time: a.render_time + b.render_time,
+            interval: a.interval + b.interval,
         })
     }
 }
@@ -54,6 +66,7 @@ impl Div<f64> for PerformanceTime {
             frame_time: self.frame_time / rhs,
             update_time: self.update_time / rhs,
             render_time: self.render_time / rhs,
+            interval: self.interval / rhs,
         }
     }
 }
@@ -65,6 +78,7 @@ pub struct FpsDisplay {
     tick_index: usize,
     show_details: bool,
     buffer_was_filled: bool,
+    last_start: Option<f64>,
 }
 
 impl FpsDisplay {
@@ -75,6 +89,7 @@ impl FpsDisplay {
             tick_index: 0,
             show_details: false,
             buffer_was_filled: false,
+            last_start: None,
         }
     }
 
@@ -85,25 +100,34 @@ impl FpsDisplay {
         render_time: f64,
         frame_time: f64,
     ) {
+        let interval = self.last_start.map_or(0.0, |last| start_time - last);
+        self.last_start = Some(start_time);
         self.tick_times[self.tick_index] =
-            PerformanceTime::new(start_time, frame_time, update_time, render_time);
-        if !self.buffer_was_filled && self.tick_index == BUFFER_SIZE - 1 {
+            PerformanceTime::new(start_time, frame_time, update_time, render_time, interval);
+        self.tick_index = (self.tick_index + 1) % self.tick_times.len();
+        if self.tick_index == BUFFER_SIZE - 1 {
             self.buffer_was_filled = true;
         }
-        self.tick_index = (self.tick_index + 1) % self.tick_times.len();
-        if !self.buffer_was_filled {
-            self.avg_times =
-                self.tick_times.iter().sum::<PerformanceTime>() / self.tick_index as f64;
-        } else if self.tick_index == 0 {
-            self.avg_times =
-                self.tick_times.iter().sum::<PerformanceTime>() / self.tick_times.len() as f64;
+        // Refresh often (every REFRESH_EVERY frames) instead of once per full buffer.
+        if self.tick_index % REFRESH_EVERY == 0 {
+            let count = if self.buffer_was_filled {
+                self.tick_times.len()
+            } else {
+                self.tick_index.max(1)
+            };
+            self.avg_times = self.tick_times[..count].iter().sum::<PerformanceTime>() / count as f64;
         }
     }
     pub fn get_debug_info(&self) -> String {
-        if self.avg_times.frame_time == 0.0 {
+        if self.avg_times.interval <= 0.0 {
             return "???".to_string();
         }
-        format!("{:.1}", 1000.0 / self.avg_times.frame_time)
+        // fps = real frame rate; max = theoretical rate if the CPU work were the only limit
+        format!(
+            "{:.1} (max {:.0})",
+            1000.0 / self.avg_times.interval,
+            1000.0 / self.avg_times.frame_time.max(0.001)
+        )
     }
 
     pub fn display(&mut self, ui: &mut egui::Ui) {
@@ -134,7 +158,7 @@ impl FpsDisplay {
                     let charts = (0..CHART_SIZE)
                         .map(|i| {
                             let avg: PerformanceTime = (0..AVG_SIZE)
-                                .map(|j| self.tick_times[(i + j + self.tick_index) % BUFFER_SIZE])
+                                .map(|j| self.tick_times[(i * AVG_SIZE + j + self.tick_index) % BUFFER_SIZE])
                                 .sum::<PerformanceTime>()
                                 / AVG_SIZE as f64;
                             avg
