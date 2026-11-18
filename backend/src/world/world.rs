@@ -1,6 +1,6 @@
 use std::{collections::HashMap, mem::size_of, rc::Rc};
 
-use glam::{ivec3, IVec3, Vec3};
+use glam::{ivec3, IVec3};
 use log::info;
 
 const FRAME_RENDER_DELAY: usize = 8;
@@ -62,7 +62,8 @@ where
     player_chunk_pos: ChunkPos,
 }
 
-const QUAD_DATA_SIZE: usize = size_of::<f32>() + size_of::<Vec3>();
+/// Each quad is one packed `i32` word in `ChunkDrawData::vertex_data`.
+const QUAD_DATA_SIZE: usize = size_of::<i32>();
 
 impl<G> World<G>
 where
@@ -92,7 +93,7 @@ where
         let loaded_meshes = self.chunks.values().filter(|c| c.is_some()).count();
         let (peak_v, peak_l) = self.render_data.peak_cache_len();
         format!(
-            "Loaded {loaded_meshes}/{} chunks\nStreaming: {}\n{quad_count} vertices - {memory_used:.3} MB\nPeak gather: {peak_v} verts, {peak_l} locs",
+            "Loaded {loaded_meshes}/{} chunks\nStreaming: {}\n{quad_count} quads - {memory_used:.3} MB\nPeak gather: {peak_v} verts, {peak_l} locs",
             self.chunks.len(),
             self.streamer.get_info(),
         )
