@@ -49,6 +49,7 @@ features = [
     'console',
     'Document',
     'Element',
+    'DomRect',
     'HtmlCanvasElement',
     'WebGlBuffer',
     'WebGlVertexArrayObject',

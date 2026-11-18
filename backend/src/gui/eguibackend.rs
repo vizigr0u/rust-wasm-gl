@@ -83,6 +83,7 @@ impl EguiBackend {
     where
         F: FnMut(&egui::Context),
     {
+        self.update_size();
         let raw_input: egui::RawInput = self.gather_input();
 
         let full_output = self.egui_ctx.run_pass(raw_input, |ctx| {
@@ -95,6 +96,13 @@ impl EguiBackend {
 
         unsafe {
             self.paint(gl, full_output.textures_delta, clipped_primitives);
+        }
+    }
+
+    /// Read the real drawing-buffer size from the canvas (egui points == pixels here).
+    fn update_size(&mut self) {
+        if let Ok(canvas) = crate::utils::get_canvas() {
+            self.size = (canvas.width() as usize, canvas.height() as usize);
         }
     }
 
@@ -112,6 +120,8 @@ impl EguiBackend {
             }
         }
         textures_delta.clear();
+        let (width, height) = (self.size.0 as f32, self.size.1 as f32);
+        unsafe { gl.enable(glow::SCISSOR_TEST) };
         for primitive in &clipped_primitives {
             match &primitive.primitive {
                 Primitive::Mesh(p) => {
@@ -125,6 +135,20 @@ impl EguiBackend {
                             }
                         }
                     }
+                    // GL scissor origin is bottom-left; egui's is top-left.
+                    let clip = primitive.clip_rect;
+                    let x0 = clip.min.x.clamp(0.0, width).round();
+                    let x1 = clip.max.x.clamp(0.0, width).round();
+                    let y0 = clip.min.y.clamp(0.0, height).round();
+                    let y1 = clip.max.y.clamp(0.0, height).round();
+                    unsafe {
+                        gl.scissor(
+                            x0 as i32,
+                            (height - y1) as i32,
+                            (x1 - x0).max(0.0) as i32,
+                            (y1 - y0).max(0.0) as i32,
+                        );
+                    }
                     let mesh = Rc::new(Mesh::from(p));
                     self.mesh_renderer
                         .set_mesh(gl, mesh)
@@ -134,7 +158,7 @@ impl EguiBackend {
                     program.set_matrix(
                         gl,
                         UniformTypes::ProjMatrix,
-                        &self.make_projection(800.0, 600.0),
+                        &self.make_projection(width, height),
                     );
                     unsafe {
                         gl.blend_equation_separate(glow::FUNC_ADD, glow::FUNC_ADD);
@@ -155,6 +179,7 @@ impl EguiBackend {
                 }
             }
         }
+        unsafe { gl.disable(glow::SCISSOR_TEST) };
     }
 
     fn make_projection(&self, width: f32, height: f32) -> glam::Mat4 {
@@ -264,10 +289,15 @@ impl EguiBackend {
 
     fn set_events(&mut self, events: &Vec<InputEventType>) {
         self.current_events.clear();
-        for e in events.iter().map(|e| e.try_into()) {
+        for ev in events.iter() {
+            let e: Result<Event, ConversionError> = ev.try_into();
             match e {
                 Ok(e) => {
                     self.current_events.push(e);
+                    // Printable keys also produce text for text edits.
+                    if let Some(text) = text_for_event(ev) {
+                        self.current_events.push(Event::Text(text));
+                    }
                 }
                 Err(e) => match e {
                     ConversionError::IgnoredKey(_) => {}
@@ -332,6 +362,21 @@ impl TryInto<Event> for &InputEventType {
                 pressed: false,
                 modifiers: get_mouse_modifiers(&event),
             },
+            InputEventType::MouseWheel(event) => {
+                let unit = match event.delta_mode() {
+                    1 => egui::MouseWheelUnit::Line,
+                    2 => egui::MouseWheelUnit::Page,
+                    _ => egui::MouseWheelUnit::Point,
+                };
+                Event::MouseWheel {
+                    unit,
+                    // Web deltaY is positive when scrolling down; egui wants the opposite.
+                    delta: egui::vec2(-event.delta_x() as f32, -event.delta_y() as f32),
+                    phase: egui::TouchPhase::Move,
+                    source: egui::MouseWheelSource::Unknown,
+                    modifiers: get_mouse_modifiers(&event),
+                }
+            }
             _ => Err(ConversionError::Unhandled)?,
         };
         Ok(event)
@@ -375,8 +420,28 @@ fn try_parse_key(key: String) -> Result<egui::Key, ConversionError> {
     }
 }
 
+/// Text typed by a KeyDown event (printable single characters, no ctrl/meta chords).
+fn text_for_event(event: &InputEventType) -> Option<String> {
+    let InputEventType::KeyDown(e) = event else {
+        return None;
+    };
+    if e.ctrl_key() || e.meta_key() {
+        return None;
+    }
+    let key = e.key();
+    (key.chars().count() == 1).then_some(key)
+}
+
+/// Canvas-relative position in drawing-buffer pixels (accounts for CSS scaling).
 fn mouse_event_to_pos2(event: &MouseEvent) -> egui::Pos2 {
-    egui::pos2(event.client_x() as f32, event.client_y() as f32)
+    let (cx, cy) = (event.client_x() as f32, event.client_y() as f32);
+    let Ok(canvas) = crate::utils::get_canvas() else {
+        return egui::pos2(cx, cy);
+    };
+    let rect = canvas.get_bounding_client_rect();
+    let sx = if rect.width() > 0.0 { canvas.width() as f32 / rect.width() as f32 } else { 1.0 };
+    let sy = if rect.height() > 0.0 { canvas.height() as f32 / rect.height() as f32 } else { 1.0 };
+    egui::pos2((cx - rect.left() as f32) * sx, (cy - rect.top() as f32) * sy)
 }
 
 /* convert a TextureFilter to a glow filter */
