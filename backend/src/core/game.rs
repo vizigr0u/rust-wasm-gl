@@ -238,8 +238,29 @@ impl Game {
         self.input_system.clear_events();
     }
 
+    /// Match the canvas drawing buffer to its CSS size * devicePixelRatio,
+    /// then keep the GL viewport and camera projection in sync.
+    fn sync_canvas_size(&mut self, gl: &glow::Context) {
+        let Ok(canvas) = crate::utils::get_canvas() else {
+            return;
+        };
+        let dpr = web_sys::window().map_or(1.0, |w| w.device_pixel_ratio());
+        let w = (canvas.client_width() as f64 * dpr).round() as u32;
+        let h = (canvas.client_height() as f64 * dpr).round() as u32;
+        if w > 0 && h > 0 && (canvas.width() != w || canvas.height() != h) {
+            canvas.set_width(w);
+            canvas.set_height(h);
+        }
+        let (w, h) = (canvas.width(), canvas.height());
+        self.camera.set_viewport_size(w, h);
+        unsafe {
+            gl.viewport(0, 0, w as i32, h as i32);
+        }
+    }
+
     fn render(&mut self, gl: &glow::Context) -> Result<(), String> {
         self.texture_loader.tick(&gl)?;
+        self.sync_canvas_size(gl);
         unsafe {
             gl.clear_color(0.0, 0.0, 0.0, 1.0);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);

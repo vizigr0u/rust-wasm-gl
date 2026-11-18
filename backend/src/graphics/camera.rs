@@ -20,6 +20,7 @@ const WHEEL_ZOOM_FACTOR: f32 = 1.15;
 
 const MAX_PITCH: f32 = 89.0 * std::f32::consts::PI / 180.0;
 
+const FOV_Y_DEGREES: f32 = 45.0;
 const NEAR_VIEW: f32 = 0.1;
 const FAR_VIEW: f32 = 1000.0;
 
@@ -33,6 +34,16 @@ pub struct Camera {
     pub projection: Mat4,
     pub look_at: Mat4,
     mouse_sensitivity: f32,
+    aspect: f32,
+}
+
+fn make_projection(aspect: f32) -> Mat4 {
+    glam::camera::rh::proj::opengl::perspective(
+        f32::to_radians(FOV_Y_DEGREES),
+        aspect,
+        NEAR_VIEW,
+        FAR_VIEW,
+    )
 }
 
 impl Default for Camera {
@@ -75,6 +86,16 @@ mod tests {
     }
 
     #[test]
+    fn set_viewport_size_updates_aspect() {
+        let mut c = Camera::default();
+        c.set_viewport_size(1920, 1080);
+        assert!((c.aspect - 16.0 / 9.0).abs() < 1e-5);
+        let before = c.projection;
+        c.set_viewport_size(0, 0); // ignored
+        assert_eq!(c.projection, before);
+    }
+
+    #[test]
     fn pitch_never_crosses_pole() {
         let mut o = Vec3::new(0.0, 1.0, 10.0);
         for _ in 0..50 {
@@ -105,14 +126,22 @@ impl Camera {
                 MIN_CAMERA_DISTANCE,
                 MAX_CAMERA_DISTANCE,
             ),
-            projection: glam::camera::rh::proj::opengl::perspective(
-                f32::to_radians(45.0),
-                800.0 / 600.0,
-                NEAR_VIEW,
-                FAR_VIEW,
-            ),
+            projection: make_projection(800.0 / 600.0),
+            aspect: 800.0 / 600.0,
             look_at: Mat4::IDENTITY,
             mouse_sensitivity: DEFAULT_MOUSE_SENSITIVITY,
+        }
+    }
+
+    /// Rebuild the projection for a new drawing-buffer size. Ignores degenerate sizes.
+    pub fn set_viewport_size(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        let aspect = width as f32 / height as f32;
+        if (aspect - self.aspect).abs() > f32::EPSILON {
+            self.aspect = aspect;
+            self.projection = make_projection(aspect);
         }
     }
 
