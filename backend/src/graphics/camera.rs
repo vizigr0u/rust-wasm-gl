@@ -89,9 +89,8 @@ impl HandleInputs for Camera {
                 InputEventType::MouseMove(e) => {
                     if e.buttons() % 2 == 1 {
                         let speed = self.mouse_sensitivity;
-                        let d = inputs.get_mouse_delta();
-                        let yaw = -d.x * speed.to_radians();
-                        let pitch = -d.y * speed.to_radians();
+                        let yaw = -(e.movement_x() as f32) * speed.to_radians();
+                        let pitch = -(e.movement_y() as f32) * speed.to_radians();
 
                         let yaw_rotation = Quat::from_rotation_y(yaw);
                         let forward = self.target_offset.normalize();
