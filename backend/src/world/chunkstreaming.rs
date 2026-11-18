@@ -28,7 +28,7 @@ impl Default for ChunkPage {
         Self {
             chunks: vec![Chunk::default(); NUM_CHUNKS_PER_PAGE],
             position: Default::default(),
-            content_bounds: Default::default(),
+            content_bounds: AABB::empty(),
         }
     }
 }
@@ -46,6 +46,7 @@ impl ChunkPage {
         G: WorldGenerator,
     {
         self.position = page_pos;
+        self.content_bounds = AABB::empty();
         info!("Streaming: Filling chunk page {page_pos:?}");
         // let page_chunk_world_offset = Into::<ChunkPos>::into(page_pos).as_vec();
         for i in 0..NUM_CHUNKS_PER_PAGE {
@@ -94,7 +95,7 @@ where
             loaded_chunk_pages: Vec::with_capacity(MAX_NUM_PAGES),
             chunk_page_pool: vec![ChunkPage::default(); MAX_NUM_PAGES],
             generator,
-            content_bounds: Default::default(),
+            content_bounds: AABB::empty(),
             last_computed_page_pos: None,
             pages_to_load: Vec::with_capacity(MAX_NUM_PAGES),
         }
@@ -230,8 +231,11 @@ where
     }
 
     fn update_bounds(&mut self) {
-        self.content_bounds = Default::default();
+        self.content_bounds = AABB::empty();
         for page in &self.loaded_chunk_pages {
+            if page.content_bounds.is_empty() {
+                continue;
+            }
             self.content_bounds.add(page.content_bounds.min);
             self.content_bounds.add(page.content_bounds.max);
         }

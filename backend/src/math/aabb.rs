@@ -7,6 +7,18 @@ pub struct AABB<N> {
 }
 
 impl AABB<IVec3> {
+    /// Empty box (min=MAX, max=MIN): the first `add` sets both corners.
+    pub fn empty() -> Self {
+        Self {
+            min: IVec3::MAX,
+            max: IVec3::MIN,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.min.x > self.max.x || self.min.y > self.max.y || self.min.z > self.max.z
+    }
+
     pub fn add(&mut self, position: IVec3) {
         if position.x < self.min.x {
             self.min.x = position.x;
@@ -26,5 +38,20 @@ impl AABB<IVec3> {
         if position.z > self.max.z {
             self.max.z = position.z;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_box_does_not_include_origin() {
+        let mut b = AABB::empty();
+        assert!(b.is_empty());
+        b.add(IVec3::new(5, 6, 7));
+        assert!(!b.is_empty());
+        assert_eq!(b.min, IVec3::new(5, 6, 7));
+        assert_eq!(b.max, IVec3::new(5, 6, 7));
     }
 }
