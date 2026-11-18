@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: ['master']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo test -p voxel-core
+      # TODO: add -D warnings once dead code from codebase-review.md is cleaned up
+      - run: cargo clippy -p voxel-core --all-targets
+      - run: cargo clippy -p backend --target wasm32-unknown-unknown

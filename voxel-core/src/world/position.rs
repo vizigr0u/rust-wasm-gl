@@ -164,7 +164,7 @@ impl Add<Vec3> for WorldPos {
         let chunks_added = chunk_pos.0 - self.chunk_pos.0;
         let dv = chunks_to_add - chunks_added;
         let offset = expected_offset + (dv.as_vec3() * CHUNK_SIZE as f32);
-        
+
         WorldPos { chunk_pos, offset }
     }
 }
@@ -176,7 +176,7 @@ impl Add<WorldPos> for WorldPos {
         let new_chunk_pos = self.chunk_pos.safe_add(rhs.chunk_pos);
         let dv = (self.chunk_pos.0 + rhs.chunk_pos.0) - new_chunk_pos.0;
         let world_pos: WorldPos = new_chunk_pos.into();
-        
+
         world_pos + (offset + (dv.as_vec3() * CHUNK_SIZE as f32))
     }
 }
@@ -355,8 +355,8 @@ mod tests {
     use glam::{ivec2, ivec3, vec3, IVec3};
 
     use crate::world::{
-        BlockPos, ChunkPos, PageChunkOffset, BLOCKS_PER_CHUNK, PagePos, WorldPos, CHUNK_PAGE_SIZE, CHUNK_SIZE,
-        MAX_BLOCK_Y, MAX_CHUNK_Y, MIN_BLOCK_Y, MIN_CHUNK_Y, NUM_CHUNKS_PER_PAGE,
+        BlockPos, ChunkPos, PageChunkOffset, PagePos, WorldPos, BLOCKS_PER_CHUNK, CHUNK_PAGE_SIZE,
+        CHUNK_SIZE, MAX_BLOCK_Y, MAX_CHUNK_Y, MIN_BLOCK_Y, MIN_CHUNK_Y, NUM_CHUNKS_PER_PAGE,
     };
 
     #[test]
@@ -590,7 +590,9 @@ mod tests {
 
     #[test]
     fn test_world_pos_offset_invariant() {
-        for d in [0.3, -0.3, 16.0, -16.0, 100.5, -100.5, -1e-7, 1e-7, 15.999, 33.0] {
+        for d in [
+            0.3, -0.3, 16.0, -16.0, 100.5, -100.5, -1e-7, 1e-7, 15.999, 33.0,
+        ] {
             let p = WorldPos::ZERO + vec3(d, 0.0, d);
             let o = p.offset();
             assert!(o.x >= 0.0 && o.x < 16.0, "x {d} -> {o:?}");

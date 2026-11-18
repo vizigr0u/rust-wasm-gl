@@ -68,9 +68,7 @@ impl ShaderProgram {
 
     pub fn set_matrix(&self, gl: &glow::Context, matrix_type: UniformTypes, value: &Mat4) {
         let location = self.get_uniform_location(matrix_type);
-        unsafe {
-            gl.uniform_matrix_4_f32_slice(location, false, value.to_cols_array().as_slice())
-        };
+        unsafe { gl.uniform_matrix_4_f32_slice(location, false, value.to_cols_array().as_slice()) };
     }
 
     pub fn gl_use(&self, gl: &glow::Context) {

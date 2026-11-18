@@ -11,7 +11,6 @@ use crate::{
 
 use super::{make_base_quad_data, ChunkPos};
 
-
 #[derive(Debug)]
 struct GraphicContext {
     program: Rc<ShaderProgram>,

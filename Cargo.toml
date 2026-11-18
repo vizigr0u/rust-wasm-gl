@@ -3,7 +3,7 @@ resolver = "2"
 members = ["voxel-core", "backend"]
 
 [profile.dev]
-opt-level = 0           # do not optimize for debug
+opt-level = 1           # light opt so dev frame times are meaningful
 debug = true            # print debug info
 debug-assertions = true # enable debug assertions
 overflow-checks = true  # check for overflows

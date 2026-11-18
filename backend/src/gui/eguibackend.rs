@@ -439,9 +439,20 @@ fn mouse_event_to_pos2(event: &MouseEvent) -> egui::Pos2 {
         return egui::pos2(cx, cy);
     };
     let rect = canvas.get_bounding_client_rect();
-    let sx = if rect.width() > 0.0 { canvas.width() as f32 / rect.width() as f32 } else { 1.0 };
-    let sy = if rect.height() > 0.0 { canvas.height() as f32 / rect.height() as f32 } else { 1.0 };
-    egui::pos2((cx - rect.left() as f32) * sx, (cy - rect.top() as f32) * sy)
+    let sx = if rect.width() > 0.0 {
+        canvas.width() as f32 / rect.width() as f32
+    } else {
+        1.0
+    };
+    let sy = if rect.height() > 0.0 {
+        canvas.height() as f32 / rect.height() as f32
+    } else {
+        1.0
+    };
+    egui::pos2(
+        (cx - rect.left() as f32) * sx,
+        (cy - rect.top() as f32) * sy,
+    )
 }
 
 /* convert a TextureFilter to a glow filter */

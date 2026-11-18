@@ -1,4 +1,3 @@
-
 use glam::{ivec2, IVec2, IVec3};
 use itertools::Itertools;
 use log::{info, warn};

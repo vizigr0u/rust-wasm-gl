@@ -59,7 +59,10 @@ mod tests {
         let mut g = GeneratorV0::new(Rng::with_seed(1));
         // far above terrain: all air -> must be flagged empty
         let air = g.generate(IVec3::new(0, 2, 0).into());
-        assert_eq!(air.is_empty(), air.blocks.iter().all(|b| *b == BlockType::Empty));
+        assert_eq!(
+            air.is_empty(),
+            air.blocks.iter().all(|b| *b == BlockType::Empty)
+        );
         // terrain chunk: must be non-empty
         let ground = g.generate(IVec3::new(0, -1, 0).into());
         assert!(ground.blocks.iter().any(|b| *b != BlockType::Empty));

@@ -1,4 +1,3 @@
-
 use glam::{Mat4, Quat, Vec3};
 
 use crate::core::{HandleInputs, InputEventType, InputState, Time};
@@ -170,18 +169,17 @@ impl HandleInputs for Camera {
         // }
         for e in inputs.get_events() {
             match e {
-                InputEventType::MouseMove(e)
-                    if e.buttons() % 2 == 1 => {
-                        let speed = self.mouse_sensitivity;
-                        let yaw = -(e.movement_x() as f32) * speed.to_radians();
-                        let pitch = -(e.movement_y() as f32) * speed.to_radians();
+                InputEventType::MouseMove(e) if e.buttons() % 2 == 1 => {
+                    let speed = self.mouse_sensitivity;
+                    let yaw = -(e.movement_x() as f32) * speed.to_radians();
+                    let pitch = -(e.movement_y() as f32) * speed.to_radians();
 
-                        let yaw_rotation = Quat::from_rotation_y(yaw);
-                        // Yaw first, then pitch with the elevation clamped so the
-                        // camera never reaches or crosses the pole.
-                        let yawed = yaw_rotation * self.target_offset;
-                        self.target_offset = apply_pitch(yawed, pitch);
-                    }
+                    let yaw_rotation = Quat::from_rotation_y(yaw);
+                    // Yaw first, then pitch with the elevation clamped so the
+                    // camera never reaches or crosses the pole.
+                    let yawed = yaw_rotation * self.target_offset;
+                    self.target_offset = apply_pitch(yawed, pitch);
+                }
                 InputEventType::MouseWheel(e) => {
                     let factor = if e.delta_y() >= 0.0 {
                         WHEEL_ZOOM_FACTOR

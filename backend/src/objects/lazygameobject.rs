@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-
 use crate::{
     core::Time,
     graphics::{Camera, MeshRenderer},
@@ -35,7 +34,10 @@ where
         if self.gameobject.is_none() {
             self.load(gl);
         }
-        self.gameobject.as_ref().unwrap().render(gl, camera, player_chunk);
+        self.gameobject
+            .as_ref()
+            .unwrap()
+            .render(gl, camera, player_chunk);
     }
 
     pub fn load(&mut self, gl: &glow::Context) {

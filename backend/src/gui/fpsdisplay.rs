@@ -115,7 +115,8 @@ impl FpsDisplay {
             } else {
                 self.tick_index.max(1)
             };
-            self.avg_times = self.tick_times[..count].iter().sum::<PerformanceTime>() / count as f64;
+            self.avg_times =
+                self.tick_times[..count].iter().sum::<PerformanceTime>() / count as f64;
         }
     }
     pub fn get_debug_info(&self) -> String {
@@ -158,42 +159,39 @@ impl FpsDisplay {
                     let charts = (0..CHART_SIZE)
                         .map(|i| {
                             let avg: PerformanceTime = (0..AVG_SIZE)
-                                .map(|j| self.tick_times[(i * AVG_SIZE + j + self.tick_index) % BUFFER_SIZE])
+                                .map(|j| {
+                                    self.tick_times
+                                        [(i * AVG_SIZE + j + self.tick_index) % BUFFER_SIZE]
+                                })
                                 .sum::<PerformanceTime>()
                                 / AVG_SIZE as f64;
                             avg
                         })
                         .collect::<Vec<_>>();
-                    plot_ui.line(
-                        Line::new(
-                            format!("script: {:.2}ms", self.avg_times.update_time),
-                            charts
-                                .iter()
-                                .enumerate()
-                                .map(|(i, &v)| [i as f64, v.update_time])
-                                .collect::<Vec<_>>(),
-                        ),
-                    );
-                    plot_ui.line(
-                        Line::new(
-                            format!("render: {:.2}ms", self.avg_times.render_time),
-                            charts
-                                .iter()
-                                .enumerate()
-                                .map(|(i, &v)| [i as f64, v.render_time])
-                                .collect::<Vec<_>>(),
-                        ),
-                    );
-                    plot_ui.line(
-                        Line::new(
-                            format!("UI: {:.2}ms", self.avg_times.get_ui_time()),
-                            charts
-                                .iter()
-                                .enumerate()
-                                .map(|(i, &v)| [i as f64, v.get_ui_time()])
-                                .collect::<Vec<_>>(),
-                        ),
-                    );
+                    plot_ui.line(Line::new(
+                        format!("script: {:.2}ms", self.avg_times.update_time),
+                        charts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &v)| [i as f64, v.update_time])
+                            .collect::<Vec<_>>(),
+                    ));
+                    plot_ui.line(Line::new(
+                        format!("render: {:.2}ms", self.avg_times.render_time),
+                        charts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &v)| [i as f64, v.render_time])
+                            .collect::<Vec<_>>(),
+                    ));
+                    plot_ui.line(Line::new(
+                        format!("UI: {:.2}ms", self.avg_times.get_ui_time()),
+                        charts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &v)| [i as f64, v.get_ui_time()])
+                            .collect::<Vec<_>>(),
+                    ));
                 });
         }
     }
