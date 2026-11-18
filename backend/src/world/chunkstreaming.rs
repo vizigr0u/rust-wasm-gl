@@ -131,8 +131,9 @@ where
             }
             for _ in 0..PAGE_LOAD_PER_FRAME {
                 if let Some(page) = self.pages_to_load.pop() {
-                    self.load_page(page);
-                    new_pages_loaded += 1;
+                    if self.load_page(page) {
+                        new_pages_loaded += 1;
+                    }
                 }
             }
         }
@@ -151,7 +152,9 @@ where
                 )
                 .into()
             })
-            .filter(|index| self.get_page_ref(*index).is_none())
+            .filter(|index| {
+                self.get_page_ref(*index).is_none() && !self.pages_to_load.contains(index)
+            })
             .collect();
         self.pages_to_load.extend(new_pages_to_load);
         // sort with best last so that we can pop
@@ -164,19 +167,16 @@ where
 
     fn free_some_pages(&mut self, num_pages: usize, player_chunk_pos: ChunkPos) {
         // Iterate over the loaded_chunk_pages vector in reverse to remove items while iterating
-        let player_chunk_pos_vec = player_chunk_pos.as_vec();
         let indices: Vec<usize> = self
             .loaded_chunk_pages
             .iter()
             .map(|page| {
                 page.position
                     .get_center_chunk_pos()
-                    .get_center_block_pos()
-                    .as_vec()
-                    .distance_squared(player_chunk_pos_vec)
+                    .distance_squared(player_chunk_pos)
             })
             .enumerate()
-            .sorted_by_key(|(_, pos_a)| *pos_a)
+            .sorted_by_key(|(_, dist)| std::cmp::Reverse(*dist))
             .take(num_pages)
             .map(|(index, _)| index)
             .sorted_by_key(|i| -(*i as i32))
@@ -215,15 +215,19 @@ where
             .find(|p| p.position == page_index)
     }
 
-    fn load_page(&mut self, page_index: PagePos)
+    fn load_page(&mut self, page_index: PagePos) -> bool
     where
         G: WorldGenerator,
     {
-        let mut page = self.get_pool_page();
+        let Some(mut page) = self.get_pool_page() else {
+            warn!("Streaming: pool empty, cannot load page {:?}", page_index);
+            return false;
+        };
         page.fill_from(&mut self.generator, page_index);
         self.loaded_chunk_pages.push(page);
 
         self.update_bounds();
+        true
     }
 
     fn update_bounds(&mut self) {
@@ -235,7 +239,7 @@ where
         info!("Streaming: new content bounds: {:?}", self.content_bounds);
     }
 
-    fn get_pool_page(&mut self) -> ChunkPage {
-        self.chunk_page_pool.pop().expect("Pool is empty")
+    fn get_pool_page(&mut self) -> Option<ChunkPage> {
+        self.chunk_page_pool.pop()
     }
 }
