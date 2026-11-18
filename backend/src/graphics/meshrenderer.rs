@@ -13,8 +13,15 @@ use super::ShaderProgram;
 #[derive(Debug)]
 enum DisplayData {
     None,
-    Array(Option<WebVertexArrayKey>, usize),
-    Elements(Option<WebVertexArrayKey>, Option<WebBufferKey>, usize),
+    /// vao, vertex buffer, vertex count
+    Array(Option<WebVertexArrayKey>, WebBufferKey, usize),
+    /// vao, vertex buffer, index buffer, index count
+    Elements(
+        Option<WebVertexArrayKey>,
+        WebBufferKey,
+        Option<WebBufferKey>,
+        usize,
+    ),
 }
 
 const DEFAULT_FLAGS: [GlRenderFlags; 3] = [
@@ -55,7 +62,33 @@ impl MeshRenderer {
         result
     }
 
+    /// Deletes the GL objects of the current mesh, if any.
+    fn free_gl(&mut self, gl: &glow::Context) {
+        let old = std::mem::replace(&mut self.display_data, DisplayData::None);
+        unsafe {
+            match old {
+                DisplayData::None => {}
+                DisplayData::Array(vao, vertices, _) => {
+                    if let Some(vao) = vao {
+                        gl.delete_vertex_array(vao);
+                    }
+                    gl.delete_buffer(vertices);
+                }
+                DisplayData::Elements(vao, vertices, indices, _) => {
+                    if let Some(vao) = vao {
+                        gl.delete_vertex_array(vao);
+                    }
+                    gl.delete_buffer(vertices);
+                    if let Some(indices) = indices {
+                        gl.delete_buffer(indices);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn set_mesh(&mut self, gl: &glow::Context, mesh: Rc<Mesh>) -> Result<(), String> {
+        self.free_gl(gl);
         unsafe {
             let vao = Some(gl.create_vertex_array()?);
             gl.bind_vertex_array(vao);
@@ -106,7 +139,7 @@ impl MeshRenderer {
                     //     mesh.primitive_type,
                     //     mesh.get_data().len() / layout_size
                     // );
-                    DisplayData::Array(vao, mesh.get_data().len() / layout_size)
+                    DisplayData::Array(vao, buffer, mesh.get_data().len() / layout_size)
                 }
                 Some(indices) => {
                     /* create vbo out of mesh indices */
@@ -120,7 +153,7 @@ impl MeshRenderer {
 
                     // info!("created Mesh with {} indices.", indices.len());
 
-                    DisplayData::Elements(vao, vbo, indices.len() as _)
+                    DisplayData::Elements(vao, buffer, vbo, indices.len() as _)
                 }
             };
             self.primitive_type = mesh.primitive_type;
@@ -133,13 +166,13 @@ impl MeshRenderer {
         self.set_gl_flags(gl);
         match self.display_data {
             DisplayData::None => {}
-            DisplayData::Array(vao, vertex_count) => unsafe {
+            DisplayData::Array(vao, _, vertex_count) => unsafe {
                 self.get_program().gl_use(gl);
                 gl.bind_vertex_array(vao);
                 gl.draw_arrays(self.primitive_type as _, 0, vertex_count as _);
                 gl.bind_vertex_array(None);
             },
-            DisplayData::Elements(vao, vbo, count) => unsafe {
+            DisplayData::Elements(vao, _, vbo, count) => unsafe {
                 self.get_program().gl_use(gl);
                 gl.bind_vertex_array(vao);
                 gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, vbo);
