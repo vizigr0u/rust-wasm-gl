@@ -147,33 +147,24 @@ where
         let chunks_to_load: Vec<ChunkPos> = self
             .chunks_to_load
             .iter()
+            .filter(|c| !self.chunks.contains_key(c) && self.streamer.is_chunked_streamed(**c))
             .take(MAX_LOADS_PER_FRAME)
             .copied()
             .collect();
-        let chunks_count_to_load = chunks_to_load.len();
-        // info!(
-        //     "World Graphics: gl loading {} chunks this frame",
-        //     chunks_count_to_load
-        // );
+        let mut loaded_count = 0;
 
-        if chunks_count_to_load > 0 {
-            for chunk_pos in chunks_to_load {
-                if !self.chunks.contains_key(&chunk_pos) {
-                    let chunk = match self.streamer.get_chunk(chunk_pos) {
-                        None => None,
-                        Some(chunk) => {
-                            let draw_data = ChunkDrawData::load(chunk).expect("can't load mesh");
-                            self.loaded_quads += draw_data.vertex_data.len();
-                            Some(draw_data)
-                        }
-                    };
-                    self.chunks.insert(chunk_pos, chunk);
-                }
+        for chunk_pos in chunks_to_load {
+            // Page may have been freed: leave it queued, never insert None.
+            if let Some(chunk) = self.streamer.get_chunk(chunk_pos) {
+                let draw_data = ChunkDrawData::load(chunk).expect("can't load mesh");
+                self.loaded_quads += draw_data.vertex_data.len();
+                self.chunks.insert(chunk_pos, Some(draw_data));
+                loaded_count += 1;
             }
-            self.chunks_to_load.retain(|c| !self.chunks.contains_key(c));
         }
+        self.chunks_to_load.retain(|c| !self.chunks.contains_key(c));
 
-        chunks_count_to_load
+        loaded_count
     }
 
     pub fn on_chunk_changed(&mut self, new_chunk_pos: ChunkPos, _gl: &glow::Context) {
