@@ -164,7 +164,7 @@ where
             // Page may have been freed: leave it queued, never insert None.
             if let Some(chunk) = self.streamer.get_chunk(chunk_pos) {
                 let draw_data = ChunkDrawData::load(chunk).expect("can't load mesh");
-                self.loaded_quads += draw_data.vertex_data.len();
+                self.loaded_quads += draw_data.quad_count();
                 self.chunks.insert(chunk_pos, Some(draw_data));
                 loaded_count += 1;
             }
@@ -202,7 +202,7 @@ where
                         .remove(&chunk_pos)
                         .expect("added inexistent chunk")
                         .expect("added empty chunk");
-                    self.loaded_quads -= draw_data.vertex_data.len();
+                    self.loaded_quads -= draw_data.quad_count();
                 }
             }
         }

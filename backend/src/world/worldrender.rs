@@ -39,6 +39,10 @@ pub struct WorldRenderData {
 }
 
 impl ChunkDrawData {
+    pub fn quad_count(&self) -> usize {
+        self.vertex_data.iter().map(Vec::len).sum()
+    }
+
     pub fn load(chunk: &Chunk) -> Result<Self, String> {
         let vertex_data = chunk.to_vertex_data();
         Ok(Self { vertex_data })
