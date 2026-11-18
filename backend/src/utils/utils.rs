@@ -1,11 +1,7 @@
 use glow::HasContext;
 
 use wasm_bindgen::prelude::*;
-use wasm_bindgen_futures::JsFuture;
-use web_sys::{
-    Document, Performance, Request, RequestInit, RequestMode, Response, WebGl2RenderingContext,
-    Window,
-};
+use web_sys::{Document, Performance, WebGl2RenderingContext, Window};
 
 pub fn set_panic_hook() {
     // When the `console_error_panic_hook` feature is enabled, we can call the
@@ -29,7 +25,7 @@ pub fn get_document() -> Result<Document, String> {
 pub fn get_performance() -> Result<Performance, String> {
     get_window()?
         .performance()
-        .ok_or("Can't get document".into())
+        .ok_or("Can't get performance".into())
 }
 
 pub fn get_canvas() -> Result<web_sys::HtmlCanvasElement, JsValue> {
@@ -44,7 +40,7 @@ pub fn get_canvas() -> Result<web_sys::HtmlCanvasElement, JsValue> {
 pub fn get_web_sys_context() -> Result<WebGl2RenderingContext, JsValue> {
     let context = get_canvas()?
         .get_context("webgl2")?
-        .expect("Unable to get WebGl2 context from canvas.")
+        .ok_or("Unable to get WebGl2 context from canvas")?
         .dyn_into::<WebGl2RenderingContext>()?;
 
     Ok(context)
@@ -52,34 +48,6 @@ pub fn get_web_sys_context() -> Result<WebGl2RenderingContext, JsValue> {
 
 pub fn get_webgl2_context() -> Result<glow::Context, JsValue> {
     Ok(glow::Context::from_webgl2_context(get_web_sys_context()?))
-}
-
-#[wasm_bindgen]
-pub async fn run(repo: String) -> Result<JsValue, JsValue> {
-    let mut opts = RequestInit::new();
-    opts.method("GET");
-    opts.mode(RequestMode::Cors);
-
-    let url = format!("https://api.github.com/repos/{}/branches/master", repo);
-
-    let request = Request::new_with_str_and_init(&url, &opts)?;
-
-    request
-        .headers()
-        .set("Accept", "application/vnd.github.v3+json")?;
-
-    let window = web_sys::window().unwrap();
-    let resp_value = JsFuture::from(window.fetch_with_request(&request)).await?;
-
-    // `resp_value` is a `Response` object.
-    assert!(resp_value.is_instance_of::<Response>());
-    let resp: Response = resp_value.dyn_into().unwrap();
-
-    // Convert this other `Promise` into a rust `Future`.
-    let json = JsFuture::from(resp.json()?).await?;
-
-    // Send the JSON response back to JS.
-    Ok(json)
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
