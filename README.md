@@ -28,14 +28,14 @@ Web page : just a canvas, the game engine for now just shows img containing text
 
 ```bash
 git clone https://github.com/vizigr0u/rust-wasm-gl
-yarn install
+pnpm install
 
 # compile Rust into WASM
-yarn wasm
+pnpm wasm
 
 # start local web server
-yarn dev
+pnpm dev
 
 # or build
-yarn build
+pnpm build
 ```

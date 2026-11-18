@@ -1,3 +1,4 @@
+#[path = "../../backend/src/world/position.rs"]
 mod position;
 
 use position::*;

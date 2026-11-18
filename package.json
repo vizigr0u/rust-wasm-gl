@@ -8,8 +8,8 @@
     "test": "cd ./backend-tests && cargo test",
     "wasm-release": "wasm-pack build --release ./backend --target web",
     "debug-wasm": "wasm-bindgen --keep-debug --out-dir ./backend/pkg ./backend/target/wasm32-unknown-unknown/debug/backend.wasm --target web",
-    "dev": "yarn wasm && vite",
-    "build": "tsc && vite build",
+    "dev": "pnpm wasm && vite",
+    "build": "pnpm wasm-release && tsc && vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
