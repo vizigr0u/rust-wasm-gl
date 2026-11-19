@@ -1,100 +1,54 @@
-use std::rc::Rc;
-
 use glam::Vec3;
-use log::info;
-
-use super::{GameObject, LazyRenderGameObject, MakeRenderer};
 
 use crate::{
     core::{HandleInputs, Time},
-    graphics::{Camera, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
-    objects::gameobject::Transform,
-    shader_def, utils,
-    world::{ChunkPos, WorldPos},
+    world::WorldPos,
 };
 
 const MAX_SPEED: f32 = 10.0;
-const PLAYER_SCALE: f32 = 0.5;
+/// Clamp dt (ms) so a hidden tab doesn't teleport the player.
+const MAX_DELTA_MS: f32 = 100.0;
+pub const PLAYER_SCALE: f32 = 0.5;
 
+/// Plain simulation data. No GL, available from the first frame.
 #[derive(Debug, Default)]
-pub struct CreatePlayerRenderer {
-    origin: WorldPos,
-}
-
-impl MakeRenderer for CreatePlayerRenderer {
-    fn make_renderer(&self, gl: &glow::Context) -> Result<Rc<MeshRenderer>, String> {
-        let program = compile_shader(gl)?;
-        let mut renderer = MeshRenderer::new(&program);
-        let mesh = utils::make_cube();
-        renderer.set_mesh(gl, Rc::new(mesh))?;
-        Ok(Rc::new(renderer))
-    }
-
-    fn init_gameobject(&self, gameobject: &mut GameObject) {
-        gameobject.set_position(self.origin);
-        gameobject.set_scale(Vec3::ONE * PLAYER_SCALE);
-        info!("Created Player at {:?}", self.origin);
-    }
-}
-
-#[derive(Debug)]
-pub struct Player(LazyRenderGameObject<CreatePlayerRenderer>);
-
-impl Default for Player {
-    fn default() -> Self {
-        Player(LazyRenderGameObject {
-            gameobject: None,
-            renderer_creator: Default::default(),
-        })
-    }
+pub struct Player {
+    position: WorldPos,
+    velocity: Vec3,
 }
 
 impl Player {
     pub fn new(origin: Vec3) -> Player {
-        Player(LazyRenderGameObject {
-            gameobject: None,
-            renderer_creator: CreatePlayerRenderer {
-                origin: WorldPos::ZERO + origin,
-            },
-        })
-    }
-
-    // pub fn get_gameobject(&self) -> &LazyRenderGameObject<CreatePlayerRenderer> {
-    //     &self.0
-    // }
-
-    pub fn update(&mut self, time: &Time) {
-        self.0.update(time);
-    }
-
-    pub fn get_screen_position(&self) -> Vec3 {
-        match &self.0.gameobject {
-            Some(go) => go.get_position().offset(),
-            None => Vec3::ZERO,
+        Player {
+            position: WorldPos::ZERO + origin,
+            velocity: Vec3::ZERO,
         }
     }
 
-    pub fn render(&mut self, gl: &glow::Context, camera: &Camera, player_chunk: ChunkPos) {
-        self.0.render_lazy(gl, camera, player_chunk);
+    pub fn update(&mut self, time: &Time) {
+        if time.delta_time() > 0.0 && self.velocity != Vec3::ZERO {
+            let dt = (time.delta_time() as f32).min(MAX_DELTA_MS);
+            self.position += self.velocity * dt * 0.001;
+        }
+    }
+
+    /// Chunk-local offset of the player.
+    pub fn get_screen_position(&self) -> Vec3 {
+        self.position.offset()
     }
 
     pub fn get_position(&self) -> WorldPos {
-        match &self.0.gameobject {
-            Some(go) => go.get_position(),
-            None => WorldPos::ZERO,
-        }
+        self.position
     }
 }
 
 impl HandleInputs for Player {
     fn handle_inputs(&mut self, inputs: &crate::core::InputState) {
-        if let Some(go) = self.0.gameobject.as_mut() {
-            let axis = |pos: &str, neg: &str| {
-                inputs.is_key_down(pos) as i32 as f32 - inputs.is_key_down(neg) as i32 as f32
-            };
-            let velocity = Vec3::new(axis("KeyW", "KeyS"), 0.0, axis("KeyD", "KeyA"));
-            go.set_velocity(velocity.normalize_or_zero() * MAX_SPEED);
-        }
+        let axis = |pos: &str, neg: &str| {
+            inputs.is_key_down(pos) as i32 as f32 - inputs.is_key_down(neg) as i32 as f32
+        };
+        let velocity = Vec3::new(axis("KeyW", "KeyS"), 0.0, axis("KeyD", "KeyA"));
+        self.velocity = velocity.normalize_or_zero() * MAX_SPEED;
     }
 }
 
@@ -107,27 +61,5 @@ mod tests {
         let v = Vec3::new(1.0, 0.0, 1.0).normalize_or_zero() * MAX_SPEED;
         assert!((v.length() - MAX_SPEED).abs() < 1e-4);
         assert_eq!(Vec3::ZERO.normalize_or_zero(), Vec3::ZERO);
-    }
-}
-
-fn compile_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
-    unsafe {
-        let program = shader_def!(
-            "cube.vert",
-            "cube.frag",
-            vec!(
-                (VertexAttrType::Position, "position"),
-                (VertexAttrType::Normal, "normal"),
-                (VertexAttrType::UVs, "uv"),
-                (VertexAttrType::Depth, "depth"),
-            ),
-            vec!(
-                (UniformTypes::ModelMatrix, "model"),
-                (UniformTypes::ViewMatrix, "view"),
-                (UniformTypes::ProjMatrix, "projection"),
-            )
-        )
-        .compile(gl)?;
-        Ok(Rc::new(program))
     }
 }

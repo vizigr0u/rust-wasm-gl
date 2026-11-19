@@ -9,7 +9,7 @@ use wasm_bindgen::JsValue;
 use crate::{
     graphics::{Camera, TextureDef, TextureLoader, TextureType},
     gui::{EguiBackend, FpsDisplay},
-    objects::{Gizmo, Player},
+    objects::{ObjectRenderers, Player},
     utils::performance_now,
     world::{GeneratorV0, World},
 };
@@ -45,8 +45,8 @@ pub struct Game {
     time: Time,
     is_paused: bool,
     gui_state: GuiState,
-    gizmo: Gizmo,
     player: Player,
+    object_renderers: Option<ObjectRenderers>,
 
     egui: Option<EguiBackend>,
     fps_display: FpsDisplay,
@@ -93,7 +93,7 @@ impl Game {
             time: Time::default(),
             egui: None,
             gui_state: GuiState::default(),
-            gizmo: Gizmo::new(Vec3::ZERO, 10.0),
+            object_renderers: None,
             player: Player::new(vec3(0.0, 16.0, 0.0)),
             fps_display: FpsDisplay::new(),
         };
@@ -131,6 +131,7 @@ impl Game {
         self.world
             .setup_graphics(gl, self.loaded_textures[0].clone())?;
         self.egui = Some(EguiBackend::new(gl));
+        self.object_renderers = Some(ObjectRenderers::new(gl)?);
 
         Ok(State::Running)
     }
@@ -187,7 +188,6 @@ impl Game {
             self.player.update(&self.time);
             let player_chunk_pos = self.player.get_position().chunk_pos();
             self.world.update(gl, &self.time, player_chunk_pos)?;
-            self.gizmo.update(&self.time);
         }
 
         self.camera.target = self.player.get_screen_position();
@@ -265,8 +265,10 @@ impl Game {
         self.world.render(gl, &self.camera);
 
         let player_chunk = self.player.get_position().chunk_pos();
-        self.player.render(gl, &self.camera, player_chunk);
-        self.gizmo.render_lazy(gl, &self.camera, player_chunk);
+        if let Some(r) = &self.object_renderers {
+            r.draw_player(gl, &self.camera, &self.player, player_chunk);
+            r.draw_gizmo(gl, &self.camera, player_chunk);
+        }
 
         Ok(())
     }
