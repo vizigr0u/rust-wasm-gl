@@ -1,10 +1,8 @@
 import { defineConfig } from '@playwright/test';
 
-const backend = process.env.BACKEND ?? 'gl';
 const tier = process.env.PIXEL_TIER ?? 'strict';
 const PORT = 4173;
 
-const glArgs = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 const webgpuArgs = [
   '--enable-unsafe-webgpu',
   '--enable-features=Vulkan',
@@ -15,8 +13,7 @@ const webgpuArgs = [
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  // goldens live per backend; loose mode on webgpu compares against gl/
-  snapshotPathTemplate: `{testDir}/__screenshots__/${process.env.GOLDEN_DIR ?? backend}/{arg}{ext}`,
+  snapshotPathTemplate: `{testDir}/__screenshots__/${process.env.GOLDEN_DIR ?? 'webgpu'}/{arg}{ext}`,
   outputDir: '../test-results',
   retries: 2,
   fullyParallel: true,
@@ -34,7 +31,7 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     viewport: { width: 800, height: 600 },
     deviceScaleFactor: 1,
-    launchOptions: { args: backend === 'webgpu' ? webgpuArgs : glArgs },
+    launchOptions: { args: webgpuArgs },
   },
   webServer: {
     // build wasm (test-hooks) + bundle, then serve

@@ -1,6 +1,6 @@
 ## What is this?
 
-trying to make a little game in Rust WASM + WebGL2.
+trying to make a little game in Rust WASM + WebGPU.
 
 uses vite + Typescript (for some reason all rust WASM doc uses webpack but I am stubborn I wanted Vite)
 
@@ -54,7 +54,7 @@ cargo insta test -p voxel-core --review
 
 ### Pixel tests (Playwright)
 
-Deterministic scenes are rendered in headless Chromium (SwiftShader) and compared to golden PNGs in `e2e/__screenshots__/<backend>/`. The WASM is built with the `test-hooks` cargo feature, which exposes `test_start`, `test_step`, `test_is_settled`, `test_set_camera` and `test_compile_all_shaders` instead of running the rAF loop.
+Deterministic scenes are rendered in headless Chromium (SwiftShader) and compared to golden PNGs in `e2e/__screenshots__/webgpu/`. The WASM is built with the `test-hooks` cargo feature, which exposes `test_start`, `test_step`, `test_is_settled`, `test_set_camera` and `test_compile_all_shaders` instead of running the rAF loop.
 
 ```bash
 pnpm exec playwright install --with-deps chromium   # once
@@ -71,9 +71,8 @@ pnpm wasm:test
 
 Env vars:
 
-- `BACKEND=gl|webgpu`: picks Chromium flags and the golden dir (default `gl`). Only `gl` goldens exist so far.
 - `PIXEL_TIER=strict|loose`: strict is `threshold 0.1` and `0.1%` differing pixels; loose allows 2%.
-- `GOLDEN_DIR=gl`: compare a `webgpu` run against the GL goldens.
+- `GOLDEN_DIR=webgpu`: golden dir (default).
 
 On failure, diffs and traces land in `test-results/` (CI uploads it as an artifact).
 
@@ -82,7 +81,7 @@ On failure, diffs and traces land in `test-results/` (CI uploads it as an artifa
 In `backend/Cargo.toml`:
 
 - `test-hooks`: deterministic scene driver for the e2e tests. Never enable it in release builds.
-- `webgpu`: not there yet (planned wgpu renderer, see `.claude/plan-wgpu-migration.md`). GL is the only backend today.
+- wgpu (WebGPU) is the only renderer; the WebGL2 backend was removed.
 
 ### Git hook
 
@@ -94,4 +93,4 @@ git config core.hooksPath .githooks
 
 ### CI
 
-`.github/workflows/ci.yaml`: `rust` job (fmt, test, clippy) then `e2e` job (Playwright pixel tests, GL only).
+`.github/workflows/ci.yaml`: `rust` job (fmt, test, clippy) then `e2e` job (Playwright pixel tests, WebGPU).

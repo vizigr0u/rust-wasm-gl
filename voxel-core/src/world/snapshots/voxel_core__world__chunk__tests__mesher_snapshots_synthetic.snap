@@ -14,14 +14,14 @@ expression: out
     hash: cbf29ce484222325
 - - full_stone
   - per_side:
-      - 256
-      - 256
-      - 256
-      - 256
-      - 256
-      - 256
-    total: 1536
-    hash: 984d4f88e8bbfce5
+      - 1
+      - 1
+      - 1
+      - 1
+      - 1
+      - 1
+    total: 6
+    hash: 02306abfd955bec7
 - - single_block
   - per_side:
       - 1
@@ -31,7 +31,7 @@ expression: out
       - 1
       - 1
     total: 6
-    hash: 893619e16bc7a94a
+    hash: 5bab7c00ab67cba5
 - - checkerboard
   - per_side:
       - 2048
@@ -41,4 +41,4 @@ expression: out
       - 2048
       - 2048
     total: 12288
-    hash: 9844dfcd295f2d25
+    hash: f982dc86ec444425

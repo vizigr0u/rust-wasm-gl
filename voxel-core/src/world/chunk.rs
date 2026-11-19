@@ -1,5 +1,6 @@
 use fastrand::Rng;
 use glam::{ivec3, U16Vec3, Vec3};
+#[cfg(test)]
 use itertools::iproduct;
 
 use super::Side;
@@ -174,61 +175,100 @@ impl Chunk {
         }
     }
 
-    const TEST_ONE_CUBE: bool = false;
-
-    const NO_DATA: [Vec<i32>; 6] = [
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-    ];
-
+    /// Greedy-meshed quads, one word per quad, grouped by `Side` (see `pack_quad`).
     pub fn to_vertex_data(&self, neighbours: &Neighbours) -> [Vec<i32>; 6] {
-        let mut result = Self::NO_DATA.clone();
+        let mut result: [Vec<i32>; 6] = Default::default();
         if self.is_empty() {
             return result;
         }
-        if Self::TEST_ONE_CUBE {
-            let (top, side, bottom) = BlockType::Grass.into();
-            let offset = U16Vec3::new(0, 0, 0);
-            add_side_data(&mut result, Side::Top, top, offset);
-            add_side_data(&mut result, Side::Bottom, bottom, offset);
-            add_side_data(&mut result, Side::Right, side, offset);
-            add_side_data(&mut result, Side::Left, side, offset);
-            add_side_data(&mut result, Side::Front, side, offset);
-            add_side_data(&mut result, Side::Back, side, offset);
-            return result;
-        }
-        // (side, neighbour direction, is top/bottom)
-        let faces = [
-            (Side::Top, ivec3(0, 1, 0)),
-            (Side::Bottom, ivec3(0, -1, 0)),
-            (Side::Right, ivec3(1, 0, 0)),
-            (Side::Left, ivec3(-1, 0, 0)),
-            (Side::Front, ivec3(0, 0, 1)),
-            (Side::Back, ivec3(0, 0, -1)),
-        ];
-        for (x, y, z) in iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE) {
-            let offset = U16Vec3::new(x as _, y as _, z as _);
-            let (top, side, bottom) = match self.get_block(offset) {
-                BlockType::Empty => continue,
-                t => t.into(),
-            };
-            for (face, dir) in faces {
-                let (nx, ny, nz) = (x as i32 + dir.x, y as i32 + dir.y, z as i32 + dir.z);
-                if self.block_with_neighbours(neighbours, nx, ny, nz) == BlockType::Empty {
-                    let tex = match face {
-                        Side::Top => top,
-                        Side::Bottom => bottom,
-                        _ => side,
-                    };
-                    add_side_data(&mut result, face, tex, offset);
+        const N: usize = CHUNK_SIZE;
+        for side in SIDE_ORDER {
+            let dir = SIDE_DIRS[side as usize];
+            for slice in 0..N {
+                // mask[j][i]: texture of the exposed face at (a=i, b=j), if any
+                let mut mask = [[None::<u8>; N]; N];
+                for (j, row) in mask.iter_mut().enumerate() {
+                    for (i, cell) in row.iter_mut().enumerate() {
+                        let v = side_cell(side, slice, i, j);
+                        let block = self.get_block(U16Vec3::new(v.x as _, v.y as _, v.z as _));
+                        if block == BlockType::Empty {
+                            continue;
+                        }
+                        let n = v + dir;
+                        if self.block_with_neighbours(neighbours, n.x, n.y, n.z) == BlockType::Empty
+                        {
+                            *cell = Some(side_texture(block, side) as u8);
+                        }
+                    }
+                }
+                for j in 0..N {
+                    for i in 0..N {
+                        let Some(tex) = mask[j][i] else { continue };
+                        let mut w = 1;
+                        while i + w < N && mask[j][i + w] == Some(tex) {
+                            w += 1;
+                        }
+                        let mut h = 1;
+                        while j + h < N && (i..i + w).all(|k| mask[j + h][k] == Some(tex)) {
+                            h += 1;
+                        }
+                        for row in &mut mask[j..j + h] {
+                            for cell in &mut row[i..i + w] {
+                                *cell = None;
+                            }
+                        }
+                        let v = side_cell(side, slice, i, j);
+                        result[side as usize].push(pack_quad(
+                            U16Vec3::new(v.x as _, v.y as _, v.z as _),
+                            tex as i32,
+                            w as u32,
+                            h as u32,
+                        ));
+                    }
                 }
             }
         }
         result
+    }
+}
+
+const SIDE_ORDER: [Side; 6] = [
+    Side::Top,
+    Side::Bottom,
+    Side::Front,
+    Side::Back,
+    Side::Right,
+    Side::Left,
+];
+
+/// Neighbour direction per `Side as usize`.
+pub const SIDE_DIRS: [glam::IVec3; 6] = [
+    ivec3(0, 1, 0),
+    ivec3(0, -1, 0),
+    ivec3(0, 0, 1),
+    ivec3(0, 0, -1),
+    ivec3(1, 0, 0),
+    ivec3(-1, 0, 0),
+];
+
+/// Voxel at (`a`=i, `b`=j) of slice `s` along the side's normal axis.
+/// `a` is the quad's width axis, `b` its height axis (see chunk.wgsl).
+/// Top/Bottom: a=x b=z. Front/Back: a=x b=y. Right/Left: a=y b=z.
+pub fn side_cell(side: Side, s: usize, i: usize, j: usize) -> glam::IVec3 {
+    let (s, i, j) = (s as i32, i as i32, j as i32);
+    match side {
+        Side::Top | Side::Bottom => ivec3(i, s, j),
+        Side::Front | Side::Back => ivec3(i, j, s),
+        Side::Right | Side::Left => ivec3(s, i, j),
+    }
+}
+
+fn side_texture(block: BlockType, side: Side) -> BlockSideTexture {
+    let (top, sides, bottom) = block.into();
+    match side {
+        Side::Top => top,
+        Side::Bottom => bottom,
+        _ => sides,
     }
 }
 
@@ -304,15 +344,6 @@ pub fn make_base_quad_data() -> [Vec3; 4] {
     SIDE_VERTICES[Side::Bottom as usize].get_quad_triangles_strip()
 }
 
-fn add_side_data(
-    result: &mut [Vec<i32>; 6],
-    side: Side,
-    texture: BlockSideTexture,
-    offset: U16Vec3,
-) {
-    result[side as usize].push(make_side_quad_data(side, texture, offset));
-}
-
 fn pack_ivec_4bits(v: U16Vec3) -> i32 {
     debug_assert!(v.x < 16);
     debug_assert!(v.y < 16);
@@ -320,17 +351,60 @@ fn pack_ivec_4bits(v: U16Vec3) -> i32 {
     (v.x | v.y << 4 | v.z << 8) as i32
 }
 
+/// Greedy quad word. The side is NOT in the word (it is per draw range).
+/// 32 bit layout (`w`/`h` stored minus 1, 1..=16):
+/// ------hh hhwwwwtt tttt zzzzyyyyxxxx -> x[0..4) y[4..8) z[8..12) tex[12..18) w-1[18..22) h-1[22..26)
+/// `w` runs along the side's `a` axis, `h` along `b` (see `side_cell`).
+pub fn pack_quad(pos: U16Vec3, texture: i32, w: u32, h: u32) -> i32 {
+    debug_assert!((1..=16).contains(&w) && (1..=16).contains(&h));
+    pack_ivec_4bits(pos)
+        | (texture & 63) << 12
+        | ((w - 1) as i32 & 15) << 18
+        | ((h - 1) as i32 & 15) << 22
+}
+
+/// Inverse of `pack_quad`: (pos, texture, w, h).
+pub fn unpack_quad(word: i32) -> (U16Vec3, i32, u32, u32) {
+    let pos = U16Vec3::new(
+        (word & 15) as u16,
+        ((word >> 4) & 15) as u16,
+        ((word >> 8) & 15) as u16,
+    );
+    (
+        pos,
+        (word >> 12) & 63,
+        ((word >> 18) & 15) as u32 + 1,
+        ((word >> 22) & 15) as u32 + 1,
+    )
+}
+
+/// Legacy one-block quad word (side in bits 12..15, texture in 15..21), used by the GL backend.
 pub fn make_side_quad_data(side: Side, texture: BlockSideTexture, offset: U16Vec3) -> i32 {
     let side = side as i32;
     let texture = texture as i32;
-    let pos = offset;
-    let mut result: i32 = 0;
-    // 32 bit layout
-    // -------- ---ttttt tssszzzz yyyyxxxx
-    result |= pack_ivec_4bits(pos); // 12 bits zzzz yyyy xxxx
-    result |= (side & 7) << 12; // 3 bits sss
-    result |= (texture & 63) << 15; // 6 bits tttttt
-    result
+    pack_ivec_4bits(offset) | (side & 7) << 12 | (texture & 63) << 15
+}
+
+/// Expand a greedy quad into its unit-block quads, as legacy words (GL backend).
+pub fn expand_to_legacy_words(side: Side, word: i32) -> impl Iterator<Item = i32> {
+    let (pos, tex, w, h) = unpack_quad(word);
+    (0..h).flat_map(move |j| {
+        (0..w).map(move |i| {
+            let (da, db) = match side {
+                Side::Top | Side::Bottom | Side::Front | Side::Back => (
+                    glam::UVec3::X,
+                    if matches!(side, Side::Top | Side::Bottom) {
+                        glam::UVec3::Z
+                    } else {
+                        glam::UVec3::Y
+                    },
+                ),
+                Side::Right | Side::Left => (glam::UVec3::Y, glam::UVec3::Z),
+            };
+            let p = pos.as_uvec3() + da * i + db * j;
+            (p.x | p.y << 4 | p.z << 8) as i32 | (side as i32) << 12 | tex << 15
+        })
+    })
 }
 
 pub fn _generate_mesh_old<I>(sides: I) -> Vec<i32>
@@ -508,16 +582,16 @@ mod tests {
     #[test]
     fn mesher_culls_faces_against_neighbours() {
         let solid = Chunk::plain(BlockType::Stone);
-        // alone: 6 faces of 16x16
-        assert_eq!(quads(&solid, &NO_NEIGHBOURS), 6 * 256);
+        // alone: 6 faces, each greedy-merged into one 16x16 quad
+        assert_eq!(quads(&solid, &NO_NEIGHBOURS), 6);
         // solid neighbour on +X hides that whole face
         let mut n = NO_NEIGHBOURS;
         n[Side::Right as usize] = Some(&solid);
-        assert_eq!(quads(&solid, &n), 5 * 256);
+        assert_eq!(quads(&solid, &n), 5);
         // empty neighbour hides nothing
         let air = Chunk::empty();
         n[Side::Right as usize] = Some(&air);
-        assert_eq!(quads(&solid, &n), 6 * 256);
+        assert_eq!(quads(&solid, &n), 6);
     }
 
     // ---- A4 snapshots ----
@@ -526,105 +600,137 @@ mod tests {
     use crate::world::{GeneratorV0, WorldGenerator};
     use glam::IVec3;
 
-    fn unpack(w: i32) -> (U16Vec3, i32, i32) {
-        let pos = U16Vec3::new(
-            (w & 15) as u16,
-            ((w >> 4) & 15) as u16,
-            ((w >> 8) & 15) as u16,
-        );
-        (pos, (w >> 12) & 7, (w >> 15) & 63)
-    }
-
     #[test]
     fn packing_bit_layout_golden() {
         let cases = [
-            (Side::Top, BlockSideTexture::Unknown, U16Vec3::new(0, 0, 0)),
-            (
-                Side::Left,
-                BlockSideTexture::GrassTop,
-                U16Vec3::new(15, 15, 15),
-            ),
-            (
-                Side::Front,
-                BlockSideTexture::Cobblestone,
-                U16Vec3::new(1, 2, 3),
-            ),
-            (Side::Right, BlockSideTexture::Dirt2, U16Vec3::new(15, 0, 8)),
+            (U16Vec3::new(0, 0, 0), BlockSideTexture::Unknown, 1, 1),
+            (U16Vec3::new(15, 15, 15), BlockSideTexture::GrassTop, 1, 16),
+            (U16Vec3::new(1, 2, 3), BlockSideTexture::Cobblestone, 16, 1),
+            (U16Vec3::new(0, 0, 8), BlockSideTexture::Dirt2, 16, 16),
         ];
         let out: Vec<String> = cases
             .iter()
-            .map(|(s, t, o)| {
-                let w = make_side_quad_data(*s, *t, *o);
-                format!("{s:?}/{t:?}/{o} -> {w:#010x} ({w:#034b})")
+            .map(|(o, t, w, h)| {
+                let word = pack_quad(*o, *t as i32, *w, *h);
+                format!("{o}/{t:?}/{w}x{h} -> {word:#010x} ({word:#034b})")
             })
             .collect();
         insta::assert_yaml_snapshot!(out);
     }
 
     #[test]
-    fn packing_roundtrips_exhaustively() {
-        let sides = [
-            Side::Top,
-            Side::Bottom,
-            Side::Front,
-            Side::Back,
-            Side::Right,
-            Side::Left,
-        ];
-        let textures = [
-            BlockSideTexture::Unknown,
-            BlockSideTexture::GrassSide,
-            BlockSideTexture::Cobblestone,
-            BlockSideTexture::RedStone,
-            BlockSideTexture::TreeBark,
-            BlockSideTexture::Sand,
-            BlockSideTexture::Dirt,
-            BlockSideTexture::Pickaxe,
-            BlockSideTexture::TreeCenter,
-            BlockSideTexture::GrassTop,
-            BlockSideTexture::Coal,
-            BlockSideTexture::Lava,
-            BlockSideTexture::Diamond,
-            BlockSideTexture::Iron,
-            BlockSideTexture::Gold,
-            BlockSideTexture::Dirt2,
-        ];
+    fn packing_roundtrips() {
         for (x, y, z) in iproduct!(0..16u16, 0..16u16, 0..16u16) {
-            for s in sides {
-                for t in textures {
-                    let o = U16Vec3::new(x, y, z);
-                    let w = make_side_quad_data(s, t, o);
-                    assert!(w >= 0);
-                    assert_eq!(unpack(w), (o, s as i32, t as i32));
+            for (t, w, h) in [(0, 1, 1), (63, 16, 16), (9, 3, 7), (15, 16, 1)] {
+                let o = U16Vec3::new(x, y, z);
+                let word = pack_quad(o, t, w, h);
+                assert!(word >= 0);
+                assert_eq!(unpack_quad(word), (o, t, w, h));
+            }
+        }
+    }
+
+    /// Brute-force exposed faces: (side, cell) -> texture.
+    fn exposed(c: &Chunk, n: &Neighbours) -> std::collections::BTreeMap<(usize, [i32; 3]), i32> {
+        let mut m = std::collections::BTreeMap::new();
+        for (x, y, z) in iproduct!(0..16i32, 0..16i32, 0..16i32) {
+            let b = c.get_block(U16Vec3::new(x as _, y as _, z as _));
+            if b == BlockType::Empty {
+                continue;
+            }
+            for side in SIDE_ORDER {
+                let d = SIDE_DIRS[side as usize];
+                if c.block_with_neighbours(n, x + d.x, y + d.y, z + d.z) == BlockType::Empty {
+                    m.insert((side as usize, [x, y, z]), side_texture(b, side) as i32);
                 }
             }
         }
+        m
+    }
+
+    /// Union of the greedy quads == exposed faces, no overlap, same textures.
+    fn assert_quads_cover_exposed(c: &Chunk, n: &Neighbours) {
+        let want = exposed(c, n);
+        let mut got = std::collections::BTreeMap::new();
+        for (side, quads) in c.to_vertex_data(n).iter().enumerate() {
+            for q in quads {
+                for l in expand_to_legacy_words(SIDE_ORDER[side], *q) {
+                    let (p, s, t) = (
+                        (l & 15, (l >> 4) & 15, (l >> 8) & 15),
+                        (l >> 12) & 7,
+                        (l >> 15) & 63,
+                    );
+                    assert_eq!(s as usize, side);
+                    let dup = got.insert((side, [p.0, p.1, p.2]), t);
+                    assert!(dup.is_none(), "overlapping quads");
+                }
+            }
+        }
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn greedy_covers_exactly_the_exposed_faces() {
+        let solid = Chunk::plain(BlockType::Stone);
+        assert_quads_cover_exposed(&solid, &NO_NEIGHBOURS);
+        assert_quads_cover_exposed(&single_block(), &NO_NEIGHBOURS);
+        assert_quads_cover_exposed(&checkerboard(), &NO_NEIGHBOURS);
+        let mut n = NO_NEIGHBOURS;
+        n[Side::Top as usize] = Some(&solid);
+        assert_quads_cover_exposed(&solid, &n);
+        let g = GeneratorV0::new();
+        for p in [
+            IVec3::new(0, 0, 0),
+            IVec3::new(3, -1, 2),
+            IVec3::new(0, 2, 0),
+        ] {
+            assert_quads_cover_exposed(&g.generate(p.into()), &NO_NEIGHBOURS);
+        }
+    }
+
+    #[test]
+    fn greedy_merges_two_textures_separately() {
+        let mut c = Chunk::plain(BlockType::Stone);
+        for x in 0..8u16 {
+            for z in 0..16u16 {
+                c.set(U16Vec3::new(x, 15, z), BlockType::Sand);
+            }
+        }
+        let top = &c.to_vertex_data(&NO_NEIGHBOURS)[Side::Top as usize];
+        let mut dims: Vec<_> = top
+            .iter()
+            .map(|q| unpack_quad(*q))
+            .map(|(_, t, w, h)| (t, w, h))
+            .collect();
+        dims.sort();
+        assert_eq!(
+            dims,
+            vec![
+                (BlockSideTexture::Cobblestone as i32, 8, 16),
+                (BlockSideTexture::Sand as i32, 8, 16)
+            ]
+        );
     }
 
     fn mesh_summary(c: &Chunk, n: &Neighbours) -> serde_like::Summary {
         let d = c.to_vertex_data(n);
         let all: Vec<i32> = d.iter().flatten().copied().collect();
-        // no quad may face a solid block inside the chunk
+        // every covered cell is solid and not facing a solid block inside the chunk
         for (side, quads) in d.iter().enumerate() {
-            let dir = [
-                ivec3(0, 1, 0),
-                ivec3(0, -1, 0),
-                ivec3(0, 0, 1),
-                ivec3(0, 0, -1),
-                ivec3(1, 0, 0),
-                ivec3(-1, 0, 0),
-            ][side];
+            let dir = SIDE_DIRS[side];
             for q in quads {
-                let (o, s, _) = unpack(*q);
-                assert_eq!(s as usize, side);
-                assert_ne!(c.get_block(o), BlockType::Empty, "quad on air");
-                let nb = o.as_ivec3() + dir;
-                if (0..16).contains(&nb.x) && (0..16).contains(&nb.y) && (0..16).contains(&nb.z) {
-                    assert_eq!(
-                        c.get_block(U16Vec3::new(nb.x as _, nb.y as _, nb.z as _)),
-                        BlockType::Empty,
-                        "quad between two solids"
-                    );
+                for l in expand_to_legacy_words(SIDE_ORDER[side], *q) {
+                    let o = U16Vec3::new((l & 15) as _, ((l >> 4) & 15) as _, ((l >> 8) & 15) as _);
+                    assert_ne!(c.get_block(o), BlockType::Empty, "quad on air");
+                    let nb = o.as_ivec3() + dir;
+                    if (0..16).contains(&nb.x) && (0..16).contains(&nb.y) && (0..16).contains(&nb.z)
+                    {
+                        assert_eq!(
+                            c.get_block(U16Vec3::new(nb.x as _, nb.y as _, nb.z as _)),
+                            BlockType::Empty,
+                            "quad between two solids"
+                        );
+                    }
                 }
             }
         }

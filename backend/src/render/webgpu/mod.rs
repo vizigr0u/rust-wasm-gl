@@ -518,13 +518,15 @@ impl Renderer {
         let mut last = None;
         let mut slot = 0u32;
         for d in draws {
-            if last != Some(d.chunk) {
-                last = Some(d.chunk);
+            // One uniform slot per (chunk, side): the side is not in the quad word.
+            if last != Some((d.chunk, d.side as u32)) {
+                last = Some((d.chunk, d.side as u32));
                 slot = (slot_data.len() as u64 / CHUNK_SLOT) as u32;
                 let start = slot_data.len();
                 slot_data.resize(start + CHUNK_SLOT as usize, 0);
                 slot_data[start..start + 12]
                     .copy_from_slice(bytemuck::cast_slice(&d.offset.to_array()));
+                slot_data[start + 12..start + 16].copy_from_slice(&(d.side as i32).to_le_bytes());
             }
             self.draw_list.push(
                 DrawEntry {
@@ -612,7 +614,7 @@ impl Renderer {
                     pass.set_vertex_buffer(1, self.arena.slice(..));
                     let mut bound = None;
                     for e in &self.draw_list.entries {
-                        // Rebind only when the chunk changes (entries are sorted by chunk).
+                        // Rebind only when the (chunk, side) slot changes.
                         if bound != Some(e.group) {
                             pass.set_bind_group(1, &cp.chunk_bind, &[e.group * CHUNK_SLOT as u32]);
                             bound = Some(e.group);

@@ -4,5 +4,5 @@ expression: "(meshes.len(), list.len(), total, hash_words(&words))"
 ---
 - 818
 - 541
-- 62119
-- 10bfdae4994ee24e
+- 13211
+- 0ba020a55c2c751b

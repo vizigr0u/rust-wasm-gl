@@ -1,4 +1,4 @@
-//! Pure game logic: no `glow`, `web-sys` or `wasm-bindgen`. Compiles and tests natively.
+//! Pure game logic: no `web-sys` or `wasm-bindgen`. Compiles and tests natively.
 pub mod camera;
 pub mod gpu;
 pub mod math;

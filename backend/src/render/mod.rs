@@ -1,30 +1,11 @@
-//! Renderer seam: `Game` talks to one `Renderer` type, chosen at compile time by cargo feature.
-//! A canvas can only hold one context type, so there is no `dyn`.
+//! Renderer seam: `Game` talks to the wgpu (WebGPU) `Renderer`.
 
 use glam::Mat4;
 
 use crate::world::ChunkPos;
 
-#[cfg(feature = "gl")]
-pub(crate) mod gl;
-#[cfg(feature = "gl")]
-pub use gl::Renderer;
-
-#[cfg(feature = "webgpu")]
 pub(crate) mod webgpu;
-#[cfg(all(feature = "webgpu", not(feature = "gl")))]
 pub use webgpu::Renderer;
-
-#[cfg(all(feature = "gl", feature = "webgpu"))]
-compile_error!("enable exactly one renderer backend feature (`gl` or `webgpu`)");
-#[cfg(not(any(feature = "gl", feature = "webgpu")))]
-compile_error!("enable a renderer backend feature (`gl` or `webgpu`)");
-
-/// Clip-space z range of the active backend's projection.
-#[cfg(feature = "gl")]
-pub const CLIP_Z: voxel_core::camera::ClipZ = voxel_core::camera::ClipZ::NegOneToOne;
-#[cfg(not(feature = "gl"))]
-pub const CLIP_Z: voxel_core::camera::ClipZ = voxel_core::camera::ClipZ::ZeroToOne;
 
 #[derive(Debug)]
 pub struct RenderError(pub String);

@@ -9,15 +9,6 @@ const FOV_Y_DEGREES: f32 = 45.0;
 const NEAR_VIEW: f32 = 0.1;
 const FAR_VIEW: f32 = 1000.0;
 
-/// Clip-space z convention of the graphics API.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClipZ {
-    /// OpenGL / WebGL2
-    NegOneToOne,
-    /// WebGPU
-    ZeroToOne,
-}
-
 #[derive(Debug, Clone)]
 pub struct OrbitCamera {
     pub target: Vec3,
@@ -99,21 +90,19 @@ impl OrbitCamera {
         glam::camera::rh::view::look_at_mat4(self.target + self.offset, self.target, Vec3::Y)
     }
 
-    pub fn projection(&self, clip_z: ClipZ) -> Mat4 {
-        projection(self.aspect, clip_z)
+    pub fn projection(&self) -> Mat4 {
+        projection(self.aspect)
     }
 }
 
-pub fn projection(aspect: f32, clip_z: ClipZ) -> Mat4 {
-    let fov = f32::to_radians(FOV_Y_DEGREES);
-    match clip_z {
-        ClipZ::NegOneToOne => {
-            glam::camera::rh::proj::opengl::perspective(fov, aspect, NEAR_VIEW, FAR_VIEW)
-        }
-        ClipZ::ZeroToOne => {
-            glam::camera::rh::proj::directx::perspective(fov, aspect, NEAR_VIEW, FAR_VIEW)
-        }
-    }
+/// Right-handed perspective, clip-space z in 0..1 (WebGPU).
+pub fn projection(aspect: f32) -> Mat4 {
+    glam::camera::rh::proj::directx::perspective(
+        f32::to_radians(FOV_Y_DEGREES),
+        aspect,
+        NEAR_VIEW,
+        FAR_VIEW,
+    )
 }
 
 #[cfg(test)]
@@ -155,18 +144,6 @@ mod tests {
     fn pitch_preserves_length() {
         let o = Vec3::new(3.0, 4.0, 5.0);
         assert!((apply_pitch(o, 0.3).length() - o.length()).abs() < 1e-3);
-    }
-
-    #[test]
-    fn zero_to_one_matches_gl_xy_and_remaps_z() {
-        let gl = projection(1.5, ClipZ::NegOneToOne);
-        let wg = projection(1.5, ClipZ::ZeroToOne);
-        for p in [Vec3::new(1.0, 2.0, -5.0), Vec3::new(-3.0, 0.5, -100.0)] {
-            let a = gl.project_point3(p);
-            let b = wg.project_point3(p);
-            assert!((a.x - b.x).abs() < 1e-4 && (a.y - b.y).abs() < 1e-4);
-            assert!((b.z - (a.z + 1.0) / 2.0).abs() < 1e-4);
-        }
     }
 
     // ---- A4 snapshots ----
@@ -217,8 +194,8 @@ mod tests {
     }
 
     #[test]
-    fn projection_snapshot_gl() {
-        insta::assert_yaml_snapshot!(fmt_mat4(projection(800.0 / 600.0, ClipZ::NegOneToOne)));
+    fn projection_snapshot() {
+        insta::assert_yaml_snapshot!(fmt_mat4(projection(800.0 / 600.0)));
     }
 
     #[test]

@@ -4,23 +4,23 @@ expression: out
 ---
 - - "[0, 0, 0]"
   - per_side:
-      - 256
-      - 256
-      - 113
-      - 113
-      - 113
-      - 113
-    total: 964
-    hash: 3e4863aa1844b831
+      - 85
+      - 37
+      - 25
+      - 79
+      - 26
+      - 79
+    total: 331
+    hash: e751c9adfe70ce57
   - per_side:
-      - 256
-      - 55
+      - 85
+      - 20
       - 11
-      - 74
+      - 73
       - 11
-      - 74
-    total: 481
-    hash: 4ed8d8dd4df438be
+      - 73
+    total: 273
+    hash: b3614f19c3117f91
 - - "[3, -1, 2]"
   - per_side:
       - 0

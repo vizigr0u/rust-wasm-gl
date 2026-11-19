@@ -3,7 +3,7 @@ name = "backend"
 version = "0.1.0"
 authors = ["Vladimir Nachbaur <vizigr0u@gmail.com>"]
 edition = "2021"
-description = "WebGL2 game/experiment"
+description = "WebGPU voxel game/experiment"
 repository = "https://github.com/vizigr0u/rust-wasm-gl"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -26,9 +26,8 @@ getrandom = { version = "0.2", features = ["js"] }
 # code size when deploying.
 console_error_panic_hook = { version = "0.1.7", optional = true }
 
-glow = "0.18"
-wgpu = { version = "30.0", default-features = false, features = ["webgpu", "wgsl"], optional = true }
-egui-wgpu = { version = "0.37", default-features = false, optional = true }
+wgpu = { version = "30.0", default-features = false, features = ["webgpu", "wgsl"] }
+egui-wgpu = { version = "0.37", default-features = false }
 wasm-bindgen-futures = "0.4.42"
 gloo = { version = "0.13", features = ['gloo-events'] }
 log = "0.4.21"
@@ -48,12 +47,6 @@ features = [
     'Element',
     'DomRect',
     'HtmlCanvasElement',
-    'WebGlBuffer',
-    'WebGlVertexArrayObject',
-    'WebGl2RenderingContext',
-    'WebGlUniformLocation',
-    'WebGlProgram',
-    'WebGlShader',
     'Window',
     'ImageBitmap',
     'HtmlImageElement',
@@ -69,9 +62,6 @@ features = [
 ]
 
 [features]
-default = ["webgpu", "console_error_panic_hook", "console_log"]
-# Renderer backend (exactly one). Default is webgpu; GL kept one release: --no-default-features --features gl,console_error_panic_hook,console_log
-gl = []
-webgpu = ["dep:wgpu", "dep:egui-wgpu"]
+default = ["console_error_panic_hook", "console_log"]
 # Deterministic scene driver for Playwright (window.__RWG_TEST__). Not for release builds.
 test-hooks = []

@@ -24,7 +24,7 @@ impl Camera {
     pub fn new(target_offset: Vec3) -> Self {
         let orbit = OrbitCamera::new(target_offset);
         Self {
-            projection: orbit.projection(crate::render::CLIP_Z),
+            projection: orbit.projection(),
             look_at: Mat4::IDENTITY,
             orbit,
             mouse_sensitivity: DEFAULT_MOUSE_SENSITIVITY,
@@ -34,7 +34,7 @@ impl Camera {
     /// Rebuild the projection for a new drawing-buffer size. Ignores degenerate sizes.
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
         if self.orbit.set_viewport_size(width, height) {
-            self.projection = self.orbit.projection(crate::render::CLIP_Z);
+            self.projection = self.orbit.projection();
         }
     }
 
