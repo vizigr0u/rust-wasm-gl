@@ -380,8 +380,16 @@ impl Game {
 
     fn build_ui(&mut self, gfx: &mut Gfx, stats: RenderStats) -> UiFrame {
         let gpu_info = format!(
-            "GPU: {} chunk buffers, {} draw calls",
-            stats.chunk_buffers, stats.draw_calls
+            "GPU: {} chunks, {} draw calls ({} before merge)\narena: {}/{} quads ({:.1}/{:.1} MB), largest free {}\nupload: {:.1} KB/frame",
+            stats.chunk_buffers,
+            stats.draw_calls,
+            stats.draw_entries_raw,
+            stats.arena_used,
+            stats.arena_capacity,
+            stats.arena_used as f64 * 4e-6,
+            stats.arena_capacity as f64 * 4e-6,
+            stats.arena_largest_free,
+            stats.upload_bytes as f64 / 1024.0
         );
         {
             gfx.egui.run_ui(|ctx| {
@@ -397,8 +405,6 @@ impl Game {
                                 egui::Frame::new()
                                 .fill(egui::Color32::from_rgba_unmultiplied(20, 20, 20, 100))
                                 .show(ui, |ui| {
-                                    self.fps_display.display(ui);
-
                                     let info = format!(
                                         "FPS: {}\nRNG seed: {}\ngit rev: {}\nPlayer position: {:?}\nWorld: {}",
                                         self.fps_display.get_debug_info(),
@@ -411,9 +417,15 @@ impl Game {
                                         egui::Color32::WHITE,
                                         RichText::new(&info).monospace(),
                                     );
-                                    if ui.button("Copy").clicked() {
-                                        copy_to_clipboard(&info);
+                                    if self.is_paused {
+                                        ui.horizontal(|ui| {
+                                            if ui.button("Copy").clicked() {
+                                                copy_to_clipboard(&info);
+                                            }
+                                            self.fps_display.graph_button(ui);
+                                        });
                                     }
+                                    self.fps_display.display(ui);
                                 });
                         });
                 }

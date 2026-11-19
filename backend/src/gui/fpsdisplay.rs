@@ -141,13 +141,22 @@ impl FpsDisplay {
         )
     }
 
-    pub fn display(&mut self, ui: &mut egui::Ui) {
-        let button = Button::new(
-            RichText::new(format!("FPS: {}", self.get_debug_info())).color(Color32::WHITE),
-        );
-        if ui.add(button).clicked() {
+    /// Button toggling the frame-time graph.
+    pub fn graph_button(&mut self, ui: &mut egui::Ui) {
+        let label = if self.show_details {
+            "Hide frame graph"
+        } else {
+            "Show frame graph"
+        };
+        if ui
+            .add(Button::new(RichText::new(label).color(Color32::WHITE)))
+            .clicked()
+        {
             self.show_details = !self.show_details;
         }
+    }
+
+    pub fn display(&mut self, ui: &mut egui::Ui) {
         if self.show_details {
             Plot::new("fps")
                 .height(80.0)

@@ -8,15 +8,32 @@ use web_sys::{HtmlCanvasElement, HtmlImageElement};
 
 use super::{FrameInput, RenderError, RenderStats, TextureId, UiFrame};
 use crate::world::{make_base_quad_data, ChunkDrawData, ChunkPos};
+use voxel_core::gpu::{DrawEntry, DrawList, RangeAllocator};
 use voxel_core::render::{build_draw_list, pack_sides, SideRanges};
+
+/// Initial arena size in quads (4 B each = 8 MB).
+const ARENA_QUADS: u32 = 2 << 20;
+const ARENA_USAGE: wgpu::BufferUsages = wgpu::BufferUsages::VERTEX
+    .union(wgpu::BufferUsages::COPY_DST)
+    .union(wgpu::BufferUsages::COPY_SRC);
+
+fn create_arena(device: &wgpu::Device, quads: u32) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("quad arena"),
+        size: quads as u64 * 4,
+        usage: ARENA_USAGE,
+        mapped_at_creation: false,
+    })
+}
 
 /// `min_uniform_buffer_offset_alignment` is at most 256 in WebGPU.
 const CHUNK_SLOT: u64 = 256;
 const GLOBALS_SIZE: u64 = 128;
 
-/// One chunk's quads on the GPU: all 6 sides concatenated in one buffer.
+/// One chunk's quads in the arena: all 6 sides contiguous.
 struct GpuChunk {
-    buffer: wgpu::Buffer,
+    range: std::ops::Range<u32>,
+    /// Absolute quad indices into the arena.
     side_ranges: SideRanges,
 }
 
@@ -198,6 +215,11 @@ pub struct Renderer {
     chunk_pipeline: ChunkPipeline,
     objects: objects::ObjectPipelines,
     gpu_chunks: HashMap<ChunkPos, GpuChunk>,
+    arena: wgpu::Buffer,
+    alloc: RangeAllocator,
+    draw_list: DrawList,
+    /// Bytes written to the arena since the last `render`.
+    uploaded_bytes: u64,
     draw_calls: u32,
     times: RenderStats,
 }
@@ -314,6 +336,10 @@ impl Renderer {
             chunk_pipeline,
             objects,
             gpu_chunks: HashMap::new(),
+            arena: create_arena(&device, ARENA_QUADS),
+            alloc: RangeAllocator::new(ARENA_QUADS),
+            draw_list: DrawList::default(),
+            uploaded_bytes: 0,
             draw_calls: 0,
             times: RenderStats::default(),
             textures: HashMap::new(),
@@ -400,41 +426,62 @@ impl Renderer {
         }
     }
 
-    /// Create or replace the GPU buffer of one chunk.
+    /// Double the arena (at least) until `needed` more quads fit, keeping every range.
+    fn grow_arena(&mut self, needed: u32) {
+        let old = self.alloc.capacity();
+        let mut new = old * 2;
+        while new - old < needed {
+            new *= 2;
+        }
+        let buf = create_arena(&self.device, new);
+        let mut enc = self.device.create_command_encoder(&Default::default());
+        enc.copy_buffer_to_buffer(&self.arena, 0, &buf, 0, old as u64 * 4);
+        self.queue.submit([enc.finish()]);
+        self.arena = buf;
+        self.alloc.grow(new);
+        log::info!("quad arena grown: {old} -> {new} quads");
+    }
+
+    /// Write one chunk's quads into the arena, replacing its previous range.
     pub fn upload_chunk(&mut self, pos: ChunkPos, data: &ChunkDrawData) {
         self.remove_chunk(pos);
         if data.quad_count() == 0 {
             return;
         }
-        let (all, side_ranges) = pack_sides(data);
-        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("chunk quads"),
-            size: all.len() as u64 * 4,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        self.queue
-            .write_buffer(&buffer, 0, bytemuck::cast_slice(&all));
-        self.gpu_chunks.insert(
-            pos,
-            GpuChunk {
-                buffer,
-                side_ranges,
-            },
+        let (all, mut side_ranges) = pack_sides(data);
+        let n = all.len() as u32;
+        let range = match self.alloc.alloc(n) {
+            Some(r) => r,
+            None => {
+                self.grow_arena(RangeAllocator::rounded(n));
+                self.alloc.alloc(n).expect("arena grown")
+            }
+        };
+        for r in &mut side_ranges {
+            r.0 += range.start;
+        }
+        self.queue.write_buffer(
+            &self.arena,
+            range.start as u64 * 4,
+            bytemuck::cast_slice(&all),
         );
+        self.uploaded_bytes += all.len() as u64 * 4;
+        self.gpu_chunks.insert(pos, GpuChunk { range, side_ranges });
     }
 
     pub fn remove_chunk(&mut self, pos: ChunkPos) {
-        // Dropping the wgpu buffer releases it once in-flight work is done.
-        self.gpu_chunks.remove(&pos);
+        if let Some(c) = self.gpu_chunks.remove(&pos) {
+            self.alloc.free(c.range);
+        }
     }
 
-    /// Upload globals + per-chunk offsets; returns the draws and the slot of each.
-    fn prepare_chunks(&mut self, frame: &FrameInput) -> Vec<(voxel_core::render::ChunkDraw, u32)> {
+    /// Upload globals + per-chunk offsets and rebuild `draw_list`.
+    fn prepare_chunks(&mut self, frame: &FrameInput) {
         let cp = &mut self.chunk_pipeline;
         if cp.globals_bind.is_none() {
             let Some((_, view)) = self.textures.get(&TextureId::Blocks) else {
-                return Vec::new();
+                self.draw_list.clear();
+                return;
             };
             cp.globals_bind = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("chunk globals"),
@@ -467,7 +514,7 @@ impl Renderer {
             frame.player_chunk,
         );
         let mut slot_data: Vec<u8> = Vec::new();
-        let mut out = Vec::with_capacity(draws.len());
+        self.draw_list.clear();
         let mut last = None;
         let mut slot = 0u32;
         for d in draws {
@@ -479,7 +526,14 @@ impl Renderer {
                 slot_data[start..start + 12]
                     .copy_from_slice(bytemuck::cast_slice(&d.offset.to_array()));
             }
-            out.push((d, slot));
+            self.draw_list.push(
+                DrawEntry {
+                    group: slot,
+                    first: d.first,
+                    count: d.count,
+                },
+                true,
+            );
         }
         let needed = slot_data.len() as u64 / CHUNK_SLOT;
         if needed > cp.chunk_slots {
@@ -490,7 +544,6 @@ impl Renderer {
         if !slot_data.is_empty() {
             self.queue.write_buffer(&cp.chunk_buf, 0, &slot_data);
         }
-        out
     }
 
     pub fn render(&mut self, frame: &FrameInput, ui: Option<UiFrame>) {
@@ -516,8 +569,8 @@ impl Renderer {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let t1 = crate::utils::performance_now();
-        let draws = self.prepare_chunks(frame);
-        self.draw_calls = draws.len() as u32;
+        self.prepare_chunks(frame);
+        self.draw_calls = self.draw_list.entries.len() as u32;
         self.objects.write_models(
             &self.queue,
             frame.player_model.as_ref(),
@@ -553,19 +606,18 @@ impl Renderer {
             if let Some(globals) = &self.chunk_pipeline.globals_bind {
                 let cp = &self.chunk_pipeline;
                 pass.set_bind_group(0, globals, &[]);
-                if !draws.is_empty() {
+                if !self.draw_list.entries.is_empty() {
                     pass.set_pipeline(&cp.pipeline);
                     pass.set_vertex_buffer(0, cp.base_quad.slice(..));
+                    pass.set_vertex_buffer(1, self.arena.slice(..));
                     let mut bound = None;
-                    for (d, slot) in &draws {
-                        // Rebind only when the chunk changes (draws are sorted by chunk).
-                        if bound != Some(d.chunk) {
-                            let chunk = &self.gpu_chunks[&d.chunk];
-                            pass.set_bind_group(1, &cp.chunk_bind, &[slot * CHUNK_SLOT as u32]);
-                            pass.set_vertex_buffer(1, chunk.buffer.slice(..));
-                            bound = Some(d.chunk);
+                    for e in &self.draw_list.entries {
+                        // Rebind only when the chunk changes (entries are sorted by chunk).
+                        if bound != Some(e.group) {
+                            pass.set_bind_group(1, &cp.chunk_bind, &[e.group * CHUNK_SLOT as u32]);
+                            bound = Some(e.group);
                         }
-                        pass.draw(0..4, d.first..d.first + d.count);
+                        pass.draw(0..4, e.first..e.first + e.count);
                     }
                 }
                 self.objects.draw(
@@ -627,6 +679,11 @@ impl Renderer {
         self.times = RenderStats {
             draw_calls: 0,
             chunk_buffers: 0,
+            draw_entries_raw: self.draw_list.pushed,
+            arena_used: self.alloc.used(),
+            arena_capacity: self.alloc.capacity(),
+            arena_largest_free: self.alloc.largest_free(),
+            upload_bytes: std::mem::take(&mut self.uploaded_bytes),
             acquire_ms: t1 - t0,
             prepare_ms: t2 - t1,
             pass_ms: t3 - t2,

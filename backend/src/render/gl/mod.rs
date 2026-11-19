@@ -181,6 +181,7 @@ impl Renderer {
             pass_ms: self.pass_ms,
             egui_ms: self.egui_ms,
             submit_ms: 0.0,
+            ..Default::default()
         }
     }
 

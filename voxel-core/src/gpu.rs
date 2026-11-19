@@ -1,0 +1,196 @@
+//! Pure GPU-side bookkeeping: arena range allocator and merged draw list.
+use std::ops::Range;
+
+/// Ranges are rounded up to this many quads.
+pub const ARENA_ALIGN: u32 = 64;
+
+/// First-fit allocator over `0..capacity` quads. Frees merge with neighbours.
+#[derive(Debug, Clone)]
+pub struct RangeAllocator {
+    /// Sorted, non-overlapping, non-adjacent free ranges.
+    free: Vec<Range<u32>>,
+    capacity: u32,
+}
+
+impl RangeAllocator {
+    pub fn new(capacity: u32) -> Self {
+        Self {
+            free: if capacity > 0 {
+                vec![0..capacity]
+            } else {
+                vec![]
+            },
+            capacity,
+        }
+    }
+
+    pub fn capacity(&self) -> u32 {
+        self.capacity
+    }
+
+    /// Size actually reserved for a request of `n` quads.
+    pub fn rounded(n: u32) -> u32 {
+        n.div_ceil(ARENA_ALIGN) * ARENA_ALIGN
+    }
+
+    pub fn alloc(&mut self, n: u32) -> Option<Range<u32>> {
+        let n = Self::rounded(n.max(1));
+        let i = self.free.iter().position(|r| r.end - r.start >= n)?;
+        let r = self.free[i].clone();
+        if r.end - r.start == n {
+            self.free.remove(i);
+        } else {
+            self.free[i].start += n;
+        }
+        Some(r.start..r.start + n)
+    }
+
+    pub fn free(&mut self, range: Range<u32>) {
+        debug_assert!(range.end <= self.capacity && range.start < range.end);
+        let i = self.free.partition_point(|r| r.start < range.start);
+        debug_assert!(i == 0 || self.free[i - 1].end <= range.start, "double free");
+        debug_assert!(i == self.free.len() || range.end <= self.free[i].start);
+        self.free.insert(i, range);
+        // merge with next, then previous
+        if i + 1 < self.free.len() && self.free[i].end == self.free[i + 1].start {
+            self.free[i].end = self.free[i + 1].end;
+            self.free.remove(i + 1);
+        }
+        if i > 0 && self.free[i - 1].end == self.free[i].start {
+            self.free[i - 1].end = self.free[i].end;
+            self.free.remove(i);
+        }
+    }
+
+    /// Extend capacity; the new tail is free.
+    pub fn grow(&mut self, new_capacity: u32) {
+        assert!(new_capacity >= self.capacity);
+        let old = self.capacity;
+        self.capacity = new_capacity;
+        if new_capacity > old {
+            self.free(old..new_capacity);
+        }
+    }
+
+    pub fn used(&self) -> u32 {
+        self.capacity - self.free.iter().map(|r| r.end - r.start).sum::<u32>()
+    }
+
+    pub fn largest_free(&self) -> u32 {
+        self.free.iter().map(|r| r.end - r.start).max().unwrap_or(0)
+    }
+}
+
+/// One `draw(0..4, first..first+count)`, drawn with bind slot `group`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DrawEntry {
+    pub group: u32,
+    pub first: u32,
+    pub count: u32,
+}
+
+/// Draw entries; adjacent ones in the same group merge into one.
+#[derive(Debug, Default)]
+pub struct DrawList {
+    pub entries: Vec<DrawEntry>,
+    /// Pushes before merging.
+    pub pushed: u32,
+}
+
+impl DrawList {
+    pub fn clear(&mut self) {
+        self.entries.clear();
+        self.pushed = 0;
+    }
+
+    pub fn push(&mut self, e: DrawEntry, merge: bool) {
+        self.pushed += 1;
+        if merge {
+            if let Some(p) = self.entries.last_mut() {
+                if p.group == e.group && p.first + p.count == e.first {
+                    p.count += e.count;
+                    return;
+                }
+            }
+        }
+        self.entries.push(e);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alloc_free_roundtrip() {
+        let mut a = RangeAllocator::new(256);
+        let r = a.alloc(10).unwrap();
+        assert_eq!(r, 0..64);
+        assert_eq!(a.used(), 64);
+        a.free(r);
+        assert_eq!(a.used(), 0);
+        assert_eq!(a.largest_free(), 256);
+    }
+
+    #[test]
+    fn freed_neighbours_merge() {
+        let mut a = RangeAllocator::new(192);
+        let (x, y, z) = (
+            a.alloc(64).unwrap(),
+            a.alloc(64).unwrap(),
+            a.alloc(64).unwrap(),
+        );
+        a.free(x);
+        a.free(z);
+        assert_eq!(a.largest_free(), 64);
+        a.free(y);
+        assert_eq!(a.largest_free(), 192);
+    }
+
+    #[test]
+    fn first_fit_reuses_hole() {
+        let mut a = RangeAllocator::new(256);
+        let x = a.alloc(64).unwrap();
+        let _y = a.alloc(64).unwrap();
+        a.free(x.clone());
+        assert_eq!(a.alloc(30).unwrap(), x);
+    }
+
+    #[test]
+    fn full_then_grow() {
+        let mut a = RangeAllocator::new(64);
+        a.alloc(64).unwrap();
+        assert!(a.alloc(1).is_none());
+        a.grow(128);
+        assert_eq!(a.alloc(1).unwrap(), 64..128);
+        assert_eq!(a.capacity(), 128);
+    }
+
+    #[test]
+    fn grow_merges_with_trailing_free() {
+        let mut a = RangeAllocator::new(128);
+        a.alloc(64).unwrap();
+        a.grow(256);
+        assert_eq!(a.largest_free(), 192);
+    }
+
+    #[test]
+    fn draw_list_merges_adjacent_same_group_only() {
+        let mut l = DrawList::default();
+        let e = |group, first, count| DrawEntry {
+            group,
+            first,
+            count,
+        };
+        l.push(e(0, 0, 4), true);
+        l.push(e(0, 4, 2), true); // adjacent -> merged
+        l.push(e(0, 10, 1), true); // gap
+        l.push(e(1, 11, 1), true); // other group
+        assert_eq!(l.entries, vec![e(0, 0, 6), e(0, 10, 1), e(1, 11, 1)]);
+        assert_eq!(l.pushed, 4);
+        l.clear();
+        l.push(e(0, 0, 4), false);
+        l.push(e(0, 4, 2), false);
+        assert_eq!(l.entries.len(), 2);
+    }
+}

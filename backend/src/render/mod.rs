@@ -76,6 +76,14 @@ pub struct RenderStats {
     /// Draw calls issued by the last `render`.
     pub draw_calls: u32,
     pub chunk_buffers: usize,
+    /// Draw entries before adjacent ones were merged.
+    pub draw_entries_raw: u32,
+    /// Arena occupancy, in quads (webgpu only).
+    pub arena_used: u32,
+    pub arena_capacity: u32,
+    pub arena_largest_free: u32,
+    /// Bytes uploaded to the arena before the last `render`.
+    pub upload_bytes: u64,
     /// CPU ms of the last `render` spent preparing (draw list, per-frame uploads).
     pub prepare_ms: f64,
     /// CPU ms of the last `render`: surface acquire + view (webgpu only).
