@@ -159,6 +159,7 @@ pub fn test_set_camera(target: Vec<f32>, offset: Vec<f32>) -> Result<(), JsValue
 /// Compile and link every shader program. Returns one message per failure
 /// (empty array = all good). Needs `test_start` first (one context per canvas).
 #[wasm_bindgen]
-pub fn test_compile_all_shaders() -> Result<Vec<String>, JsValue> {
-    with_harness(|h| Ok(h.renderer.compile_check()))
+pub async fn test_compile_all_shaders() -> Result<Vec<String>, JsValue> {
+    let check = with_harness(|h| Ok(h.renderer.compile_check()))?;
+    Ok(check.await)
 }

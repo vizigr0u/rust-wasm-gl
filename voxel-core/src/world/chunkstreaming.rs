@@ -234,12 +234,6 @@ where
             .find(|p| p.position == page_index)
     }
 
-    fn get_page(&mut self, page_index: PagePos) -> Option<&mut ChunkPage> {
-        self.loaded_chunk_pages
-            .iter_mut()
-            .find(|p| p.position == page_index)
-    }
-
     fn load_page(&mut self, page_index: PagePos) -> bool
     where
         G: WorldGenerator,

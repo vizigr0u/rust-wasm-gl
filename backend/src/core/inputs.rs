@@ -1,9 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::HashSet,
-    rc::Rc,
-    sync::{Arc, Mutex},
-};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
 use glam::Vec2;
 use log::warn;
@@ -56,12 +51,6 @@ impl InputState {
     }
     pub fn _get_mouse_pos(&self) -> Vec2 {
         self.mouse_pos
-    }
-    pub fn get_mouse_delta(&self) -> Vec2 {
-        self.mouse_delta
-    }
-    pub fn is_mouse_down(&self) -> bool {
-        self.mouse_down
     }
     pub fn is_key_down(&self, key: &str) -> bool {
         self.keys_down.contains(key)
@@ -122,7 +111,7 @@ pub trait HandleInputs {
 #[derive(Debug)]
 pub struct InputSystem {
     current_inputs: Rc<RefCell<InputState>>,
-    closures: Vec<Arc<Mutex<Closure<dyn FnMut(JsValue)>>>>,
+    closures: Vec<Closure<dyn FnMut(JsValue)>>,
 }
 
 impl InputSystem {
@@ -207,7 +196,7 @@ impl InputSystem {
             inputs.borrow_mut().reset();
         }) as Box<dyn FnMut(JsValue)>);
         window.add_event_listener_with_callback("blur", closure.as_ref().unchecked_ref())?;
-        self.closures.push(Arc::new(Mutex::new(closure)));
+        self.closures.push(closure);
 
         Ok(())
     }
@@ -226,14 +215,10 @@ impl InputSystem {
             let event_type = convert(event);
             inputs.borrow_mut().add_event(event_type);
         }) as Box<dyn FnMut(JsValue)>);
-        let rc_closure = Arc::new(Mutex::new(closure));
-        target.add_event_listener_with_callback(
-            event_type,
-            rc_closure.lock().unwrap().as_ref().unchecked_ref(),
-        )?;
+        target.add_event_listener_with_callback(event_type, closure.as_ref().unchecked_ref())?;
 
         // Keep the closure from being dropped
-        self.closures.push(rc_closure);
+        self.closures.push(closure);
 
         Ok(())
     }

@@ -5,7 +5,7 @@ use wasm_bindgen::{JsCast, JsValue};
 
 use crate::{
     graphics::{Camera, TextureLoader},
-    gui::{EguiBackend, FpsDisplay},
+    gui::{EguiBackend, FpsDisplay, FrameTimes},
     objects::{gizmo_model, player_model, Player},
     render::{FrameInput, RenderStats, Renderer, TextureId, UiFrame},
     utils::performance_now,
@@ -105,6 +105,10 @@ pub struct Game {
     gui_state: GuiState,
     player: Player,
     fps_display: FpsDisplay,
+    /// ms spent in chunk upload/remove during this tick's `update`.
+    upload_ms: f64,
+    /// ms spent building egui this tick.
+    ui_ms: f64,
 }
 
 #[derive(Debug)]
@@ -152,6 +156,8 @@ impl Game {
             gui_state: GuiState::default(),
             player: Player::new(vec3(0.0, 16.0, 0.0)),
             fps_display: FpsDisplay::new(),
+            upload_ms: 0.0,
+            ui_ms: 0.0,
         };
 
         Ok(game)
@@ -228,6 +234,8 @@ impl Game {
         time: f64,
     ) -> Result<(), String> {
         let start = performance_now();
+        self.upload_ms = 0.0;
+        self.ui_ms = 0.0;
 
         self.time.update(time);
 
@@ -243,10 +251,24 @@ impl Game {
         if !self.skip_render {
             self.render(renderer, gfx);
         }
-        let render_time = performance_now();
+        let end = performance_now();
 
-        self.fps_display
-            .update_fps_report(start, update_time, render_time, render_time);
+        let stats = renderer.stats();
+        self.fps_display.update_fps_report(
+            start,
+            FrameTimes {
+                script: update_time - start - self.upload_ms,
+                upload: self.upload_ms,
+                ui: self.ui_ms,
+                prepare: stats.prepare_ms,
+                acquire: stats.acquire_ms,
+                pass: stats.pass_ms,
+                egui: stats.egui_ms,
+                submit: stats.submit_ms,
+                frame: end - start,
+                interval: 0.0,
+            },
+        );
 
         Ok(())
     }
@@ -262,6 +284,7 @@ impl Game {
             let player_chunk_pos = self.player.get_position().chunk_pos();
             let changes = self.world.update(player_chunk_pos);
             self.last_changes_empty = changes.added.is_empty() && changes.removed.is_empty();
+            let t = performance_now();
             for pos in changes.removed {
                 renderer.remove_chunk(pos);
             }
@@ -270,6 +293,7 @@ impl Game {
                     renderer.upload_chunk(pos, mesh);
                 }
             }
+            self.upload_ms = performance_now() - t;
         }
 
         if !self.camera_pinned {
@@ -345,10 +369,12 @@ impl Game {
             clear_color: [0.0, 0.0, 0.0, 1.0],
         };
         // The info label shows the previous frame's draw stats.
+        let t = performance_now();
         let ui = self
             .config
             .show_egui
             .then(|| self.build_ui(gfx, renderer.stats()));
+        self.ui_ms = performance_now() - t;
         renderer.render(&frame, ui);
     }
 
@@ -366,7 +392,7 @@ impl Game {
                 }
                 if self.gui_state.show_info {
                     // egui::Window::new("Game Info").show(ctx, |ui| {
-                        egui::Area::new(egui::Id::new("my_area"))
+                        egui::Area::new(egui::Id::unique("my_area"))
                             .show(ctx, |ui| {
                                 egui::Frame::new()
                                 .fill(egui::Color32::from_rgba_unmultiplied(20, 20, 20, 100))

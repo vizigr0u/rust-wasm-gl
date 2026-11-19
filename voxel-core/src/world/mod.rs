@@ -4,7 +4,6 @@ mod drawdata;
 mod newworldgenerator;
 mod position;
 mod side;
-mod testworldgenerator;
 mod world;
 mod worldgenerator;
 

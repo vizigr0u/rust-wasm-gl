@@ -8,41 +8,45 @@ const AVG_SIZE: usize = 3;
 const BUFFER_SIZE: usize = CHART_SIZE * AVG_SIZE;
 const REFRESH_EVERY: usize = 10;
 
+/// Milliseconds spent in each part of one frame (all measured with `performance.now()`).
 #[derive(Debug, Default, Clone, Copy)]
-struct PerformanceTime {
-    frame_time: f64,
-    update_time: f64,
-    render_time: f64,
+pub struct FrameTimes {
+    /// Inputs, world update, camera (without chunk uploads).
+    pub script: f64,
+    /// `upload_chunk` / `remove_chunk` calls.
+    pub upload: f64,
+    /// egui run + tessellation.
+    pub ui: f64,
+    /// Renderer CPU prep (draw list, per-frame uploads).
+    pub prepare: f64,
+    /// Surface acquire + view (webgpu).
+    pub acquire: f64,
+    /// Main 3D pass encode.
+    pub pass: f64,
+    /// egui buffers + pass.
+    pub egui: f64,
+    /// Submit + present (webgpu).
+    pub submit: f64,
+    /// Start of the tick to the end of it.
+    pub frame: f64,
     /// Time since the previous frame started (real frame period).
-    interval: f64,
+    pub interval: f64,
 }
 
-impl PerformanceTime {
-    pub fn new(
-        start_time: f64,
-        frame_time: f64,
-        update_time: f64,
-        render_time: f64,
-        interval: f64,
-    ) -> Self {
-        Self {
-            interval,
-            frame_time: frame_time - start_time,
-            update_time: update_time - start_time,
-            render_time: render_time - update_time,
-        }
-    }
-    pub fn get_ui_time(&self) -> f64 {
-        self.frame_time - self.update_time - self.render_time
-    }
-}
+type PerformanceTime = FrameTimes;
 
 impl Sum<PerformanceTime> for PerformanceTime {
     fn sum<I: Iterator<Item = PerformanceTime>>(iter: I) -> Self {
         iter.fold(PerformanceTime::default(), |a, b| PerformanceTime {
-            frame_time: a.frame_time + b.frame_time,
-            update_time: a.update_time + b.update_time,
-            render_time: a.render_time + b.render_time,
+            script: a.script + b.script,
+            upload: a.upload + b.upload,
+            ui: a.ui + b.ui,
+            prepare: a.prepare + b.prepare,
+            acquire: a.acquire + b.acquire,
+            pass: a.pass + b.pass,
+            egui: a.egui + b.egui,
+            submit: a.submit + b.submit,
+            frame: a.frame + b.frame,
             interval: a.interval + b.interval,
         })
     }
@@ -51,9 +55,15 @@ impl Sum<PerformanceTime> for PerformanceTime {
 impl<'a> Sum<&'a PerformanceTime> for PerformanceTime {
     fn sum<I: Iterator<Item = &'a PerformanceTime>>(iter: I) -> Self {
         iter.fold(PerformanceTime::default(), |a, b| PerformanceTime {
-            frame_time: a.frame_time + b.frame_time,
-            update_time: a.update_time + b.update_time,
-            render_time: a.render_time + b.render_time,
+            script: a.script + b.script,
+            upload: a.upload + b.upload,
+            ui: a.ui + b.ui,
+            prepare: a.prepare + b.prepare,
+            acquire: a.acquire + b.acquire,
+            pass: a.pass + b.pass,
+            egui: a.egui + b.egui,
+            submit: a.submit + b.submit,
+            frame: a.frame + b.frame,
             interval: a.interval + b.interval,
         })
     }
@@ -63,9 +73,15 @@ impl Div<f64> for PerformanceTime {
     type Output = PerformanceTime;
     fn div(self, rhs: f64) -> Self::Output {
         PerformanceTime {
-            frame_time: self.frame_time / rhs,
-            update_time: self.update_time / rhs,
-            render_time: self.render_time / rhs,
+            script: self.script / rhs,
+            upload: self.upload / rhs,
+            ui: self.ui / rhs,
+            prepare: self.prepare / rhs,
+            acquire: self.acquire / rhs,
+            pass: self.pass / rhs,
+            egui: self.egui / rhs,
+            submit: self.submit / rhs,
+            frame: self.frame / rhs,
             interval: self.interval / rhs,
         }
     }
@@ -93,17 +109,11 @@ impl FpsDisplay {
         }
     }
 
-    pub fn update_fps_report(
-        &mut self,
-        start_time: f64,
-        update_time: f64,
-        render_time: f64,
-        frame_time: f64,
-    ) {
-        let interval = self.last_start.map_or(0.0, |last| start_time - last);
+    /// `start_time`: `performance.now()` at the start of the tick; `times.interval` is filled here.
+    pub fn update_fps_report(&mut self, start_time: f64, mut times: FrameTimes) {
+        times.interval = self.last_start.map_or(0.0, |last| start_time - last);
         self.last_start = Some(start_time);
-        self.tick_times[self.tick_index] =
-            PerformanceTime::new(start_time, frame_time, update_time, render_time, interval);
+        self.tick_times[self.tick_index] = times;
         self.tick_index = (self.tick_index + 1) % self.tick_times.len();
         if self.tick_index == BUFFER_SIZE - 1 {
             self.buffer_was_filled = true;
@@ -127,7 +137,7 @@ impl FpsDisplay {
         format!(
             "{:.1} (max {:.0})",
             1000.0 / self.avg_times.interval,
-            1000.0 / self.avg_times.frame_time.max(0.001)
+            1000.0 / self.avg_times.frame.max(0.001)
         )
     }
 
@@ -169,27 +179,67 @@ impl FpsDisplay {
                         })
                         .collect::<Vec<_>>();
                     plot_ui.line(Line::new(
-                        format!("script: {:.2}ms", self.avg_times.update_time),
+                        format!("script: {:.2}ms", self.avg_times.script),
                         charts
                             .iter()
                             .enumerate()
-                            .map(|(i, &v)| [i as f64, v.update_time])
+                            .map(|(i, &v)| [i as f64, v.script])
                             .collect::<Vec<_>>(),
                     ));
                     plot_ui.line(Line::new(
-                        format!("render: {:.2}ms", self.avg_times.render_time),
+                        format!("upload: {:.2}ms", self.avg_times.upload),
                         charts
                             .iter()
                             .enumerate()
-                            .map(|(i, &v)| [i as f64, v.render_time])
+                            .map(|(i, &v)| [i as f64, v.upload])
                             .collect::<Vec<_>>(),
                     ));
                     plot_ui.line(Line::new(
-                        format!("UI: {:.2}ms", self.avg_times.get_ui_time()),
+                        format!("ui: {:.2}ms", self.avg_times.ui),
                         charts
                             .iter()
                             .enumerate()
-                            .map(|(i, &v)| [i as f64, v.get_ui_time()])
+                            .map(|(i, &v)| [i as f64, v.ui])
+                            .collect::<Vec<_>>(),
+                    ));
+                    plot_ui.line(Line::new(
+                        format!("prepare: {:.2}ms", self.avg_times.prepare),
+                        charts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &v)| [i as f64, v.prepare])
+                            .collect::<Vec<_>>(),
+                    ));
+                    plot_ui.line(Line::new(
+                        format!("acquire: {:.2}ms", self.avg_times.acquire),
+                        charts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &v)| [i as f64, v.acquire])
+                            .collect::<Vec<_>>(),
+                    ));
+                    plot_ui.line(Line::new(
+                        format!("pass: {:.2}ms", self.avg_times.pass),
+                        charts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &v)| [i as f64, v.pass])
+                            .collect::<Vec<_>>(),
+                    ));
+                    plot_ui.line(Line::new(
+                        format!("egui: {:.2}ms", self.avg_times.egui),
+                        charts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &v)| [i as f64, v.egui])
+                            .collect::<Vec<_>>(),
+                    ));
+                    plot_ui.line(Line::new(
+                        format!("submit: {:.2}ms", self.avg_times.submit),
+                        charts
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &v)| [i as f64, v.submit])
                             .collect::<Vec<_>>(),
                     ));
                 });

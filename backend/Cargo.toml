@@ -69,8 +69,8 @@ features = [
 ]
 
 [features]
-default = ["gl", "console_error_panic_hook", "console_log"]
-# Renderer backend (exactly one). `webgpu` comes with the wgpu port.
+default = ["webgpu", "console_error_panic_hook", "console_log"]
+# Renderer backend (exactly one). Default is webgpu; GL kept one release: --no-default-features --features gl,console_error_panic_hook,console_log
 gl = []
 webgpu = ["dep:wgpu", "dep:egui-wgpu"]
 # Deterministic scene driver for Playwright (window.__RWG_TEST__). Not for release builds.

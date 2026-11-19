@@ -85,7 +85,7 @@ impl EguiBackend {
         }
     }
 
-    fn set_events(&mut self, events: &Vec<InputEventType>) {
+    fn set_events(&mut self, events: &[InputEventType]) {
         self.current_events.clear();
         for ev in events.iter() {
             let e: Result<Event, ConversionError> = ev.try_into();
@@ -175,30 +175,29 @@ impl TryInto<Event> for &InputEventType {
                     modifiers: get_mouse_modifiers(event),
                 }
             }
-            _ => Err(ConversionError::Unhandled)?,
         };
         Ok(event)
     }
 }
 
 fn get_key_modifiers(event: &KeyboardEvent) -> egui::Modifiers {
-    let mut modifiers = egui::Modifiers::default();
-    modifiers.shift = event.get_modifier_state("Shift");
-    modifiers.ctrl = event.get_modifier_state("Control");
-    modifiers.alt = event.get_modifier_state("Alt");
-    modifiers.command = event.get_modifier_state("Meta");
-
-    modifiers
+    egui::Modifiers {
+        shift: event.get_modifier_state("Shift"),
+        ctrl: event.get_modifier_state("Control"),
+        alt: event.get_modifier_state("Alt"),
+        command: event.get_modifier_state("Meta"),
+        ..Default::default()
+    }
 }
 
 fn get_mouse_modifiers(event: &MouseEvent) -> egui::Modifiers {
-    let mut modifiers = egui::Modifiers::default();
-    modifiers.shift = event.get_modifier_state("Shift");
-    modifiers.ctrl = event.get_modifier_state("Control");
-    modifiers.alt = event.get_modifier_state("Alt");
-    modifiers.command = event.get_modifier_state("Meta");
-
-    modifiers
+    egui::Modifiers {
+        shift: event.get_modifier_state("Shift"),
+        ctrl: event.get_modifier_state("Control"),
+        alt: event.get_modifier_state("Alt"),
+        command: event.get_modifier_state("Meta"),
+        ..Default::default()
+    }
 }
 
 fn try_parse_mouse_button(button: i16) -> Result<egui::PointerButton, ConversionError> {

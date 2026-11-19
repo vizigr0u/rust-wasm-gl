@@ -59,11 +59,31 @@ fn start() -> Result<(), JsValue> {
                     web_sys::console::error_2(&"Could not start main loop:".into(), &err);
                 }
             }
-            Err(err) => log::error!("Could not create renderer: {err}"),
+            Err(err) => {
+                log::error!("Could not create renderer: {err}");
+                show_overlay("WebGPU not available in this browser");
+            }
         }
     });
 
     Ok(())
+}
+
+/// Full-page message instead of a blank canvas.
+fn show_overlay(msg: &str) {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let (Ok(div), Some(body)) = (doc.create_element("div"), doc.body()) else {
+        return;
+    };
+    div.set_text_content(Some(msg));
+    let _ = div.set_attribute(
+        "style",
+        "position:fixed;inset:0;display:flex;align-items:center;justify-content:center;\
+         background:#111;color:#eee;font:20px sans-serif;z-index:100",
+    );
+    let _ = body.append_child(&div);
 }
 
 fn main_loop(game: Game, renderer: Renderer) -> Result<(), JsValue> {

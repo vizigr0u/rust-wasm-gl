@@ -352,7 +352,7 @@ fn proper_rescale_ivec3(n: IVec3, f: i32) -> IVec3 {
 mod tests {
     use std::collections::HashMap;
 
-    use glam::{ivec2, ivec3, vec3, IVec3};
+    use glam::{ivec2, ivec3, vec3};
 
     use crate::world::{
         BlockPos, ChunkPos, PageChunkOffset, PagePos, WorldPos, BLOCKS_PER_CHUNK, CHUNK_PAGE_SIZE,

@@ -1,0 +1,684 @@
+//! wgpu renderer (WebGPU only). Port in progress: C6 = egui done.
+
+mod objects;
+
+use std::collections::HashMap;
+
+use web_sys::{HtmlCanvasElement, HtmlImageElement};
+
+use super::{FrameInput, RenderError, RenderStats, TextureId, UiFrame};
+use crate::world::{make_base_quad_data, ChunkDrawData, ChunkPos};
+use voxel_core::render::{build_draw_list, pack_sides, SideRanges};
+
+/// `min_uniform_buffer_offset_alignment` is at most 256 in WebGPU.
+const CHUNK_SLOT: u64 = 256;
+const GLOBALS_SIZE: u64 = 128;
+
+/// One chunk's quads on the GPU: all 6 sides concatenated in one buffer.
+struct GpuChunk {
+    buffer: wgpu::Buffer,
+    side_ranges: SideRanges,
+}
+
+struct ChunkPipeline {
+    pipeline: wgpu::RenderPipeline,
+    globals_layout: wgpu::BindGroupLayout,
+    chunk_layout: wgpu::BindGroupLayout,
+    globals_buf: wgpu::Buffer,
+    base_quad: wgpu::Buffer,
+    /// Per-frame chunk offsets, one `CHUNK_SLOT` per drawn chunk. Grown on demand.
+    chunk_buf: wgpu::Buffer,
+    chunk_slots: u64,
+    chunk_bind: wgpu::BindGroup,
+    /// Needs the Blocks texture, so created once it is loaded.
+    globals_bind: Option<wgpu::BindGroup>,
+}
+
+fn create_chunk_buf(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    slots: u64,
+) -> (wgpu::Buffer, wgpu::BindGroup) {
+    let buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("chunk offsets"),
+        size: slots * CHUNK_SLOT,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("chunk offsets"),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &buf,
+                offset: 0,
+                size: wgpu::BufferSize::new(16),
+            }),
+        }],
+    });
+    (buf, bind)
+}
+
+impl ChunkPipeline {
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("chunk.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../../../shaders/chunk.wgsl").into()),
+        });
+        let uniform = |binding, visibility, dynamic, min| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: dynamic,
+                min_binding_size: wgpu::BufferSize::new(min),
+            },
+            count: None,
+        };
+        let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("chunk globals"),
+            entries: &[
+                uniform(0, wgpu::ShaderStages::VERTEX, false, GLOBALS_SIZE),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
+        });
+        let chunk_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("chunk offset"),
+            entries: &[uniform(0, wgpu::ShaderStages::VERTEX, true, 16)],
+        });
+        let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("chunk"),
+            bind_group_layouts: &[Some(&globals_layout), Some(&chunk_layout)],
+            immediate_size: 0,
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("chunk"),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_main"),
+                compilation_options: Default::default(),
+                buffers: &[
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: 12,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![0 => Float32x3],
+                    }),
+                    Some(wgpu::VertexBufferLayout {
+                        array_stride: 4,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &wgpu::vertex_attr_array![1 => Sint32],
+                    }),
+                ],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs_main"),
+                compilation_options: Default::default(),
+                targets: &[Some(format.into())],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        let globals_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("chunk globals"),
+            size: GLOBALS_SIZE,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let base_quad = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("base quad"),
+            size: 48,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let quad: [[f32; 3]; 4] = make_base_quad_data().map(|v| v.to_array());
+        queue.write_buffer(&base_quad, 0, bytemuck::cast_slice(&quad));
+        let chunk_slots = 256;
+        let (chunk_buf, chunk_bind) = create_chunk_buf(device, &chunk_layout, chunk_slots);
+        Self {
+            pipeline,
+            globals_layout,
+            chunk_layout,
+            globals_buf,
+            base_quad,
+            chunk_buf,
+            chunk_slots,
+            chunk_bind,
+            globals_bind: None,
+        }
+    }
+}
+
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+pub struct Renderer {
+    egui_renderer: egui_wgpu::Renderer,
+    surface: wgpu::Surface<'static>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    config: wgpu::SurfaceConfiguration,
+    depth_view: wgpu::TextureView,
+    /// Loaded textures (non-sRGB, 1 mip).
+    textures: HashMap<TextureId, (wgpu::Texture, wgpu::TextureView)>,
+    /// Nearest/Nearest, Repeat: GL parity.
+    sampler: wgpu::Sampler,
+    chunk_pipeline: ChunkPipeline,
+    objects: objects::ObjectPipelines,
+    gpu_chunks: HashMap<ChunkPos, GpuChunk>,
+    draw_calls: u32,
+    times: RenderStats,
+}
+
+impl std::fmt::Debug for Renderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Renderer")
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
+fn create_depth_view(device: &wgpu::Device, w: u32, h: u32) -> wgpu::TextureView {
+    device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("depth"),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        })
+        .create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+impl Renderer {
+    pub async fn new(canvas: HtmlCanvasElement) -> Result<Self, RenderError> {
+        let (w, h) = (canvas.width().max(1), canvas.height().max(1));
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::BROWSER_WEBGPU,
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
+        });
+        let surface = instance
+            .create_surface(wgpu::SurfaceTarget::Canvas(canvas))
+            .map_err(|e| RenderError(format!("create_surface: {e}")))?;
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
+                compatible_surface: Some(&surface),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| RenderError(format!("WebGPU not available: {e}")))?;
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor {
+                label: Some("rwg device"),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| RenderError(format!("request_device: {e}")))?;
+
+        device.set_device_lost_callback(|reason, msg| {
+            log::error!("wgpu device lost ({reason:?}): {msg}");
+        });
+        device.on_uncaptured_error(std::sync::Arc::new(|err: wgpu::Error| {
+            log::error!("wgpu error: {err}");
+        }));
+
+        // Non-sRGB so colours match the WebGL2 default framebuffer (no gamma).
+        let caps = surface.get_capabilities(&adapter);
+        let format = caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| !f.is_srgb())
+            .ok_or("no non-sRGB surface format")?;
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: w,
+            height: h,
+            present_mode: wgpu::PresentMode::Fifo,
+            desired_maximum_frame_latency: 2,
+            alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+            color_space: wgpu::SurfaceColorSpace::Auto,
+            view_formats: vec![],
+        };
+        surface.configure(&device, &config);
+        let depth_view = create_depth_view(&device, w, h);
+
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("nearest repeat"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
+
+        let chunk_pipeline = ChunkPipeline::new(&device, &queue, format);
+        let objects = objects::ObjectPipelines::new(
+            &device,
+            &chunk_pipeline.globals_layout,
+            format,
+            DEPTH_FORMAT,
+        );
+        let egui_renderer = egui_wgpu::Renderer::new(
+            &device,
+            format,
+            egui_wgpu::RendererOptions {
+                dithering: false,
+                ..Default::default()
+            },
+        );
+        Ok(Self {
+            egui_renderer,
+            chunk_pipeline,
+            objects,
+            gpu_chunks: HashMap::new(),
+            draw_calls: 0,
+            times: RenderStats::default(),
+            textures: HashMap::new(),
+            sampler,
+            surface,
+            device,
+            queue,
+            config,
+            depth_view,
+        })
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 || (width, height) == (self.config.width, self.config.height) {
+            return;
+        }
+        self.config.width = width;
+        self.config.height = height;
+        self.surface.configure(&self.device, &self.config);
+        self.depth_view = create_depth_view(&self.device, width, height);
+    }
+
+    /// Upload a decoded image. `layers` > 1: the image is a vertical strip of `layers` tiles.
+    pub fn load_texture(&mut self, id: TextureId, img: &HtmlImageElement, layers: u32) {
+        let layers = layers.max(1);
+        let (w, h) = (img.natural_width(), img.natural_height() / layers);
+        if w == 0 || h == 0 {
+            log::error!("texture {id:?}: empty image");
+            return;
+        }
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(&format!("{id:?}")),
+            size: wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: layers,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING
+                | wgpu::TextureUsages::COPY_DST
+                | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        });
+        for layer in 0..layers {
+            self.queue.copy_external_image_to_texture(
+                &wgpu::CopyExternalImageSourceInfo {
+                    source: wgpu::ExternalImageSource::HTMLImageElement(img.clone()),
+                    origin: wgpu::Origin2d { x: 0, y: layer * h },
+                    flip_y: false,
+                },
+                wgpu::CopyExternalImageDestInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                    color_space: wgpu::PredefinedColorSpace::Srgb,
+                    premultiplied_alpha: false,
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: h,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(if layers > 1 {
+                wgpu::TextureViewDimension::D2Array
+            } else {
+                wgpu::TextureViewDimension::D2
+            }),
+            ..Default::default()
+        });
+        self.textures.insert(id, (texture, view));
+        if id == TextureId::Blocks {
+            self.chunk_pipeline.globals_bind = None;
+        }
+    }
+
+    /// Create or replace the GPU buffer of one chunk.
+    pub fn upload_chunk(&mut self, pos: ChunkPos, data: &ChunkDrawData) {
+        self.remove_chunk(pos);
+        if data.quad_count() == 0 {
+            return;
+        }
+        let (all, side_ranges) = pack_sides(data);
+        let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("chunk quads"),
+            size: all.len() as u64 * 4,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.queue
+            .write_buffer(&buffer, 0, bytemuck::cast_slice(&all));
+        self.gpu_chunks.insert(
+            pos,
+            GpuChunk {
+                buffer,
+                side_ranges,
+            },
+        );
+    }
+
+    pub fn remove_chunk(&mut self, pos: ChunkPos) {
+        // Dropping the wgpu buffer releases it once in-flight work is done.
+        self.gpu_chunks.remove(&pos);
+    }
+
+    /// Upload globals + per-chunk offsets; returns the draws and the slot of each.
+    fn prepare_chunks(&mut self, frame: &FrameInput) -> Vec<(voxel_core::render::ChunkDraw, u32)> {
+        let cp = &mut self.chunk_pipeline;
+        if cp.globals_bind.is_none() {
+            let Some((_, view)) = self.textures.get(&TextureId::Blocks) else {
+                return Vec::new();
+            };
+            cp.globals_bind = Some(self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("chunk globals"),
+                layout: &cp.globals_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: cp.globals_buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.sampler),
+                    },
+                ],
+            }));
+        }
+        let mut globals = [0f32; 32];
+        globals[..16].copy_from_slice(&frame.view.to_cols_array());
+        globals[16..].copy_from_slice(&frame.projection.to_cols_array());
+        self.queue
+            .write_buffer(&cp.globals_buf, 0, bytemuck::cast_slice(&globals));
+
+        // Floating origin: each chunk's offset from the player's chunk (exact in f32).
+        let draws = build_draw_list(
+            self.gpu_chunks.iter().map(|(p, c)| (*p, c.side_ranges)),
+            frame.player_chunk,
+        );
+        let mut slot_data: Vec<u8> = Vec::new();
+        let mut out = Vec::with_capacity(draws.len());
+        let mut last = None;
+        let mut slot = 0u32;
+        for d in draws {
+            if last != Some(d.chunk) {
+                last = Some(d.chunk);
+                slot = (slot_data.len() as u64 / CHUNK_SLOT) as u32;
+                let start = slot_data.len();
+                slot_data.resize(start + CHUNK_SLOT as usize, 0);
+                slot_data[start..start + 12]
+                    .copy_from_slice(bytemuck::cast_slice(&d.offset.to_array()));
+            }
+            out.push((d, slot));
+        }
+        let needed = slot_data.len() as u64 / CHUNK_SLOT;
+        if needed > cp.chunk_slots {
+            cp.chunk_slots = needed.next_power_of_two();
+            (cp.chunk_buf, cp.chunk_bind) =
+                create_chunk_buf(&self.device, &cp.chunk_layout, cp.chunk_slots);
+        }
+        if !slot_data.is_empty() {
+            self.queue.write_buffer(&cp.chunk_buf, 0, &slot_data);
+        }
+        out
+    }
+
+    pub fn render(&mut self, frame: &FrameInput, ui: Option<UiFrame>) {
+        let t0 = crate::utils::performance_now();
+        use wgpu::CurrentSurfaceTexture as Cst;
+        let tex = match self.surface.get_current_texture() {
+            Cst::Success(t) => t,
+            Cst::Suboptimal(t) => {
+                self.surface.configure(&self.device, &self.config);
+                t
+            }
+            Cst::Outdated | Cst::Lost => {
+                self.surface.configure(&self.device, &self.config);
+                return;
+            }
+            Cst::Timeout | Cst::Occluded => return,
+            other => {
+                log::error!("surface texture: {other:?}");
+                return;
+            }
+        };
+        let view = tex
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let t1 = crate::utils::performance_now();
+        let draws = self.prepare_chunks(frame);
+        self.draw_calls = draws.len() as u32;
+        self.objects.write_models(
+            &self.queue,
+            frame.player_model.as_ref(),
+            frame.gizmo_model.as_ref(),
+        );
+        let t2 = crate::utils::performance_now();
+        let [r, g, b, a] = frame.clear_color.map(f64::from);
+        let mut enc = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        {
+            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("main"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+            if let Some(globals) = &self.chunk_pipeline.globals_bind {
+                let cp = &self.chunk_pipeline;
+                pass.set_bind_group(0, globals, &[]);
+                if !draws.is_empty() {
+                    pass.set_pipeline(&cp.pipeline);
+                    pass.set_vertex_buffer(0, cp.base_quad.slice(..));
+                    let mut bound = None;
+                    for (d, slot) in &draws {
+                        // Rebind only when the chunk changes (draws are sorted by chunk).
+                        if bound != Some(d.chunk) {
+                            let chunk = &self.gpu_chunks[&d.chunk];
+                            pass.set_bind_group(1, &cp.chunk_bind, &[slot * CHUNK_SLOT as u32]);
+                            pass.set_vertex_buffer(1, chunk.buffer.slice(..));
+                            bound = Some(d.chunk);
+                        }
+                        pass.draw(0..4, d.first..d.first + d.count);
+                    }
+                }
+                self.objects.draw(
+                    &mut pass,
+                    frame.player_model.is_some(),
+                    frame.gizmo_model.is_some(),
+                );
+            }
+        }
+        let t3 = crate::utils::performance_now();
+        let mut extra = Vec::new();
+        if let Some(ui) = &ui {
+            for (id, deltas) in &ui.textures_delta.set {
+                for delta in deltas {
+                    self.egui_renderer
+                        .update_texture(&self.device, &self.queue, *id, delta);
+                }
+            }
+            let screen = egui_wgpu::ScreenDescriptor {
+                size_in_pixels: [self.config.width, self.config.height],
+                pixels_per_point: 1.0,
+            };
+            extra = self.egui_renderer.update_buffers(
+                &self.device,
+                &self.queue,
+                &mut enc,
+                &ui.primitives,
+                &screen,
+            );
+            let mut pass = enc
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("egui"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    ..Default::default()
+                })
+                .forget_lifetime();
+            self.egui_renderer
+                .render(&mut pass, &ui.primitives, &screen);
+        }
+        let t4 = crate::utils::performance_now();
+        self.queue.submit(extra.into_iter().chain([enc.finish()]));
+        self.queue.present(tex);
+        if let Some(mut ui) = ui {
+            for id in &ui.textures_delta.free {
+                self.egui_renderer.free_texture(id);
+            }
+            // epaint's Drop debug-asserts the delta is empty; mark it handled.
+            ui.textures_delta.clear();
+        }
+        let t5 = crate::utils::performance_now();
+        self.times = RenderStats {
+            draw_calls: 0,
+            chunk_buffers: 0,
+            acquire_ms: t1 - t0,
+            prepare_ms: t2 - t1,
+            pass_ms: t3 - t2,
+            egui_ms: t4 - t3,
+            submit_ms: t5 - t4,
+        };
+    }
+
+    pub fn stats(&self) -> RenderStats {
+        RenderStats {
+            draw_calls: self.draw_calls,
+            chunk_buffers: self.gpu_chunks.len(),
+            ..self.times
+        }
+    }
+
+    /// Compile every shader and build every pipeline inside validation error scopes.
+    /// One message per failure; empty = all good.
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn compile_check(&self) -> impl std::future::Future<Output = Vec<String>> + 'static {
+        let device = self.device.clone();
+        let queue = self.queue.clone();
+        let format = self.config.format;
+        async move {
+            let mut errors = Vec::new();
+            for (name, src) in [
+                ("chunk", include_str!("../../../shaders/chunk.wgsl")),
+                ("cube", include_str!("../../../shaders/cube.wgsl")),
+                ("gizmo", include_str!("../../../shaders/gizmo.wgsl")),
+            ] {
+                let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+                let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                    label: Some(name),
+                    source: wgpu::ShaderSource::Wgsl(src.into()),
+                });
+                for m in module.get_compilation_info().await.messages {
+                    if m.message_type == wgpu::CompilationMessageType::Error {
+                        errors.push(format!("{name}: {}", m.message));
+                    }
+                }
+                if let Some(e) = scope.pop().await {
+                    errors.push(format!("{name}: {e}"));
+                }
+            }
+            let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
+            let chunk = ChunkPipeline::new(&device, &queue, format);
+            let _objects =
+                objects::ObjectPipelines::new(&device, &chunk.globals_layout, format, DEPTH_FORMAT);
+            if let Some(e) = scope.pop().await {
+                errors.push(format!("pipelines: {e}"));
+            }
+            errors
+        }
+    }
+}

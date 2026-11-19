@@ -10,8 +10,21 @@ pub(crate) mod gl;
 #[cfg(feature = "gl")]
 pub use gl::Renderer;
 
+#[cfg(feature = "webgpu")]
+pub(crate) mod webgpu;
+#[cfg(all(feature = "webgpu", not(feature = "gl")))]
+pub use webgpu::Renderer;
+
+#[cfg(all(feature = "gl", feature = "webgpu"))]
+compile_error!("enable exactly one renderer backend feature (`gl` or `webgpu`)");
+#[cfg(not(any(feature = "gl", feature = "webgpu")))]
+compile_error!("enable a renderer backend feature (`gl` or `webgpu`)");
+
+/// Clip-space z range of the active backend's projection.
+#[cfg(feature = "gl")]
+pub const CLIP_Z: voxel_core::camera::ClipZ = voxel_core::camera::ClipZ::NegOneToOne;
 #[cfg(not(feature = "gl"))]
-compile_error!("enable a renderer backend feature (`gl`)");
+pub const CLIP_Z: voxel_core::camera::ClipZ = voxel_core::camera::ClipZ::ZeroToOne;
 
 #[derive(Debug)]
 pub struct RenderError(pub String);
@@ -63,6 +76,16 @@ pub struct RenderStats {
     /// Draw calls issued by the last `render`.
     pub draw_calls: u32,
     pub chunk_buffers: usize,
+    /// CPU ms of the last `render` spent preparing (draw list, per-frame uploads).
+    pub prepare_ms: f64,
+    /// CPU ms of the last `render`: surface acquire + view (webgpu only).
+    pub acquire_ms: f64,
+    /// CPU ms of the last `render`: encoding the main 3D pass.
+    pub pass_ms: f64,
+    /// CPU ms of the last `render`: egui buffers, pass and paint.
+    pub egui_ms: f64,
+    /// CPU ms of the last `render`: submit + present (webgpu only).
+    pub submit_ms: f64,
 }
 
 impl From<&str> for RenderError {

@@ -35,6 +35,8 @@ pub struct Renderer {
     objects: ObjectRenderers,
     egui: EguiPainter,
     size: (u32, u32),
+    pass_ms: f64,
+    egui_ms: f64,
 }
 
 fn texture_type(id: TextureId, layers: u32) -> TextureType {
@@ -78,6 +80,8 @@ impl Renderer {
             objects,
             egui,
             size,
+            pass_ms: 0.0,
+            egui_ms: 0.0,
         })
     }
 
@@ -134,6 +138,7 @@ impl Renderer {
     }
 
     pub fn render(&mut self, frame: &FrameInput, ui: Option<UiFrame>) {
+        let t0 = crate::utils::performance_now();
         let gl = &self.gl;
         let [r, g, b, a] = frame.clear_color;
         unsafe {
@@ -156,22 +161,32 @@ impl Renderer {
             self.objects
                 .draw_gizmo(gl, &frame.view, &frame.projection, m);
         }
+        let t1 = crate::utils::performance_now();
         if let Some(ui) = ui {
             self.egui
                 .paint(gl, self.size, ui.textures_delta, &ui.primitives);
         }
+        let t2 = crate::utils::performance_now();
+        self.pass_ms = t1 - t0;
+        self.egui_ms = t2 - t1;
     }
 
     pub fn stats(&self) -> RenderStats {
         RenderStats {
             draw_calls: self.world.draw_calls(),
             chunk_buffers: self.world.chunk_buffers(),
+            // GL has no separate prepare/acquire/submit phases: all in the pass.
+            prepare_ms: 0.0,
+            acquire_ms: 0.0,
+            pass_ms: self.pass_ms,
+            egui_ms: self.egui_ms,
+            submit_ms: 0.0,
         }
     }
 
     /// Compile and link every shader program. One message per failure; empty = all good.
     #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
-    pub fn compile_check(&self) -> Vec<String> {
+    pub fn compile_check(&self) -> impl std::future::Future<Output = Vec<String>> + 'static {
         let gl = &self.gl;
         let mut errors = Vec::new();
         let mut check = |name: &str, r: Result<(), String>| {
@@ -183,7 +198,7 @@ impl Renderer {
         check("cube", compile_cube_shader(gl).map(|_| ()));
         check("gizmo", compile_gizmo_shader(gl).map(|_| ()));
         check("egui", EguiPainter::compile_shader(gl).map(|_| ()));
-        errors
+        std::future::ready(errors)
     }
 }
 

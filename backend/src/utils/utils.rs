@@ -1,5 +1,3 @@
-use glow::HasContext;
-
 use wasm_bindgen::prelude::*;
 use web_sys::{Document, Performance, Window};
 
@@ -35,44 +33,6 @@ pub fn get_canvas() -> Result<web_sys::HtmlCanvasElement, JsValue> {
         .ok_or("cannot find canvas")?
         .dyn_into::<web_sys::HtmlCanvasElement>()
         .map_err(|_| "canvas isnt a Canvas Element".into())
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub enum GlRenderFlags {
-    DepthTest = glow::DEPTH_TEST as isize,
-    CullFace = glow::CULL_FACE as isize,
-    Blend = glow::BLEND as isize,
-}
-
-pub struct GlState {
-    pub depth_test: bool,
-    pub cull_face: bool,
-    pub blend: bool,
-}
-
-impl GlState {
-    // pub fn save(gl: &glow::Context) -> Self {
-    //     unsafe {
-    //         Self {
-    //             depth_test: gl.is_enabled(GlRenderFlags::DepthTest as _),
-    //             cull_face: gl.is_enabled(GlRenderFlags::CullFace as _),
-    //             blend: gl.is_enabled(GlRenderFlags::Blend as _),
-    //         }
-    //     }
-    // }
-    // pub fn restore(&self, gl: &glow::Context) {
-    //     GlState::set_flag(gl, GlRenderFlags::DepthTest, self.depth_test);
-    //     GlState::set_flag(gl, GlRenderFlags::CullFace, self.cull_face);
-    //     GlState::set_flag(gl, GlRenderFlags::Blend, self.blend);
-    // }
-
-    pub fn set_flag(gl: &glow::Context, param: GlRenderFlags, value: bool) {
-        if value {
-            unsafe { gl.enable(param as _) };
-        } else {
-            unsafe { gl.disable(param as _) };
-        }
-    }
 }
 
 pub fn performance_now() -> f64 {

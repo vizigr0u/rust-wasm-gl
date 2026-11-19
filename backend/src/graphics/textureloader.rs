@@ -12,11 +12,12 @@ use crate::utils::{get_document, get_performance};
 #[derive(Debug)]
 enum TextureStatus {
     Idle,
-    Busy(
-        f64,
-        Rc<RefCell<Closure<dyn FnMut()>>>,
-        Rc<RefCell<Closure<dyn FnMut()>>>,
-    ),
+    Busy {
+        start_time: f64,
+        // Held only to keep the JS callbacks alive while the image loads.
+        _on_load: Rc<RefCell<Closure<dyn FnMut()>>>,
+        _on_error: Rc<RefCell<Closure<dyn FnMut()>>>,
+    },
 }
 
 #[derive(Debug)]
@@ -69,7 +70,7 @@ impl TextureLoader {
         self.pool
             .borrow()
             .iter()
-            .filter(|tex| matches!(tex.status, TextureStatus::Busy(..)))
+            .filter(|tex| matches!(tex.status, TextureStatus::Busy { .. }))
             .count()
     }
 
@@ -104,7 +105,11 @@ impl TextureLoader {
 
                 loading_tex.img.set_src(src);
                 let start_time: f64 = get_performance()?.now();
-                loading_tex.status = TextureStatus::Busy(start_time, rc_closure, rc_error);
+                loading_tex.status = TextureStatus::Busy {
+                    start_time,
+                    _on_load: rc_closure,
+                    _on_error: rc_error,
+                };
                 loading_tex.id = id;
                 loading_tex.layers = layers;
                 Ok(())
@@ -126,7 +131,7 @@ impl TextureLoader {
 
         for index in MessageSystem::take_failed_loads() {
             if let Some(tex) = self.pool.borrow_mut().get_mut(index) {
-                if matches!(tex.status, TextureStatus::Busy(..)) {
+                if matches!(tex.status, TextureStatus::Busy { .. }) {
                     errors = format!("{}, failed to load texture '{}'", errors, tex.img.src());
                     // Free the slot; the texture stays the magenta placeholder.
                     tex.status = TextureStatus::Idle;
@@ -147,7 +152,7 @@ impl TextureLoader {
                             errors, index
                         );
                     }
-                    TextureStatus::Busy(start_time, _, _) => {
+                    TextureStatus::Busy { start_time, .. } => {
                         let img = &tex.img;
                         let now: f64 = get_performance().map(|p| p.now()).unwrap_or(*start_time);
                         let total_time = now - *start_time;

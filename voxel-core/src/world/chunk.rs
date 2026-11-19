@@ -313,21 +313,11 @@ fn add_side_data(
     result[side as usize].push(make_side_quad_data(side, texture, offset));
 }
 
-struct FiveBitsPerInt;
-struct FourBitsPerInt;
-
 fn pack_ivec_4bits(v: U16Vec3) -> i32 {
     debug_assert!(v.x < 16);
     debug_assert!(v.y < 16);
     debug_assert!(v.z < 16);
     (v.x | v.y << 4 | v.z << 8) as i32
-}
-
-fn pack_ivec_5bits(v: U16Vec3) -> i32 {
-    debug_assert!(v.x < 32);
-    debug_assert!(v.y < 32);
-    debug_assert!(v.z < 32);
-    (v.x | v.y << 5 | v.z << 10) as i32
 }
 
 pub fn make_side_quad_data(side: Side, texture: BlockSideTexture, offset: U16Vec3) -> i32 {
@@ -444,10 +434,6 @@ pub struct SideVertices {
 // }
 
 impl SideVertices {
-    fn get_quad_triangles(&self) -> [Vec3; 6] {
-        [self.a, self.b, self.c, self.a, self.c, self.d]
-    }
-
     fn get_quad_triangles_strip(&self) -> [Vec3; 4] {
         [self.a, self.b, self.d, self.c]
     }
