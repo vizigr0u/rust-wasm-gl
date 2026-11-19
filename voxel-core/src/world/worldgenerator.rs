@@ -18,6 +18,21 @@ pub trait WorldGenerator {
     fn generate(&self, chunk_pos: ChunkPos) -> Chunk;
 }
 
+/// One grass block at block (0,0,0), everything else air. Test scenes only.
+#[derive(Debug, Default)]
+pub struct SingleBlockGenerator;
+
+impl WorldGenerator for SingleBlockGenerator {
+    fn generate(&self, chunk_pos: ChunkPos) -> Chunk {
+        let mut chunk = Chunk::empty();
+        if chunk_pos.as_vec() == glam::IVec3::ZERO {
+            chunk.set(glam::U16Vec3::ZERO, super::BlockType::Grass);
+            chunk.compact();
+        }
+        chunk
+    }
+}
+
 pub struct EmptyWorldGenerator;
 
 impl WorldGenerator for EmptyWorldGenerator {
@@ -34,5 +49,25 @@ pub struct RandomChunkGenerator {
 impl WorldGenerator for RandomChunkGenerator {
     fn generate(&self, chunk_pos: ChunkPos) -> Chunk {
         Chunk::random(&mut rng_for(self.seed, chunk_pos))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::IVec3;
+
+    #[test]
+    fn single_block_only_in_origin_chunk() {
+        let g = SingleBlockGenerator;
+        let count = |p: IVec3| {
+            g.generate(p.into())
+                .iter_blocks()
+                .filter(|b| *b != super::super::BlockType::Empty)
+                .count()
+        };
+        assert_eq!(count(IVec3::ZERO), 1);
+        assert_eq!(count(IVec3::new(1, 0, 0)), 0);
+        assert!(g.generate(IVec3::new(0, 1, 0).into()).is_empty());
     }
 }

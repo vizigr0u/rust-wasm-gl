@@ -52,8 +52,8 @@ pub struct EguiBackend {
 const RENDER_FLAGS: [GlRenderFlags; 1] = [GlRenderFlags::Blend];
 
 impl EguiBackend {
-    pub fn new(gl: &glow::Context) -> Self {
-        let program = unsafe {
+    pub fn compile_shader(gl: &glow::Context) -> Result<crate::graphics::ShaderProgram, String> {
+        unsafe {
             shader_def!(
                 "egui.vert",
                 "egui.frag",
@@ -66,7 +66,10 @@ impl EguiBackend {
             )
             .compile(gl)
         }
-        .expect("Cant compile eguis shaders");
+    }
+
+    pub fn new(gl: &glow::Context) -> Self {
+        let program = Self::compile_shader(gl).expect("Cant compile eguis shaders");
         let program = Rc::new(program);
         Self {
             egui_ctx: egui::Context::default(),

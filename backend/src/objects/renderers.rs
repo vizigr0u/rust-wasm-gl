@@ -89,7 +89,7 @@ const GIZMO_VERTICES: [f32; 36] = [
     0.0, 0.0, 1.0, 0.0, 0.0, 1.0, //
 ];
 
-fn compile_cube_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
+pub fn compile_cube_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
     unsafe {
         let program = shader_def!(
             "cube.vert",
@@ -111,7 +111,7 @@ fn compile_cube_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> 
     }
 }
 
-fn compile_gizmo_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
+pub fn compile_gizmo_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
     unsafe {
         let program = shader_def!(
             "gizmo.vert",

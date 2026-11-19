@@ -68,3 +68,5 @@ features = [
 
 [features]
 default = ["console_error_panic_hook", "console_log"]
+# Deterministic scene driver for Playwright (window.__RWG_TEST__). Not for release builds.
+test-hooks = []

@@ -141,6 +141,11 @@ where
         changes
     }
 
+    /// Nothing left to stream or mesh for the current player position.
+    pub fn is_settled(&self) -> bool {
+        self.streamer.is_idle() && self.chunks_to_load.is_empty()
+    }
+
     pub fn mesh(&self, pos: ChunkPos) -> Option<&ChunkDrawData> {
         self.meshes.get(&pos).map(|m| &m.draw_data)
     }

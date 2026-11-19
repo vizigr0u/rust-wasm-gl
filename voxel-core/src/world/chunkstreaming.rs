@@ -115,6 +115,11 @@ where
         format!("{} page(s) loaded", self.loaded_chunk_pages.len())
     }
 
+    /// No pages left to load.
+    pub fn is_idle(&self) -> bool {
+        self.pages_to_load.is_empty()
+    }
+
     pub fn is_chunked_streamed(&self, chunk_pos: ChunkPos) -> bool {
         self.get_page_for_chunk(chunk_pos).is_some()
     }

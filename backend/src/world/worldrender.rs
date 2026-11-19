@@ -160,7 +160,7 @@ impl WorldRenderData {
     }
 }
 
-fn compile_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
+pub fn compile_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
     debug_assert!(
         CHUNK_SIZE == 16,
         "make sure to update shaders for new chunk size"

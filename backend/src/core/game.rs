@@ -11,7 +11,9 @@ use crate::{
     gui::{EguiBackend, FpsDisplay},
     objects::{ObjectRenderers, Player},
     utils::performance_now,
-    world::{GeneratorV0, World, WorldRenderData},
+    world::{
+        Chunk, ChunkPos, GeneratorV0, SingleBlockGenerator, World, WorldGenerator, WorldRenderData,
+    },
 };
 
 use super::{HandleInputs, InputEventType, InputSystem, Time};
@@ -19,10 +21,58 @@ use super::{HandleInputs, InputEventType, InputSystem, Time};
 const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 const UV_CHECKER_PATH: &str = "data/textures/UV_checker_Map_byValle.jpg";
 
-type WorldGenerator = GeneratorV0;
+#[derive(Debug)]
+enum Generator {
+    V0(GeneratorV0),
+    SingleBlock(SingleBlockGenerator),
+}
 
-fn make_generator(_rng: Rng) -> WorldGenerator {
-    GeneratorV0::new()
+impl WorldGenerator for Generator {
+    fn generate(&self, pos: ChunkPos) -> Chunk {
+        match self {
+            Generator::V0(g) => g.generate(pos),
+            Generator::SingleBlock(g) => g.generate(pos),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+pub enum SceneGenerator {
+    V0,
+    SingleBlock,
+}
+
+/// Everything that varies between the normal game and a deterministic test scene.
+#[derive(Debug, Clone)]
+pub struct SceneConfig {
+    pub generator: SceneGenerator,
+    pub seed: u64,
+    pub camera_offset: Vec3,
+    pub show_player: bool,
+    pub show_gizmo: bool,
+    pub show_egui: bool,
+}
+
+impl Default for SceneConfig {
+    /// The `default_spawn` scene, which is also the real game.
+    fn default() -> Self {
+        Self {
+            generator: SceneGenerator::V0,
+            seed: 0,
+            camera_offset: vec3(-10.0, 5.0, 0.0),
+            show_player: true,
+            show_gizmo: true,
+            show_egui: true,
+        }
+    }
+}
+
+fn make_generator(config: &SceneConfig, _rng: Rng) -> Generator {
+    match config.generator {
+        SceneGenerator::V0 => Generator::V0(GeneratorV0::new()),
+        SceneGenerator::SingleBlock => Generator::SingleBlock(SingleBlockGenerator),
+    }
 }
 
 #[derive(Debug)]
@@ -54,8 +104,13 @@ pub struct Game {
     seed: u64,
     stage: Stage,
     texture_loader: TextureLoader,
-    world: World<WorldGenerator>,
+    world: World<Generator>,
     camera: Camera,
+    config: SceneConfig,
+    /// The last `World::update` produced no mesh changes (and they were applied).
+    last_changes_empty: bool,
+    /// Test hooks place the camera by hand; skip the follow-the-player retarget.
+    camera_pinned: bool,
 
     input_system: InputSystem,
     time: Time,
@@ -88,18 +143,21 @@ impl Default for GuiState {
 
 impl Game {
     pub fn new() -> Result<Self, JsValue> {
-        let seed = 0;
+        Self::with_config(SceneConfig::default())
+    }
+
+    pub fn with_config(config: SceneConfig) -> Result<Self, JsValue> {
+        let seed = config.seed;
         let rng = Rng::with_seed(seed);
         let game = Game {
             seed,
             stage: Stage::Loading,
             texture_loader: TextureLoader::new(10)?,
-            world: World::new(make_generator(rng)),
-            camera: Camera::new(Vec3 {
-                x: -10.0,
-                y: 5.0,
-                z: 0.0,
-            }),
+            world: World::new(make_generator(&config, rng)),
+            camera: Camera::new(config.camera_offset),
+            config,
+            last_changes_empty: false,
+            camera_pinned: false,
             input_system: InputSystem::new()?,
             is_paused: false,
             time: Time::default(),
@@ -109,6 +167,25 @@ impl Game {
         };
 
         Ok(game)
+    }
+
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn is_running(&self) -> bool {
+        matches!(self.stage, Stage::Running(_))
+    }
+
+    /// Running, and nothing is left to stream, mesh or upload.
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn is_settled(&self) -> bool {
+        self.is_running() && self.world.is_settled() && self.last_changes_empty
+    }
+
+    /// Place the camera by hand. `target` is relative to the player's chunk.
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn set_camera(&mut self, target: Vec3, offset: Vec3) {
+        self.camera_pinned = true;
+        self.camera.orbit.target = target;
+        self.camera.orbit.offset = offset;
     }
 
     fn tick_loading(&mut self, gl: &glow::Context) -> Result<Stage, String> {
@@ -184,7 +261,9 @@ impl Game {
         self.render(gl, gfx)?;
         let render_time = performance_now();
 
-        self.draw_ui(gl, gfx);
+        if self.config.show_egui {
+            self.draw_ui(gl, gfx);
+        }
 
         let frame_time = performance_now();
         self.fps_display
@@ -203,6 +282,7 @@ impl Game {
             self.player.update(&self.time);
             let player_chunk_pos = self.player.get_position().chunk_pos();
             let changes = self.world.update(player_chunk_pos);
+            self.last_changes_empty = changes.added.is_empty() && changes.removed.is_empty();
             for pos in changes.removed {
                 gfx.world.remove_chunk(gl, pos);
             }
@@ -213,7 +293,9 @@ impl Game {
             }
         }
 
-        self.camera.orbit.target = self.player.get_screen_position();
+        if !self.camera_pinned {
+            self.camera.orbit.target = self.player.get_screen_position();
+        }
 
         self.camera.update(&self.time);
     }
@@ -280,9 +362,13 @@ impl Game {
             .render(gl, &self.camera, self.world.player_chunk_pos());
 
         let player_chunk = self.player.get_position().chunk_pos();
-        gfx.objects
-            .draw_player(gl, &self.camera, &self.player, player_chunk);
-        gfx.objects.draw_gizmo(gl, &self.camera, player_chunk);
+        if self.config.show_player {
+            gfx.objects
+                .draw_player(gl, &self.camera, &self.player, player_chunk);
+        }
+        if self.config.show_gizmo {
+            gfx.objects.draw_gizmo(gl, &self.camera, player_chunk);
+        }
 
         Ok(())
     }

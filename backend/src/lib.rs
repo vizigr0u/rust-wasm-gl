@@ -11,6 +11,8 @@ mod gui;
 pub mod math;
 mod objects;
 mod utils;
+#[cfg(feature = "test-hooks")]
+mod testhooks;
 mod world;
 
 cfg_if! {
@@ -39,6 +41,12 @@ fn start() -> Result<(), JsValue> {
     tracing_wasm::set_as_global_default();
 
     init_log();
+
+    #[cfg(feature = "test-hooks")]
+    if testhooks::is_test_mode() {
+        // The spec drives the game through test_start/test_step instead.
+        return Ok(());
+    }
 
     let gl = get_webgl2_context()?;
 
