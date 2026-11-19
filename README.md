@@ -51,3 +51,39 @@ pnpm test
 cargo install cargo-insta   # once
 cargo insta test -p voxel-core --review
 ```
+
+### Pixel tests (Playwright)
+
+Deterministic scenes are rendered in headless Chromium (SwiftShader) and compared to golden PNGs in `e2e/__screenshots__/<backend>/`. The WASM is built with the `test-hooks` cargo feature, which exposes `test_start`, `test_step`, `test_is_settled`, `test_set_camera` and `test_compile_all_shaders` instead of running the rAF loop.
+
+```bash
+pnpm exec playwright install --with-deps chromium   # once
+
+# build wasm with test-hooks, bundle, serve, run specs
+pnpm test:pixels
+
+# regenerate goldens after an intended visual change (review the PNG diff in git!)
+pnpm test:pixels:update
+
+# only rebuild the test-hooks wasm
+pnpm wasm:test
+```
+
+Env vars:
+
+- `BACKEND=gl|webgpu`: picks Chromium flags and the golden dir (default `gl`). Only `gl` goldens exist so far.
+- `PIXEL_TIER=strict|loose`: strict is `threshold 0.1` and `0.1%` differing pixels; loose allows 2%.
+- `GOLDEN_DIR=gl`: compare a `webgpu` run against the GL goldens.
+
+On failure, diffs and traces land in `test-results/` (CI uploads it as an artifact).
+
+### Backend feature flags
+
+In `backend/Cargo.toml`:
+
+- `test-hooks`: deterministic scene driver for the e2e tests. Never enable it in release builds.
+- `webgpu`: not there yet (planned wgpu renderer, see `.claude/plan-wgpu-migration.md`). GL is the only backend today.
+
+### CI
+
+`.github/workflows/ci.yaml`: `rust` job (fmt, test, clippy) then `e2e` job (Playwright pixel tests, GL only).
