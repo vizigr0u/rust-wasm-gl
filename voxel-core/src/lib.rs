@@ -2,4 +2,6 @@
 pub mod camera;
 pub mod math;
 pub mod render;
+#[cfg(test)]
+mod testutil;
 pub mod world;

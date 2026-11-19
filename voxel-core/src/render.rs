@@ -126,4 +126,82 @@ mod tests {
         assert!(!list.iter().any(|d| d.chunk.as_vec().x == 1 && matches!(d.side, Side::Right)));
         assert!(list.iter().any(|d| d.chunk.as_vec().x == -1 && matches!(d.side, Side::Right)));
     }
+
+    // ---- A4 snapshots ----
+    use crate::testutil::hash_words;
+    use crate::world::{GeneratorV0, World, MAX_CHUNK_Y, MIN_CHUNK_Y};
+
+    #[test]
+    fn is_visible_full_table() {
+        let mut rows = Vec::new();
+        for side in SIDES {
+            let mut row = String::new();
+            for d in -2..=2 {
+                // offset of chunk relative to player, along the side's axis
+                for axis in 0..3 {
+                    let mut v = ivec3(0, 0, 0);
+                    v[axis] = d;
+                    let vis = is_visible(ivec3(0, 0, 0).into(), v.into(), side);
+                    row.push(if vis { 'V' } else { '.' });
+                }
+                row.push(' ');
+            }
+            rows.push(format!("{side:?}: {row}"));
+        }
+        insta::assert_yaml_snapshot!(rows);
+    }
+
+    #[test]
+    fn pack_sides_snapshot() {
+        let d = ChunkDrawData {
+            vertex_data: [vec![1, 2], vec![], vec![3], vec![4, 5, 6], vec![], vec![7]],
+        };
+        insta::assert_yaml_snapshot!(pack_sides(&d));
+    }
+
+    #[test]
+    fn draw_list_small_snapshot() {
+        let r: SideRanges = [(0, 2), (2, 0), (2, 3), (5, 1), (6, 4), (10, 1)];
+        let chunks = [ivec3(1, 0, 0), ivec3(-1, 0, 0), ivec3(0, 0, 0)].map(|v| (v.into(), r));
+        let list = build_draw_list(chunks.into_iter(), ivec3(0, 0, 0).into());
+        let out: Vec<String> = list
+            .iter()
+            .map(|d| {
+                format!(
+                    "{:?} {:?} off={:?} first={} count={}",
+                    d.chunk.as_vec(), d.side, d.offset, d.first, d.count
+                )
+            })
+            .collect();
+        insta::assert_yaml_snapshot!(out);
+    }
+
+    #[test]
+    fn draw_list_settled_world_summary() {
+        let mut w = World::new(GeneratorV0::new());
+        let player: ChunkPos = ivec3(0, 0, 0).into();
+        let mut meshes: std::collections::HashMap<ChunkPos, (usize, SideRanges)> = Default::default();
+        for _ in 0..2000 {
+            let ch = w.update(player);
+            for p in ch.removed {
+                meshes.remove(&p);
+            }
+            for p in ch.added {
+                let (all, r) = pack_sides(w.mesh(p).unwrap());
+                meshes.insert(p, (all.len(), r));
+            }
+        }
+        let list = build_draw_list(meshes.iter().map(|(p, (_, r))| (*p, *r)), player);
+        let words: Vec<i32> = list
+            .iter()
+            .flat_map(|d| {
+                let v = d.chunk.as_vec();
+                [v.x, v.y, v.z, d.side as i32, d.first as i32, d.count as i32]
+            })
+            .collect();
+        let total: u32 = list.iter().map(|d| d.count).sum();
+        // chunks above/below world height are never meshed
+        assert!(list.iter().all(|d| (MIN_CHUNK_Y..MAX_CHUNK_Y).contains(&d.chunk.as_vec().y)));
+        insta::assert_yaml_snapshot!((meshes.len(), list.len(), total, hash_words(&words)));
+    }
 }

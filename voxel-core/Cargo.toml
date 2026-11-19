@@ -12,5 +12,6 @@ log = "0.4.21"
 
 [dev-dependencies]
 insta = { version = "1.49", features = ["yaml"] }
+serde = { version = "1", features = ["derive"] }
 # keep in lockstep with the wgpu version egui-wgpu pins (wgpu 30 -> naga 30)
 naga = { version = "30.0.0", default-features = false, features = ["wgsl-in"] }

@@ -265,3 +265,59 @@ where
 }
 
 const _: () = assert!(LOAD_RADIUS_SQUARED < UNLOAD_RADIUS_SQUARED);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::hash_words;
+    use crate::world::GeneratorV0;
+
+    #[test]
+    fn offset_priority_snapshot() {
+        let p = make_offset_priority(LOAD_RADIUS);
+        assert!(p.windows(2).all(|w| w[0].length_squared() <= w[1].length_squared()));
+        assert_eq!(p[0], ivec3(0, 0, 0));
+        assert!(p.iter().all(|o| o.length_squared() <= LOAD_RADIUS_SQUARED));
+        let words: Vec<i32> = p.iter().flat_map(|o| [o.x, o.y, o.z]).collect();
+        let small: Vec<String> = make_offset_priority(1).iter().map(|o| o.to_string()).collect();
+        insta::assert_yaml_snapshot!((p.len(), hash_words(&words), small));
+    }
+
+    fn settle(w: &mut World<GeneratorV0>, p: ChunkPos) -> (usize, usize) {
+        let (mut added, mut removed) = (0, 0);
+        for _ in 0..2000 {
+            let c = w.update(p);
+            added += c.added.len();
+            removed += c.removed.len();
+        }
+        (added, removed)
+    }
+
+    #[test]
+    fn world_settles_and_hysteresis_prevents_churn() {
+        let mut w = World::new(GeneratorV0::new());
+        let (a0, r0) = settle(&mut w, ivec3(0, 0, 0).into());
+        let info0 = w.get_info("gpu");
+        let (quads0, meshes0) = (w.loaded_quads, w.meshes.len());
+        // settled: further ticks do nothing
+        assert_eq!(settle(&mut w, ivec3(0, 0, 0).into()), (0, 0));
+
+        let step = settle(&mut w, ivec3(1, 0, 0).into());
+        // stepping back must not unload anything (hysteresis)
+        let back = settle(&mut w, ivec3(0, 0, 0).into());
+        assert_eq!(back.1, 0, "no churn when stepping back");
+
+        let mut walk = (0, 0);
+        for x in 1..=20 {
+            let r = settle(&mut w, ivec3(x, 0, 0).into());
+            walk = (walk.0 + r.0, walk.1 + r.1);
+        }
+        insta::assert_yaml_snapshot!((
+            (a0, r0, meshes0, quads0, info0),
+            (step, back),
+            (walk, w.meshes.len(), w.loaded_quads),
+        ));
+        let real: usize = w.meshes.values().map(|m| m.draw_data.quad_count()).sum();
+        assert_eq!(real, w.loaded_quads);
+    }
+}

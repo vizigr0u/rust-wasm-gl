@@ -528,4 +528,145 @@ mod tests {
         n[Side::Right as usize] = Some(&air);
         assert_eq!(quads(&solid, &n), 6 * 256);
     }
+
+    // ---- A4 snapshots ----
+
+    use crate::testutil::hash_words;
+    use crate::world::{GeneratorV0, WorldGenerator};
+    use glam::IVec3;
+
+    fn unpack(w: i32) -> (U16Vec3, i32, i32) {
+        let pos = U16Vec3::new((w & 15) as u16, ((w >> 4) & 15) as u16, ((w >> 8) & 15) as u16);
+        (pos, (w >> 12) & 7, (w >> 15) & 63)
+    }
+
+    #[test]
+    fn packing_bit_layout_golden() {
+        let cases = [
+            (Side::Top, BlockSideTexture::Unknown, U16Vec3::new(0, 0, 0)),
+            (Side::Left, BlockSideTexture::GrassTop, U16Vec3::new(15, 15, 15)),
+            (Side::Front, BlockSideTexture::Cobblestone, U16Vec3::new(1, 2, 3)),
+            (Side::Right, BlockSideTexture::Dirt2, U16Vec3::new(15, 0, 8)),
+        ];
+        let out: Vec<String> = cases
+            .iter()
+            .map(|(s, t, o)| {
+                let w = make_side_quad_data(*s, *t, *o);
+                format!("{s:?}/{t:?}/{o} -> {w:#010x} ({w:#034b})")
+            })
+            .collect();
+        insta::assert_yaml_snapshot!(out);
+    }
+
+    #[test]
+    fn packing_roundtrips_exhaustively() {
+        let sides = [Side::Top, Side::Bottom, Side::Front, Side::Back, Side::Right, Side::Left];
+        let textures = [
+            BlockSideTexture::Unknown, BlockSideTexture::GrassSide, BlockSideTexture::Cobblestone,
+            BlockSideTexture::RedStone, BlockSideTexture::TreeBark, BlockSideTexture::Sand,
+            BlockSideTexture::Dirt, BlockSideTexture::Pickaxe, BlockSideTexture::TreeCenter,
+            BlockSideTexture::GrassTop, BlockSideTexture::Coal, BlockSideTexture::Lava,
+            BlockSideTexture::Diamond, BlockSideTexture::Iron, BlockSideTexture::Gold,
+            BlockSideTexture::Dirt2,
+        ];
+        for (x, y, z) in iproduct!(0..16u16, 0..16u16, 0..16u16) {
+            for s in sides {
+                for t in textures {
+                    let o = U16Vec3::new(x, y, z);
+                    let w = make_side_quad_data(s, t, o);
+                    assert!(w >= 0);
+                    assert_eq!(unpack(w), (o, s as i32, t as i32));
+                }
+            }
+        }
+    }
+
+    fn mesh_summary(c: &Chunk, n: &Neighbours) -> serde_like::Summary {
+        let d = c.to_vertex_data(n);
+        let all: Vec<i32> = d.iter().flatten().copied().collect();
+        // no quad may face a solid block inside the chunk
+        for (side, quads) in d.iter().enumerate() {
+            let dir = [
+                ivec3(0, 1, 0), ivec3(0, -1, 0), ivec3(0, 0, 1),
+                ivec3(0, 0, -1), ivec3(1, 0, 0), ivec3(-1, 0, 0),
+            ][side];
+            for q in quads {
+                let (o, s, _) = unpack(*q);
+                assert_eq!(s as usize, side);
+                assert_ne!(c.get_block(o), BlockType::Empty, "quad on air");
+                let nb = o.as_ivec3() + dir;
+                if (0..16).contains(&nb.x) && (0..16).contains(&nb.y) && (0..16).contains(&nb.z) {
+                    assert_eq!(
+                        c.get_block(U16Vec3::new(nb.x as _, nb.y as _, nb.z as _)),
+                        BlockType::Empty,
+                        "quad between two solids"
+                    );
+                }
+            }
+        }
+        serde_like::Summary {
+            per_side: d.iter().map(Vec::len).collect(),
+            total: all.len(),
+            hash: hash_words(&all),
+        }
+    }
+
+    mod serde_like {
+        #[derive(serde::Serialize)]
+        pub struct Summary {
+            pub per_side: Vec<usize>,
+            pub total: usize,
+            pub hash: String,
+        }
+    }
+
+    fn single_block() -> Chunk {
+        let mut c = Chunk::empty();
+        c.set(U16Vec3::new(5, 6, 7), BlockType::Grass);
+        c
+    }
+
+    fn checkerboard() -> Chunk {
+        let mut c = Chunk::empty();
+        for (x, y, z) in iproduct!(0..16u16, 0..16u16, 0..16u16) {
+            if (x + y + z) % 2 == 0 {
+                c.set(U16Vec3::new(x, y, z), BlockType::Stone);
+            }
+        }
+        c
+    }
+
+    #[test]
+    fn mesher_snapshots_synthetic() {
+        let solid = Chunk::plain(BlockType::Stone);
+        let out = [
+            ("empty", mesh_summary(&Chunk::empty(), &NO_NEIGHBOURS)),
+            ("full_stone", mesh_summary(&solid, &NO_NEIGHBOURS)),
+            ("single_block", mesh_summary(&single_block(), &NO_NEIGHBOURS)),
+            ("checkerboard", mesh_summary(&checkerboard(), &NO_NEIGHBOURS)),
+        ];
+        insta::assert_yaml_snapshot!(out);
+    }
+
+    #[test]
+    fn mesher_snapshots_generator_with_and_without_neighbours() {
+        let g = GeneratorV0::new();
+        let mut out = Vec::new();
+        for p in [IVec3::new(0, 0, 0), IVec3::new(3, -1, 2), IVec3::new(0, 2, 0)] {
+            let chunk = g.generate(p.into());
+            let ns: Vec<Chunk> = [
+                ivec3(0, 1, 0), ivec3(0, -1, 0), ivec3(0, 0, 1),
+                ivec3(0, 0, -1), ivec3(1, 0, 0), ivec3(-1, 0, 0),
+            ]
+            .iter()
+            .map(|d| g.generate((p + *d).into()))
+            .collect();
+            let n: Neighbours = std::array::from_fn(|i| Some(&ns[i]));
+            let without = mesh_summary(&chunk, &NO_NEIGHBOURS);
+            let with = mesh_summary(&chunk, &n);
+            assert!(with.total <= without.total, "neighbours can only cull");
+            out.push((format!("{p}"), without, with));
+        }
+        insta::assert_yaml_snapshot!(out);
+    }
 }
