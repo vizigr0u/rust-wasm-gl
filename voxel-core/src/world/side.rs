@@ -1,6 +1,6 @@
 use glam::Vec3;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Side {
     Top = 0,
     Bottom,

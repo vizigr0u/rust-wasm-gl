@@ -5,10 +5,9 @@ use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 use crate::{
     graphics::{Camera, ShaderDef, ShaderProgram, TextureType, UniformTypes},
     shader_def,
-    world::{Chunk, Neighbours, Side, CHUNK_SIZE},
+    world::{make_base_quad_data, ChunkDrawData, ChunkPos, CHUNK_SIZE},
 };
-
-use super::{make_base_quad_data, ChunkPos};
+use voxel_core::render::{build_draw_list, pack_sides, SideRanges};
 
 #[derive(Debug)]
 struct GraphicContext {
@@ -16,30 +15,16 @@ struct GraphicContext {
     texture: Rc<(TextureType, glow::WebTextureKey)>,
 }
 
-#[derive(Debug, Clone)]
-pub struct ChunkDrawData {
-    pub vertex_data: [Vec<i32>; 6],
-}
-
 /// One chunk's quads on the GPU: all 6 sides concatenated in one buffer.
 #[derive(Debug)]
 struct GpuChunk {
     buffer: WebBufferKey,
     /// (first quad, quad count) per `Side`.
-    side_ranges: [(i32, i32); 6],
+    side_ranges: SideRanges,
 }
 
 const DATA_ATTR: u32 = 1;
 const OFFSET_ATTR: u32 = 2;
-
-const SIDES: [Side; 6] = [
-    Side::Top,
-    Side::Bottom,
-    Side::Front,
-    Side::Back,
-    Side::Right,
-    Side::Left,
-];
 
 #[derive(Debug)]
 pub struct WorldRenderData {
@@ -48,18 +33,6 @@ pub struct WorldRenderData {
     gpu_chunks: HashMap<ChunkPos, GpuChunk>,
     /// Draw calls issued by the last `render` (kept by both backends).
     draw_calls: Cell<u32>,
-}
-
-impl ChunkDrawData {
-    pub fn quad_count(&self) -> usize {
-        self.vertex_data.iter().map(Vec::len).sum()
-    }
-
-    pub fn load(chunk: &Chunk, neighbours: &Neighbours) -> Self {
-        Self {
-            vertex_data: chunk.to_vertex_data(neighbours),
-        }
-    }
 }
 
 impl WorldRenderData {
@@ -71,34 +44,13 @@ impl WorldRenderData {
         )
     }
 
-    // INTENTIONAL: cull faces relative to the *player* chunk, not the camera.
-    // The orbit camera is a debug view: holes seen from far away show what the
-    // player's own view culls. Do not "fix" (bugs.md #19) until a player-attached
-    // camera exists; then this debug camera can keep showing the culling.
-    fn is_visible(player_chunk_pos: ChunkPos, data_pos: ChunkPos, side: Side) -> bool {
-        match side {
-            Side::Front => player_chunk_pos.as_vec().z >= data_pos.as_vec().z,
-            Side::Back => player_chunk_pos.as_vec().z - 1 <= data_pos.as_vec().z,
-            Side::Left => player_chunk_pos.as_vec().x - 1 <= data_pos.as_vec().x,
-            Side::Right => player_chunk_pos.as_vec().x >= data_pos.as_vec().x,
-            Side::Top => player_chunk_pos.as_vec().y >= data_pos.as_vec().y,
-            Side::Bottom => player_chunk_pos.as_vec().y - 1 <= data_pos.as_vec().y,
-        }
-    }
-
     /// Create or replace the GPU buffer of one chunk.
     pub fn upload_chunk(&mut self, gl: &glow::Context, pos: ChunkPos, data: &ChunkDrawData) {
         self.remove_chunk(gl, pos);
         if data.quad_count() == 0 {
             return;
         }
-        let mut all: Vec<i32> = Vec::with_capacity(data.quad_count());
-        let mut side_ranges = [(0, 0); 6];
-        for side in SIDES {
-            let quads = &data.vertex_data[side as usize];
-            side_ranges[side as usize] = (all.len() as i32, quads.len() as i32);
-            all.extend_from_slice(quads);
-        }
+        let (all, side_ranges) = pack_sides(data);
         unsafe {
             let Ok(buffer) = gl.create_buffer() else {
                 log::error!("World: could not create chunk buffer");
@@ -185,22 +137,22 @@ impl WorldRenderData {
             gl.bind_vertex_array(Some(self.vertex_array));
             // Floating origin: the CPU sends each chunk's offset from the player's chunk
             // (exact in f32), so the shader does no rebase.
-            let player = player_chunk_pos.as_vec();
-            let mut draw_calls = 0;
-            for (pos, chunk) in &self.gpu_chunks {
-                let offset = ((pos.as_vec() - player) * CHUNK_SIZE as i32).as_vec3();
-                gl.vertex_attrib_3_f32(OFFSET_ATTR, offset.x, offset.y, offset.z);
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(chunk.buffer));
-                for side in SIDES {
-                    let (first, count) = chunk.side_ranges[side as usize];
-                    if count == 0 || !Self::is_visible(player_chunk_pos, *pos, side) {
-                        continue;
-                    }
-                    gl.vertex_attrib_pointer_i32(DATA_ATTR, 1, glow::INT, 0, first * 4);
-                    gl.draw_arrays_instanced(glow::TRIANGLE_STRIP, 0, 4, count);
-                    draw_calls += 1;
+            let draws = build_draw_list(
+                self.gpu_chunks.iter().map(|(p, c)| (*p, c.side_ranges)),
+                player_chunk_pos,
+            );
+            let mut bound = None;
+            for d in &draws {
+                if bound != Some(d.chunk) {
+                    let o = d.offset;
+                    gl.vertex_attrib_3_f32(OFFSET_ATTR, o.x, o.y, o.z);
+                    gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.gpu_chunks[&d.chunk].buffer));
+                    bound = Some(d.chunk);
                 }
+                gl.vertex_attrib_pointer_i32(DATA_ATTR, 1, glow::INT, 0, d.first as i32 * 4);
+                gl.draw_arrays_instanced(glow::TRIANGLE_STRIP, 0, 4, d.count as i32);
             }
+            let draw_calls = draws.len() as u32;
             self.draw_calls.set(draw_calls);
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
             gl.bind_vertex_array(None);

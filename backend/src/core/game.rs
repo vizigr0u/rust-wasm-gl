@@ -213,7 +213,7 @@ impl Game {
             }
         }
 
-        self.camera.target = self.player.get_screen_position();
+        self.camera.orbit.target = self.player.get_screen_position();
 
         self.camera.update(&self.time);
     }

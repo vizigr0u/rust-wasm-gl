@@ -3,9 +3,10 @@ use std::{collections::HashMap, mem::size_of};
 use glam::{ivec3, IVec3};
 use log::info;
 
-use crate::world::{Neighbours, Side, WorldGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y};
-
-use super::{ChunkDrawData, ChunkPos, ChunkStreamer};
+use super::{
+    ChunkDrawData, ChunkPos, ChunkStreamer, Neighbours, Side, WorldGenerator, MAX_CHUNK_Y,
+    MIN_CHUNK_Y,
+};
 
 /// Streaming loads whole 6x20x6 pages in a 3x3 ring around the player's page, so the
 /// guaranteed horizontal reach is one page = 6 chunks. Load radius matches that.
@@ -28,10 +29,10 @@ const SIDE_DIRS: [IVec3; 6] = [
     ivec3(-1, 0, 0), // Left
 ];
 
-type OffsetPriority = Vec<IVec3>;
+pub type OffsetPriority = Vec<IVec3>;
 
 /// All offsets within `radius` (a sphere: the same metric as unloading), nearest first.
-fn make_offset_priority(radius: i32) -> OffsetPriority {
+pub fn make_offset_priority(radius: i32) -> OffsetPriority {
     let side = 2 * radius + 1;
     let mut offsets = Vec::with_capacity((side * side * side) as usize);
     for z in -radius..=radius {
