@@ -27,6 +27,8 @@ getrandom = { version = "0.2", features = ["js"] }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 
 glow = "0.18"
+wgpu = { version = "30.0", default-features = false, features = ["webgpu", "wgsl"], optional = true }
+egui-wgpu = { version = "0.37", default-features = false, optional = true }
 wasm-bindgen-futures = "0.4.42"
 gloo = { version = "0.13", features = ['gloo-events'] }
 log = "0.4.21"
@@ -70,5 +72,6 @@ features = [
 default = ["gl", "console_error_panic_hook", "console_log"]
 # Renderer backend (exactly one). `webgpu` comes with the wgpu port.
 gl = []
+webgpu = ["dep:wgpu", "dep:egui-wgpu"]
 # Deterministic scene driver for Playwright (window.__RWG_TEST__). Not for release builds.
 test-hooks = []
