@@ -6,7 +6,7 @@ use web_sys::WebGlUniformLocation;
 
 use crate::world::ChunkPos;
 
-use super::VertexAttrType;
+use super::mesh::VertexAttrType;
 
 #[macro_export]
 macro_rules! shader_def {

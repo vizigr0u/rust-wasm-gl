@@ -1,5 +1,5 @@
+mod models;
 mod player;
-mod renderers;
 
+pub use models::*;
 pub use player::*;
-pub use renderers::*;

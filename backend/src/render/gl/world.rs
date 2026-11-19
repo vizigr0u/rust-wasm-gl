@@ -4,7 +4,7 @@ use std::{cell::Cell, collections::HashMap, rc::Rc};
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 
 use crate::{
-    graphics::{ShaderDef, ShaderProgram, TextureDef, UniformTypes},
+    render::gl::{ShaderDef, ShaderProgram, TextureDef, UniformTypes},
     shader_def,
     world::{make_base_quad_data, ChunkDrawData, ChunkPos, CHUNK_SIZE},
 };

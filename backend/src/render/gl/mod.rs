@@ -7,14 +7,23 @@ use wasm_bindgen::JsCast;
 use web_sys::{HtmlCanvasElement, HtmlImageElement, WebGl2RenderingContext};
 
 use super::{FrameInput, RenderError, RenderStats, TextureId, UiFrame};
-use crate::{
-    graphics::{TextureDef, TextureType},
-    objects::{compile_cube_shader, compile_gizmo_shader, ObjectRenderers},
-    world::{self, ChunkDrawData, ChunkPos, WorldRenderData},
-};
+use crate::world::{ChunkDrawData, ChunkPos};
 
 mod egui_painter;
+mod mesh;
+mod meshrenderer;
+mod objects;
+mod shaders;
+mod texture;
+mod world;
+
 use egui_painter::EguiPainter;
+pub use mesh::*;
+pub use meshrenderer::*;
+pub use objects::*;
+pub use shaders::*;
+pub use texture::*;
+pub use world::*;
 
 const PLACEHOLDER_TEXEL: [u8; 4] = [255, 0, 255, 255];
 
@@ -170,7 +179,7 @@ impl Renderer {
                 errors.push(format!("{name}: {e}"));
             }
         };
-        check("chunk", world::compile_shader(gl).map(|_| ()));
+        check("chunk", compile_shader(gl).map(|_| ()));
         check("cube", compile_cube_shader(gl).map(|_| ()));
         check("gizmo", compile_gizmo_shader(gl).map(|_| ()));
         check("egui", EguiPainter::compile_shader(gl).map(|_| ()));

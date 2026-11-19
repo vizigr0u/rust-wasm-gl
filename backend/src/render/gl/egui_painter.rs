@@ -5,7 +5,7 @@ use glow::{HasContext, WebTextureKey};
 use log::warn;
 
 use crate::{
-    graphics::{Mesh, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
+    render::gl::{Mesh, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
     shader_def,
     utils::GlRenderFlags,
 };

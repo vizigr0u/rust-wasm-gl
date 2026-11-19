@@ -6,7 +6,7 @@ use glam::Mat4;
 use crate::world::ChunkPos;
 
 #[cfg(feature = "gl")]
-mod gl;
+pub(crate) mod gl;
 #[cfg(feature = "gl")]
 pub use gl::Renderer;
 

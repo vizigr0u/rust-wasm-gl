@@ -7,8 +7,8 @@ use crate::utils;
 use crate::utils::GlRenderFlags;
 use crate::utils::GlState;
 
-use super::Mesh;
-use super::ShaderProgram;
+use super::mesh::Mesh;
+use super::shaders::ShaderProgram;
 
 #[derive(Debug)]
 enum DisplayData {

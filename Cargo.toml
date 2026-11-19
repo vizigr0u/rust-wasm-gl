@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["voxel-core", "backend"]
+default-members = ["voxel-core"] # backend is wasm32-only
 
 [profile.dev]
 opt-level = 1           # light opt so dev frame times are meaningful

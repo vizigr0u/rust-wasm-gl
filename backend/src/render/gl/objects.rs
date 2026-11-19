@@ -1,17 +1,9 @@
 use std::rc::Rc;
 
-use glam::{Mat4, Vec3};
+use glam::Mat4;
 
-use crate::{
-    graphics::{Mesh, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
-    shader_def, utils,
-    utils::GlRenderFlags,
-    world::{ChunkPos, WorldPos},
-};
-
-use super::{Player, PLAYER_SCALE};
-
-const GIZMO_SCALE: f32 = 10.0;
+use super::{Mesh, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType};
+use crate::{shader_def, utils, utils::GlRenderFlags};
 
 /// GL resources for the simple scene objects. Created eagerly once GL is ready;
 /// objects are drawn by reference from plain game state.
@@ -49,24 +41,6 @@ impl ObjectRenderers {
     pub fn draw_gizmo(&self, gl: &glow::Context, view: &Mat4, projection: &Mat4, model: &Mat4) {
         draw(gl, &self.gizmo, view, projection, model);
     }
-}
-
-/// Model matrix of the player cube, relative to the player's chunk.
-pub fn player_model(player: &Player, player_chunk: ChunkPos) -> Mat4 {
-    Mat4::from_scale_rotation_translation(
-        Vec3::splat(PLAYER_SCALE),
-        glam::Quat::IDENTITY,
-        player.get_position().to_screen_pos(player_chunk),
-    )
-}
-
-/// Model matrix of the world-origin gizmo, relative to the player's chunk.
-pub fn gizmo_model(player_chunk: ChunkPos) -> Mat4 {
-    Mat4::from_scale_rotation_translation(
-        Vec3::splat(GIZMO_SCALE),
-        glam::Quat::IDENTITY,
-        WorldPos::ZERO.to_screen_pos(player_chunk),
-    )
 }
 
 fn draw(gl: &glow::Context, renderer: &MeshRenderer, view: &Mat4, projection: &Mat4, model: &Mat4) {
