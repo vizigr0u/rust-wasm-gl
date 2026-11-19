@@ -11,7 +11,7 @@ use crate::{
     gui::{EguiBackend, FpsDisplay},
     objects::{ObjectRenderers, Player},
     utils::performance_now,
-    world::{GeneratorV0, World},
+    world::{GeneratorV0, World, WorldRenderData},
 };
 
 use super::{HandleInputs, InputEventType, InputSystem, Time};
@@ -25,30 +25,43 @@ fn make_generator(rng: Rng) -> WorldGenerator {
     GeneratorV0::new(rng)
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum State {
+#[derive(Debug)]
+struct Textures {
+    blocks: Rc<TextureDef>,
+    #[allow(dead_code)]
+    uv_checker: Rc<TextureDef>,
+}
+
+/// GL-dependent state; only exists once textures are ready.
+#[derive(Debug)]
+struct Gfx {
+    #[allow(dead_code)]
+    textures: Textures,
+    egui: EguiBackend,
+    world: WorldRenderData,
+    objects: ObjectRenderers,
+}
+
+#[derive(Debug)]
+enum Stage {
     Loading,
-    WaitingForTextures,
-    Running,
+    WaitingForTextures(Textures),
+    Running(Box<Gfx>),
 }
 
 #[derive(Debug)]
 pub struct Game {
     seed: u64,
-    current_state: State,
+    stage: Stage,
     texture_loader: TextureLoader,
     world: World<WorldGenerator>,
     camera: Camera,
 
     input_system: InputSystem,
-    loaded_textures: Vec<Rc<TextureDef>>,
     time: Time,
     is_paused: bool,
     gui_state: GuiState,
     player: Player,
-    object_renderers: Option<ObjectRenderers>,
-
-    egui: Option<EguiBackend>,
     fps_display: FpsDisplay,
 }
 
@@ -79,10 +92,9 @@ impl Game {
         let rng = Rng::with_seed(seed);
         let game = Game {
             seed,
-            current_state: State::Loading,
+            stage: Stage::Loading,
             texture_loader: TextureLoader::new(10)?,
             world: World::new(make_generator(rng)),
-            loaded_textures: Vec::new(),
             camera: Camera::new(Vec3 {
                 x: -10.0,
                 y: 5.0,
@@ -91,9 +103,7 @@ impl Game {
             input_system: InputSystem::new()?,
             is_paused: false,
             time: Time::default(),
-            egui: None,
             gui_state: GuiState::default(),
-            object_renderers: None,
             player: Player::new(vec3(0.0, 16.0, 0.0)),
             fps_display: FpsDisplay::new(),
         };
@@ -101,25 +111,28 @@ impl Game {
         Ok(game)
     }
 
-    fn tick_loading(&mut self, gl: &glow::Context) -> Result<State, String> {
-        for (path, t) in [
-            (BLOCKS_ATLAS_PATH, TextureType::Texture2DArray(16)),
-            (UV_CHECKER_PATH, TextureType::Texture2D),
-        ] {
+    fn tick_loading(&mut self, gl: &glow::Context) -> Result<Stage, String> {
+        let mut load = |path, t| -> Result<Rc<TextureDef>, String> {
             let key = self.texture_loader.load(gl, path, t)?;
-            self.loaded_textures.push(Rc::new((t, key)));
-        }
+            Ok(Rc::new((t, key)))
+        };
+        let blocks = load(BLOCKS_ATLAS_PATH, TextureType::Texture2DArray(16))?;
+        let uv_checker = load(UV_CHECKER_PATH, TextureType::Texture2D)?;
 
-        Ok(State::WaitingForTextures)
+        Ok(Stage::WaitingForTextures(Textures { blocks, uv_checker }))
     }
 
-    fn tick_waiting_for_textures(&mut self, gl: &glow::Context) -> Result<State, String> {
+    fn tick_waiting_for_textures(
+        &mut self,
+        gl: &glow::Context,
+        textures: Textures,
+    ) -> Result<Stage, String> {
         if let Err(e) = self.texture_loader.tick(gl) {
             // Failed textures stay as placeholders; keep going.
             log::error!("Texture load error: {}", e);
         }
         if self.texture_loader.get_num_loading() > 0 {
-            return Ok(State::WaitingForTextures);
+            return Ok(Stage::WaitingForTextures(textures));
         }
 
         unsafe {
@@ -128,46 +141,49 @@ impl Game {
             gl.enable(glow::CULL_FACE);
         }
 
-        self.world
-            .setup_graphics(gl, self.loaded_textures[0].clone())?;
-        self.egui = Some(EguiBackend::new(gl));
-        self.object_renderers = Some(ObjectRenderers::new(gl)?);
+        let world = WorldRenderData::new(gl, textures.blocks.clone())?;
+        let egui = EguiBackend::new(gl);
+        let objects = ObjectRenderers::new(gl)?;
 
-        Ok(State::Running)
+        Ok(Stage::Running(Box::new(Gfx {
+            textures,
+            egui,
+            world,
+            objects,
+        })))
     }
 
     pub fn tick(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
-        match self.current_state {
-            State::Loading => {
-                let load_state = self.tick_loading(gl)?;
-                self.current_state = load_state;
-            }
-            State::WaitingForTextures => {
-                self.current_state = self.tick_waiting_for_textures(gl)?;
-            }
-            State::Running => {
-                self.tick_running(gl, time)?;
+        // Take the stage out so Running's Gfx can be borrowed alongside &mut self.
+        // On error the game is stuck in Loading, but the error is fatal upstream anyway.
+        match std::mem::replace(&mut self.stage, Stage::Loading) {
+            Stage::Loading => self.stage = self.tick_loading(gl)?,
+            Stage::WaitingForTextures(t) => self.stage = self.tick_waiting_for_textures(gl, t)?,
+            Stage::Running(mut gfx) => {
+                let r = self.tick_running(gl, &mut gfx, time);
+                self.stage = Stage::Running(gfx);
+                r?;
             }
         }
         Ok(())
     }
 
-    fn tick_running(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
+    fn tick_running(&mut self, gl: &glow::Context, gfx: &mut Gfx, time: f64) -> Result<(), String> {
         let start = performance_now();
 
         self.time.update(time);
 
-        self.handle_inputs();
+        self.handle_inputs(&mut gfx.egui);
 
-        self.update(gl)?;
+        self.update(gl, gfx);
 
-        self.update_gui();
+        self.update_gui(&mut gfx.egui);
         let update_time = performance_now();
 
-        self.render(gl)?;
+        self.render(gl, gfx)?;
         let render_time = performance_now();
 
-        self.draw_ui(gl);
+        self.draw_ui(gl, gfx);
 
         let frame_time = performance_now();
         self.fps_display
@@ -176,28 +192,26 @@ impl Game {
         Ok(())
     }
 
-    fn update_gui(&mut self) {
+    fn update_gui(&mut self, egui: &mut EguiBackend) {
         self.gui_state.show_pause_menu = self.is_paused;
-        if let Some(egui) = &mut self.egui {
-            egui.set_time(&self.time);
-        }
+        egui.set_time(&self.time);
     }
 
-    fn update(&mut self, gl: &glow::Context) -> Result<(), String> {
+    fn update(&mut self, gl: &glow::Context, gfx: &mut Gfx) {
         if !self.is_paused {
             self.player.update(&self.time);
             let player_chunk_pos = self.player.get_position().chunk_pos();
-            self.world.update(gl, &self.time, player_chunk_pos)?;
+            if self.world.update(player_chunk_pos) {
+                gfx.world.gather_draw_data(gl, player_chunk_pos, self.world.chunks());
+            }
         }
 
         self.camera.target = self.player.get_screen_position();
 
         self.camera.update(&self.time);
-
-        Ok(())
     }
 
-    fn handle_inputs(&mut self) {
+    fn handle_inputs(&mut self, egui: &mut EguiBackend) {
         let inputs = self.input_system.get_inputs();
 
         for event in inputs.get_events() {
@@ -217,16 +231,10 @@ impl Game {
         }
 
         match self.gui_state.eats_input() {
-            true => {
-                if let Some(egui) = &mut self.egui {
-                    egui.handle_inputs(&inputs);
-                }
-            }
+            true => egui.handle_inputs(&inputs),
             false => {
                 // egui gets no input now; drop stale events so they don't replay every frame
-                if let Some(egui) = &mut self.egui {
-                    egui.clear_events();
-                }
+                egui.clear_events();
                 self.camera.handle_inputs(&inputs);
                 self.player.handle_inputs(&inputs);
             }
@@ -255,27 +263,28 @@ impl Game {
         }
     }
 
-    fn render(&mut self, gl: &glow::Context) -> Result<(), String> {
+    fn render(&mut self, gl: &glow::Context, gfx: &Gfx) -> Result<(), String> {
         self.texture_loader.tick(gl)?;
         self.sync_canvas_size(gl);
         unsafe {
             gl.clear_color(0.0, 0.0, 0.0, 1.0);
             gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
         }
-        self.world.render(gl, &self.camera);
+        gfx.world
+            .render(gl, &self.camera, self.world.player_chunk_pos());
 
         let player_chunk = self.player.get_position().chunk_pos();
-        if let Some(r) = &self.object_renderers {
-            r.draw_player(gl, &self.camera, &self.player, player_chunk);
-            r.draw_gizmo(gl, &self.camera, player_chunk);
-        }
+        gfx.objects
+            .draw_player(gl, &self.camera, &self.player, player_chunk);
+        gfx.objects.draw_gizmo(gl, &self.camera, player_chunk);
 
         Ok(())
     }
 
-    fn draw_ui(&mut self, gl: &glow::Context) {
-        if let Some(egui) = &mut self.egui {
-            egui.render_ui(gl, |ctx| {
+    fn draw_ui(&mut self, gl: &glow::Context, gfx: &mut Gfx) {
+        let peak = gfx.world.peak_cache_len();
+        {
+            gfx.egui.render_ui(gl, |ctx| {
                 if self.is_paused {
                     egui::Window::new("PAUSE").show(ctx, |ui| {
                         ui.label("Game is paused");
@@ -295,7 +304,7 @@ impl Game {
                                             self.seed,
                                             env!("GIT_HASH"),
                                             self.player.get_position(),
-                                            self.world.get_info()
+                                            self.world.get_info(peak)
                                         )).monospace());
                                 });
                         });

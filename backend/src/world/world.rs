@@ -1,4 +1,4 @@
-use std::{collections::HashMap, mem::size_of, rc::Rc};
+use std::{collections::HashMap, mem::size_of};
 
 use glam::{ivec3, IVec3};
 use log::info;
@@ -14,12 +14,10 @@ const MAX_MESH_TO_KEEP: usize = 1024;
 const MAX_LOADS_PER_FRAME: usize = 8;
 
 use crate::{
-    core::Time,
-    graphics::{Camera, TextureType},
     world::{WorldGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y},
 };
 
-use super::{ChunkDrawData, ChunkPos, ChunkStreamer, WorldRenderData};
+use super::{ChunkDrawData, ChunkPos, ChunkStreamer};
 
 type OffsetPriority = Vec<IVec3>;
 
@@ -56,7 +54,6 @@ where
     last_computed_chunk_pos: Option<ChunkPos>,
     offset_priority: OffsetPriority,
     chunks_to_load: Vec<ChunkPos>,
-    render_data: WorldRenderData,
     render_frame_delay: usize,
     render_dirty: bool,
     player_chunk_pos: ChunkPos,
@@ -80,18 +77,17 @@ where
             offset_priority,
             last_computed_chunk_pos: None,
             chunks_to_load: Vec::with_capacity(MAX_MESH_TO_KEEP * 2),
-            render_data: WorldRenderData::new(),
             render_frame_delay: 0,
             render_dirty: false,
             player_chunk_pos: ChunkPos::default(),
         }
     }
 
-    pub fn get_info(&self) -> String {
+    pub fn get_info(&self, peak_cache: (usize, usize)) -> String {
         let quad_count = self.loaded_quads;
         let memory_used = (quad_count * QUAD_DATA_SIZE) as f32 / 1000000.0;
         let loaded_meshes = self.chunks.values().filter(|c| c.is_some()).count();
-        let (peak_v, peak_l) = self.render_data.peak_cache_len();
+        let (peak_v, peak_l) = peak_cache;
         format!(
             "Loaded {loaded_meshes}/{} chunks\nStreaming: {}\n{quad_count} quads - {memory_used:.3} MB\nPeak gather: {peak_v} verts, {peak_l} locs",
             self.chunks.len(),
@@ -99,20 +95,9 @@ where
         )
     }
 
-    pub fn setup_graphics(
-        &mut self,
-        gl: &glow::Context,
-        texture: Rc<(TextureType, glow::WebTextureKey)>,
-    ) -> Result<(), String> {
-        self.render_data.setup_graphics(gl, texture)
-    }
-
-    pub fn update(
-        &mut self,
-        gl: &glow::Context,
-        _time: &Time,
-        player_chunk_pos: ChunkPos,
-    ) -> Result<(), String> {
+    /// Streams/meshes. Returns true when the render buffers should be regathered
+    /// (see `chunks()`); the caller owns the GPU side.
+    pub fn update(&mut self, player_chunk_pos: ChunkPos) -> bool {
         self.player_chunk_pos = player_chunk_pos;
         // let player_block_pos: BlockPos = player_pos.as_ivec3().into();
         // let player_chunk_pos: ChunkPos = player_block_pos.into();
@@ -124,7 +109,7 @@ where
 
         if geom_changed || self.last_computed_chunk_pos != Some(player_chunk_pos) {
             self.last_computed_chunk_pos = Some(player_chunk_pos);
-            self.on_chunk_changed(player_chunk_pos, gl);
+            self.on_chunk_changed(player_chunk_pos);
             geom_changed = true;
         }
 
@@ -140,12 +125,19 @@ where
         }
         if self.render_dirty && self.render_frame_delay == 0 {
             self.render_dirty = false;
-            self.render_data
-                .gather_draw_data(gl, player_chunk_pos, &self.chunks);
             self.render_frame_delay = FRAME_RENDER_DELAY;
+            return true;
         }
 
-        Ok(())
+        false
+    }
+
+    pub fn chunks(&self) -> &HashMap<ChunkPos, Option<ChunkDrawData>> {
+        &self.chunks
+    }
+
+    pub fn player_chunk_pos(&self) -> ChunkPos {
+        self.player_chunk_pos
     }
 
     fn load_some_chunks(&mut self) -> usize {
@@ -175,7 +167,7 @@ where
         loaded_count
     }
 
-    pub fn on_chunk_changed(&mut self, new_chunk_pos: ChunkPos, _gl: &glow::Context) {
+    pub fn on_chunk_changed(&mut self, new_chunk_pos: ChunkPos) {
         info!("World: recompute for chunk pos: {new_chunk_pos:?}");
 
         // delete some chunks
@@ -226,9 +218,5 @@ where
                 }
             }
         }
-    }
-
-    pub fn render(&self, gl: &glow::Context, camera: &Camera) {
-        self.render_data.render(gl, camera, self.player_chunk_pos);
     }
 }

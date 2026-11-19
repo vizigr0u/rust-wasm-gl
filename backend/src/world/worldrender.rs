@@ -24,11 +24,11 @@ pub struct ChunkDrawData {
 
 #[derive(Debug)]
 pub struct WorldRenderData {
-    graphics: Option<GraphicContext>,
-    vertex_array: Option<WebVertexArrayKey>,
+    graphics: GraphicContext,
+    vertex_array: WebVertexArrayKey,
     num_quads_to_draw: i32,
-    vertex_data_buffer: Option<WebBufferKey>,
-    location_data_buffer: Option<WebBufferKey>,
+    vertex_data_buffer: WebBufferKey,
+    location_data_buffer: WebBufferKey,
     vertex_data_cache: Vec<i32>,
     location_data_cache: Vec<Vec3>,
     peak_vertex_len: usize,
@@ -47,20 +47,6 @@ impl ChunkDrawData {
 }
 
 impl WorldRenderData {
-    pub fn new() -> Self {
-        Self {
-            graphics: None,
-            vertex_array: None,
-            num_quads_to_draw: 0,
-            vertex_data_buffer: None,
-            location_data_buffer: None,
-            vertex_data_cache: Vec::new(),
-            location_data_cache: Vec::new(),
-            peak_vertex_len: 0,
-            peak_location_len: 0,
-        }
-    }
-
     /// Peak (vertex i32 count, location Vec3 count) seen in a gather.
     pub fn peak_cache_len(&self) -> (usize, usize) {
         (self.peak_vertex_len, self.peak_location_len)
@@ -131,7 +117,7 @@ impl WorldRenderData {
         unsafe {
             {
                 // upload vertex data
-                gl.bind_buffer(glow::ARRAY_BUFFER, self.vertex_data_buffer);
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vertex_data_buffer));
                 gl.buffer_data_u8_slice(
                     glow::ARRAY_BUFFER,
                     self.vertex_data_cache.align_to::<u8>().1,
@@ -141,7 +127,7 @@ impl WorldRenderData {
 
             {
                 // upload location data
-                gl.bind_buffer(glow::ARRAY_BUFFER, self.location_data_buffer);
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.location_data_buffer));
                 gl.buffer_data_u8_slice(
                     glow::ARRAY_BUFFER,
                     self.location_data_cache.align_to::<u8>().1,
@@ -152,82 +138,79 @@ impl WorldRenderData {
         }
     }
 
-    pub fn setup_graphics(
-        &mut self,
+    pub fn new(
         gl: &glow::Context,
         texture: Rc<(TextureType, glow::WebTextureKey)>,
-    ) -> Result<(), String> {
+    ) -> Result<Self, String> {
         let program = compile_shader(gl)?;
 
         unsafe {
-            if true {
-                program.gl_use(gl);
+            program.gl_use(gl);
 
-                let vao = Some(gl.create_vertex_array()?);
-                gl.bind_vertex_array(vao);
-                self.vertex_array = vao;
+            let vertex_array = gl.create_vertex_array()?;
+            gl.bind_vertex_array(Some(vertex_array));
 
-                // upload quad data
-                let vertices = make_base_quad_data();
-                let vbo = gl.create_buffer()?;
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
-                gl.buffer_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    vertices.align_to::<u8>().1,
-                    glow::STATIC_DRAW,
-                );
+            // upload quad data
+            let vertices = make_base_quad_data();
+            let vbo = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vbo));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                vertices.align_to::<u8>().1,
+                glow::STATIC_DRAW,
+            );
+            let mesh_pos_location = 0;
+            gl.vertex_attrib_pointer_f32(mesh_pos_location, 3, glow::FLOAT, false, 0, 0);
+            gl.enable_vertex_attrib_array(mesh_pos_location);
 
-                let mesh_pos_location = 0;
-                gl.vertex_attrib_pointer_f32(mesh_pos_location, 3, glow::FLOAT, false, 0, 0);
-                gl.enable_vertex_attrib_array(mesh_pos_location);
-            }
+            // vertex data attributes - 1 per quad
+            let vertex_data_buffer = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vertex_data_buffer));
+            let data_attr_pos = 1;
+            gl.enable_vertex_attrib_array(data_attr_pos);
+            gl.vertex_attrib_pointer_i32(data_attr_pos, 1, glow::INT, 0, 0);
+            gl.vertex_attrib_divisor(data_attr_pos, 1);
 
-            if true {
-                // setup vertex data attributes - 1 per quad
-                self.vertex_data_buffer = Some(gl.create_buffer()?);
-                gl.bind_buffer(glow::ARRAY_BUFFER, self.vertex_data_buffer);
+            // vertex location attributes - 1 per quad
+            let location_data_buffer = gl.create_buffer()?;
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(location_data_buffer));
+            let location_attr_pos = 2;
+            gl.enable_vertex_attrib_array(location_attr_pos);
+            gl.vertex_attrib_pointer_f32(location_attr_pos, 3, glow::FLOAT, false, 0, 0);
+            gl.vertex_attrib_divisor(location_attr_pos, 1);
 
-                let data_attr_pos = 1;
-                gl.enable_vertex_attrib_array(data_attr_pos);
-                gl.vertex_attrib_pointer_i32(data_attr_pos, 1, glow::INT, 0, 0);
-                gl.vertex_attrib_divisor(data_attr_pos, 1);
-            }
-            if true {
-                // setup vertex location attributes - 1 per quad
-                self.location_data_buffer = Some(gl.create_buffer()?);
-                gl.bind_buffer(glow::ARRAY_BUFFER, self.location_data_buffer);
-
-                let location_attr_pos = 2;
-                gl.enable_vertex_attrib_array(location_attr_pos);
-                gl.vertex_attrib_pointer_f32(location_attr_pos, 3, glow::FLOAT, false, 0, 0);
-                gl.vertex_attrib_divisor(location_attr_pos, 1);
-            }
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
             gl.bind_vertex_array(None);
+
+            Ok(Self {
+                graphics: GraphicContext { program, texture },
+                vertex_array,
+                num_quads_to_draw: 0,
+                vertex_data_buffer,
+                location_data_buffer,
+                vertex_data_cache: Vec::new(),
+                location_data_cache: Vec::new(),
+                peak_vertex_len: 0,
+                peak_location_len: 0,
+            })
         }
-        self.graphics = Some(GraphicContext { program, texture });
-        Ok(())
     }
 
     pub fn render(&self, gl: &glow::Context, camera: &Camera, player_chunk_pos: ChunkPos) {
-        if let Some(graphics) = &self.graphics {
-            unsafe {
-                let program = &graphics.program;
-                program.gl_use(gl);
-                gl.bind_texture(graphics.texture.0.into(), Some(graphics.texture.1));
-                program.set_current_player_chunk(gl, player_chunk_pos);
-                program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
-                program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
-                gl.enable(glow::CULL_FACE);
-                gl.enable(glow::DEPTH_TEST);
-                gl.disable(glow::BLEND);
-                gl.bind_vertex_array(self.vertex_array);
-                {
-                    let num_quads = self.num_quads_to_draw;
-                    gl.draw_arrays_instanced(glow::TRIANGLE_STRIP, 0, 4, num_quads);
-                }
-                gl.bind_vertex_array(None);
-            }
+        let graphics = &self.graphics;
+        unsafe {
+            let program = &graphics.program;
+            program.gl_use(gl);
+            gl.bind_texture(graphics.texture.0.into(), Some(graphics.texture.1));
+            program.set_current_player_chunk(gl, player_chunk_pos);
+            program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
+            program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
+            gl.enable(glow::CULL_FACE);
+            gl.enable(glow::DEPTH_TEST);
+            gl.disable(glow::BLEND);
+            gl.bind_vertex_array(Some(self.vertex_array));
+            gl.draw_arrays_instanced(glow::TRIANGLE_STRIP, 0, 4, self.num_quads_to_draw);
+            gl.bind_vertex_array(None);
         }
     }
 }
