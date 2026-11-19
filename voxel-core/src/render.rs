@@ -1,4 +1,6 @@
 //! Renderer-agnostic helpers shared by every backend.
+pub mod shader_ref;
+
 use glam::Vec3;
 
 use crate::world::{ChunkDrawData, ChunkPos, Side, CHUNK_SIZE};

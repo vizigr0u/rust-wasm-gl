@@ -295,6 +295,11 @@ pub enum BlockSideTexture {
 
 pub type ChunkSideData = (Side, BlockSideTexture, U16Vec3);
 
+/// Unit-cube corners of `side`'s quad in strip order (mesh-space reference for the shader).
+pub fn side_quad_strip(side: Side) -> [Vec3; 4] {
+    SIDE_VERTICES[side as usize].get_quad_triangles_strip()
+}
+
 pub fn make_base_quad_data() -> [Vec3; 4] {
     SIDE_VERTICES[Side::Bottom as usize].get_quad_triangles_strip()
 }
@@ -325,7 +330,7 @@ fn pack_ivec_5bits(v: U16Vec3) -> i32 {
     (v.x | v.y << 5 | v.z << 10) as i32
 }
 
-fn make_side_quad_data(side: Side, texture: BlockSideTexture, offset: U16Vec3) -> i32 {
+pub fn make_side_quad_data(side: Side, texture: BlockSideTexture, offset: U16Vec3) -> i32 {
     let side = side as i32;
     let texture = texture as i32;
     let pos = offset;
@@ -353,7 +358,7 @@ where
             let mut result: i32 = 0;
             // 32 bit layout
             // -----ttt tttnnnzz zzzzyyyy yyxxxxxx
-            result |= (pos.x & 63);
+            result |= pos.x & 63;
             result |= (pos.y & 63) << 6;
             result |= (pos.z & 63) << 12;
             result |= (norm & 7) << 18;
@@ -536,7 +541,11 @@ mod tests {
     use glam::IVec3;
 
     fn unpack(w: i32) -> (U16Vec3, i32, i32) {
-        let pos = U16Vec3::new((w & 15) as u16, ((w >> 4) & 15) as u16, ((w >> 8) & 15) as u16);
+        let pos = U16Vec3::new(
+            (w & 15) as u16,
+            ((w >> 4) & 15) as u16,
+            ((w >> 8) & 15) as u16,
+        );
         (pos, (w >> 12) & 7, (w >> 15) & 63)
     }
 
@@ -544,8 +553,16 @@ mod tests {
     fn packing_bit_layout_golden() {
         let cases = [
             (Side::Top, BlockSideTexture::Unknown, U16Vec3::new(0, 0, 0)),
-            (Side::Left, BlockSideTexture::GrassTop, U16Vec3::new(15, 15, 15)),
-            (Side::Front, BlockSideTexture::Cobblestone, U16Vec3::new(1, 2, 3)),
+            (
+                Side::Left,
+                BlockSideTexture::GrassTop,
+                U16Vec3::new(15, 15, 15),
+            ),
+            (
+                Side::Front,
+                BlockSideTexture::Cobblestone,
+                U16Vec3::new(1, 2, 3),
+            ),
             (Side::Right, BlockSideTexture::Dirt2, U16Vec3::new(15, 0, 8)),
         ];
         let out: Vec<String> = cases
@@ -560,13 +577,30 @@ mod tests {
 
     #[test]
     fn packing_roundtrips_exhaustively() {
-        let sides = [Side::Top, Side::Bottom, Side::Front, Side::Back, Side::Right, Side::Left];
+        let sides = [
+            Side::Top,
+            Side::Bottom,
+            Side::Front,
+            Side::Back,
+            Side::Right,
+            Side::Left,
+        ];
         let textures = [
-            BlockSideTexture::Unknown, BlockSideTexture::GrassSide, BlockSideTexture::Cobblestone,
-            BlockSideTexture::RedStone, BlockSideTexture::TreeBark, BlockSideTexture::Sand,
-            BlockSideTexture::Dirt, BlockSideTexture::Pickaxe, BlockSideTexture::TreeCenter,
-            BlockSideTexture::GrassTop, BlockSideTexture::Coal, BlockSideTexture::Lava,
-            BlockSideTexture::Diamond, BlockSideTexture::Iron, BlockSideTexture::Gold,
+            BlockSideTexture::Unknown,
+            BlockSideTexture::GrassSide,
+            BlockSideTexture::Cobblestone,
+            BlockSideTexture::RedStone,
+            BlockSideTexture::TreeBark,
+            BlockSideTexture::Sand,
+            BlockSideTexture::Dirt,
+            BlockSideTexture::Pickaxe,
+            BlockSideTexture::TreeCenter,
+            BlockSideTexture::GrassTop,
+            BlockSideTexture::Coal,
+            BlockSideTexture::Lava,
+            BlockSideTexture::Diamond,
+            BlockSideTexture::Iron,
+            BlockSideTexture::Gold,
             BlockSideTexture::Dirt2,
         ];
         for (x, y, z) in iproduct!(0..16u16, 0..16u16, 0..16u16) {
@@ -587,8 +621,12 @@ mod tests {
         // no quad may face a solid block inside the chunk
         for (side, quads) in d.iter().enumerate() {
             let dir = [
-                ivec3(0, 1, 0), ivec3(0, -1, 0), ivec3(0, 0, 1),
-                ivec3(0, 0, -1), ivec3(1, 0, 0), ivec3(-1, 0, 0),
+                ivec3(0, 1, 0),
+                ivec3(0, -1, 0),
+                ivec3(0, 0, 1),
+                ivec3(0, 0, -1),
+                ivec3(1, 0, 0),
+                ivec3(-1, 0, 0),
             ][side];
             for q in quads {
                 let (o, s, _) = unpack(*q);
@@ -642,8 +680,14 @@ mod tests {
         let out = [
             ("empty", mesh_summary(&Chunk::empty(), &NO_NEIGHBOURS)),
             ("full_stone", mesh_summary(&solid, &NO_NEIGHBOURS)),
-            ("single_block", mesh_summary(&single_block(), &NO_NEIGHBOURS)),
-            ("checkerboard", mesh_summary(&checkerboard(), &NO_NEIGHBOURS)),
+            (
+                "single_block",
+                mesh_summary(&single_block(), &NO_NEIGHBOURS),
+            ),
+            (
+                "checkerboard",
+                mesh_summary(&checkerboard(), &NO_NEIGHBOURS),
+            ),
         ];
         insta::assert_yaml_snapshot!(out);
     }
@@ -652,11 +696,19 @@ mod tests {
     fn mesher_snapshots_generator_with_and_without_neighbours() {
         let g = GeneratorV0::new();
         let mut out = Vec::new();
-        for p in [IVec3::new(0, 0, 0), IVec3::new(3, -1, 2), IVec3::new(0, 2, 0)] {
+        for p in [
+            IVec3::new(0, 0, 0),
+            IVec3::new(3, -1, 2),
+            IVec3::new(0, 2, 0),
+        ] {
             let chunk = g.generate(p.into());
             let ns: Vec<Chunk> = [
-                ivec3(0, 1, 0), ivec3(0, -1, 0), ivec3(0, 0, 1),
-                ivec3(0, 0, -1), ivec3(1, 0, 0), ivec3(-1, 0, 0),
+                ivec3(0, 1, 0),
+                ivec3(0, -1, 0),
+                ivec3(0, 0, 1),
+                ivec3(0, 0, -1),
+                ivec3(1, 0, 0),
+                ivec3(-1, 0, 0),
             ]
             .iter()
             .map(|d| g.generate((p + *d).into()))

@@ -24,4 +24,4 @@ dist-ssr
 /target
 backend/target
 backend-tests/target
-voxel-core/src/world/snapshots/*
+voxel-core/src/*/snapshots/*
