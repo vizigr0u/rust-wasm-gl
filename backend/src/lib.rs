@@ -4,12 +4,14 @@ use cfg_if::cfg_if;
 use wasm_bindgen::prelude::*;
 
 use crate::core::Game;
+use crate::render::Renderer;
 
 mod core;
 mod graphics;
 mod gui;
 pub mod math;
 mod objects;
+mod render;
 #[cfg(feature = "test-hooks")]
 mod testhooks;
 mod utils;
@@ -35,8 +37,6 @@ fn request_animation_frame(f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>) {
 
 #[wasm_bindgen(start)]
 fn start() -> Result<(), JsValue> {
-    use utils::get_webgl2_context;
-
     utils::set_panic_hook();
     tracing_wasm::set_as_global_default();
 
@@ -48,17 +48,26 @@ fn start() -> Result<(), JsValue> {
         return Ok(());
     }
 
-    let gl = get_webgl2_context()?;
-
+    let canvas = utils::get_canvas()?;
     let game = Game::new()?;
 
-    main_loop(game, gl)?;
+    // Renderer creation is async (wgpu adapter/device), so the loop starts from a task.
+    wasm_bindgen_futures::spawn_local(async move {
+        match Renderer::new(canvas).await {
+            Ok(renderer) => {
+                if let Err(err) = main_loop(game, renderer) {
+                    web_sys::console::error_2(&"Could not start main loop:".into(), &err);
+                }
+            }
+            Err(err) => log::error!("Could not create renderer: {err}"),
+        }
+    });
 
     Ok(())
 }
 
-fn main_loop(game: Game, gl: glow::Context) -> Result<(), JsValue> {
-    let context = Rc::new(RefCell::new(gl));
+fn main_loop(game: Game, renderer: Renderer) -> Result<(), JsValue> {
+    let renderer = Rc::new(RefCell::new(renderer));
     let update: Rc<RefCell<Option<Closure<dyn FnMut(f64) -> Result<(), JsValue>>>>> =
         Rc::new(RefCell::new(None));
     /* Reference to closure requests for first frame and then it's dropped */
@@ -66,8 +75,7 @@ fn main_loop(game: Game, gl: glow::Context) -> Result<(), JsValue> {
     let game = Rc::new(RefCell::new(game));
 
     *request_update.borrow_mut() = Some(Closure::new(move |time| {
-        let gl = &context.borrow();
-        if let Err(err) = game.borrow_mut().tick(gl, time) {
+        if let Err(err) = game.borrow_mut().tick(&mut renderer.borrow_mut(), time) {
             // Log and keep the loop alive instead of dying silently.
             web_sys::console::error_2(&"Game tick failed:".into(), &JsValue::from(err));
         }

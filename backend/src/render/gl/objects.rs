@@ -3,9 +3,7 @@ use std::rc::Rc;
 use glam::{Mat4, Vec3};
 
 use crate::{
-    graphics::{
-        Camera, Mesh, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType,
-    },
+    graphics::{Mesh, MeshRenderer, ShaderDef, ShaderProgram, UniformTypes, VertexAttrType},
     shader_def, utils,
     utils::GlRenderFlags,
     world::{ChunkPos, WorldPos},
@@ -44,37 +42,39 @@ impl ObjectRenderers {
 
     /// Note: the cube shader samples whatever texture is currently bound
     /// (the block atlas, bound by the world draw). See codebase-review A10.
-    pub fn draw_player(
-        &self,
-        gl: &glow::Context,
-        camera: &Camera,
-        player: &Player,
-        player_chunk: ChunkPos,
-    ) {
-        let model = Mat4::from_scale_rotation_translation(
-            Vec3::splat(PLAYER_SCALE),
-            glam::Quat::IDENTITY,
-            player.get_position().to_screen_pos(player_chunk),
-        );
-        draw(gl, &self.cube, camera, model);
+    pub fn draw_cube(&self, gl: &glow::Context, view: &Mat4, projection: &Mat4, model: &Mat4) {
+        draw(gl, &self.cube, view, projection, model);
     }
 
-    pub fn draw_gizmo(&self, gl: &glow::Context, camera: &Camera, player_chunk: ChunkPos) {
-        let model = Mat4::from_scale_rotation_translation(
-            Vec3::splat(GIZMO_SCALE),
-            glam::Quat::IDENTITY,
-            WorldPos::ZERO.to_screen_pos(player_chunk),
-        );
-        draw(gl, &self.gizmo, camera, model);
+    pub fn draw_gizmo(&self, gl: &glow::Context, view: &Mat4, projection: &Mat4, model: &Mat4) {
+        draw(gl, &self.gizmo, view, projection, model);
     }
 }
 
-fn draw(gl: &glow::Context, renderer: &MeshRenderer, camera: &Camera, model: Mat4) {
+/// Model matrix of the player cube, relative to the player's chunk.
+pub fn player_model(player: &Player, player_chunk: ChunkPos) -> Mat4 {
+    Mat4::from_scale_rotation_translation(
+        Vec3::splat(PLAYER_SCALE),
+        glam::Quat::IDENTITY,
+        player.get_position().to_screen_pos(player_chunk),
+    )
+}
+
+/// Model matrix of the world-origin gizmo, relative to the player's chunk.
+pub fn gizmo_model(player_chunk: ChunkPos) -> Mat4 {
+    Mat4::from_scale_rotation_translation(
+        Vec3::splat(GIZMO_SCALE),
+        glam::Quat::IDENTITY,
+        WorldPos::ZERO.to_screen_pos(player_chunk),
+    )
+}
+
+fn draw(gl: &glow::Context, renderer: &MeshRenderer, view: &Mat4, projection: &Mat4, model: &Mat4) {
     let program = renderer.get_program();
     program.gl_use(gl);
-    program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
-    program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
-    program.set_matrix(gl, UniformTypes::ModelMatrix, &model);
+    program.set_matrix(gl, UniformTypes::ViewMatrix, view);
+    program.set_matrix(gl, UniformTypes::ProjMatrix, projection);
+    program.set_matrix(gl, UniformTypes::ModelMatrix, model);
     renderer.render(gl);
 }
 

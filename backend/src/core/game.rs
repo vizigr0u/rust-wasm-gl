@@ -1,19 +1,15 @@
-use std::rc::Rc;
-
 use egui::RichText;
 use fastrand::Rng;
 use glam::{vec3, Vec3};
-use glow::HasContext;
 use wasm_bindgen::{JsCast, JsValue};
 
 use crate::{
-    graphics::{Camera, TextureDef, TextureLoader, TextureType},
+    graphics::{Camera, TextureLoader},
     gui::{EguiBackend, FpsDisplay},
-    objects::{ObjectRenderers, Player},
+    objects::{gizmo_model, player_model, Player},
+    render::{FrameInput, RenderStats, Renderer, TextureId, UiFrame},
     utils::performance_now,
-    world::{
-        Chunk, ChunkPos, GeneratorV0, SingleBlockGenerator, World, WorldGenerator, WorldRenderData,
-    },
+    world::{Chunk, ChunkPos, GeneratorV0, SingleBlockGenerator, World, WorldGenerator},
 };
 
 use super::{HandleInputs, InputEventType, InputSystem, Time};
@@ -75,27 +71,16 @@ fn make_generator(config: &SceneConfig, _rng: Rng) -> Generator {
     }
 }
 
-#[derive(Debug)]
-struct Textures {
-    blocks: Rc<TextureDef>,
-    #[allow(dead_code)]
-    uv_checker: Rc<TextureDef>,
-}
-
-/// GL-dependent state; only exists once textures are ready.
+/// Game-side state that exists once textures are ready (the GPU side lives in `Renderer`).
 #[derive(Debug)]
 struct Gfx {
-    #[allow(dead_code)]
-    textures: Textures,
     egui: EguiBackend,
-    world: WorldRenderData,
-    objects: ObjectRenderers,
 }
 
 #[derive(Debug)]
 enum Stage {
     Loading,
-    WaitingForTextures(Textures),
+    WaitingForTextures,
     Running(Box<Gfx>),
 }
 
@@ -196,56 +181,39 @@ impl Game {
         self.camera.orbit.offset = offset;
     }
 
-    fn tick_loading(&mut self, gl: &glow::Context) -> Result<Stage, String> {
-        let mut load = |path, t| -> Result<Rc<TextureDef>, String> {
-            let key = self.texture_loader.load(gl, path, t)?;
-            Ok(Rc::new((t, key)))
-        };
-        let blocks = load(BLOCKS_ATLAS_PATH, TextureType::Texture2DArray(16))?;
-        let uv_checker = load(UV_CHECKER_PATH, TextureType::Texture2D)?;
-
-        Ok(Stage::WaitingForTextures(Textures { blocks, uv_checker }))
+    fn tick_loading(&mut self) -> Result<Stage, String> {
+        self.texture_loader
+            .load(BLOCKS_ATLAS_PATH, TextureId::Blocks, 16)?;
+        self.texture_loader
+            .load(UV_CHECKER_PATH, TextureId::UvChecker, 1)?;
+        Ok(Stage::WaitingForTextures)
     }
 
-    fn tick_waiting_for_textures(
-        &mut self,
-        gl: &glow::Context,
-        textures: Textures,
-    ) -> Result<Stage, String> {
-        if let Err(e) = self.texture_loader.tick(gl) {
+    fn tick_waiting_for_textures(&mut self, renderer: &mut Renderer) -> Result<Stage, String> {
+        if let Err(e) = self
+            .texture_loader
+            .tick(|id, img, layers| renderer.load_texture(id, img, layers))
+        {
             // Failed textures stay as placeholders; keep going.
             log::error!("Texture load error: {}", e);
         }
         if self.texture_loader.get_num_loading() > 0 {
-            return Ok(Stage::WaitingForTextures(textures));
+            return Ok(Stage::WaitingForTextures);
         }
-
-        unsafe {
-            gl.enable(glow::DEPTH_TEST);
-            gl.depth_func(glow::LESS);
-            gl.enable(glow::CULL_FACE);
-        }
-
-        let world = WorldRenderData::new(gl, textures.blocks.clone())?;
-        let egui = EguiBackend::new(gl);
-        let objects = ObjectRenderers::new(gl)?;
 
         Ok(Stage::Running(Box::new(Gfx {
-            textures,
-            egui,
-            world,
-            objects,
+            egui: EguiBackend::new(),
         })))
     }
 
-    pub fn tick(&mut self, gl: &glow::Context, time: f64) -> Result<(), String> {
+    pub fn tick(&mut self, renderer: &mut Renderer, time: f64) -> Result<(), String> {
         // Take the stage out so Running's Gfx can be borrowed alongside &mut self.
         // On error the game is stuck in Loading, but the error is fatal upstream anyway.
         match std::mem::replace(&mut self.stage, Stage::Loading) {
-            Stage::Loading => self.stage = self.tick_loading(gl)?,
-            Stage::WaitingForTextures(t) => self.stage = self.tick_waiting_for_textures(gl, t)?,
+            Stage::Loading => self.stage = self.tick_loading()?,
+            Stage::WaitingForTextures => self.stage = self.tick_waiting_for_textures(renderer)?,
             Stage::Running(mut gfx) => {
-                let r = self.tick_running(gl, &mut gfx, time);
+                let r = self.tick_running(renderer, &mut gfx, time);
                 self.stage = Stage::Running(gfx);
                 r?;
             }
@@ -253,31 +221,32 @@ impl Game {
         Ok(())
     }
 
-    fn tick_running(&mut self, gl: &glow::Context, gfx: &mut Gfx, time: f64) -> Result<(), String> {
+    fn tick_running(
+        &mut self,
+        renderer: &mut Renderer,
+        gfx: &mut Gfx,
+        time: f64,
+    ) -> Result<(), String> {
         let start = performance_now();
 
         self.time.update(time);
 
         self.handle_inputs(&mut gfx.egui);
 
-        self.texture_loader.tick(gl)?;
-        self.update(gl, gfx);
+        self.texture_loader
+            .tick(|id, img, layers| renderer.load_texture(id, img, layers))?;
+        self.update(renderer);
 
         self.update_gui(&mut gfx.egui);
         let update_time = performance_now();
 
         if !self.skip_render {
-            self.render(gl, gfx)?;
+            self.render(renderer, gfx);
         }
         let render_time = performance_now();
 
-        if self.config.show_egui && !self.skip_render {
-            self.draw_ui(gl, gfx);
-        }
-
-        let frame_time = performance_now();
         self.fps_display
-            .update_fps_report(start, update_time, render_time, frame_time);
+            .update_fps_report(start, update_time, render_time, render_time);
 
         Ok(())
     }
@@ -287,18 +256,18 @@ impl Game {
         egui.set_time(&self.time);
     }
 
-    fn update(&mut self, gl: &glow::Context, gfx: &mut Gfx) {
+    fn update(&mut self, renderer: &mut Renderer) {
         if !self.is_paused {
             self.player.update(&self.time);
             let player_chunk_pos = self.player.get_position().chunk_pos();
             let changes = self.world.update(player_chunk_pos);
             self.last_changes_empty = changes.added.is_empty() && changes.removed.is_empty();
             for pos in changes.removed {
-                gfx.world.remove_chunk(gl, pos);
+                renderer.remove_chunk(pos);
             }
             for pos in changes.added {
                 if let Some(mesh) = self.world.mesh(pos) {
-                    gfx.world.upload_chunk(gl, pos, mesh);
+                    renderer.upload_chunk(pos, mesh);
                 }
             }
         }
@@ -343,8 +312,8 @@ impl Game {
     }
 
     /// Match the canvas drawing buffer to its CSS size * devicePixelRatio,
-    /// then keep the GL viewport and camera projection in sync.
-    fn sync_canvas_size(&mut self, gl: &glow::Context) {
+    /// then keep the renderer viewport and camera projection in sync.
+    fn sync_canvas_size(&mut self, renderer: &mut Renderer) {
         let Ok(canvas) = crate::utils::get_canvas() else {
             return;
         };
@@ -357,36 +326,39 @@ impl Game {
         }
         let (w, h) = (canvas.width(), canvas.height());
         self.camera.set_viewport_size(w, h);
-        unsafe {
-            gl.viewport(0, 0, w as i32, h as i32);
-        }
+        renderer.resize(w, h);
     }
 
-    fn render(&mut self, gl: &glow::Context, gfx: &Gfx) -> Result<(), String> {
-        self.sync_canvas_size(gl);
-        unsafe {
-            gl.clear_color(0.0, 0.0, 0.0, 1.0);
-            gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
-        }
-        gfx.world
-            .render(gl, &self.camera, self.world.player_chunk_pos());
+    fn render(&mut self, renderer: &mut Renderer, gfx: &mut Gfx) {
+        self.sync_canvas_size(renderer);
 
         let player_chunk = self.player.get_position().chunk_pos();
-        if self.config.show_player {
-            gfx.objects
-                .draw_player(gl, &self.camera, &self.player, player_chunk);
-        }
-        if self.config.show_gizmo {
-            gfx.objects.draw_gizmo(gl, &self.camera, player_chunk);
-        }
-
-        Ok(())
+        let frame = FrameInput {
+            view: self.camera.look_at,
+            projection: self.camera.projection,
+            player_chunk,
+            player_model: self
+                .config
+                .show_player
+                .then(|| player_model(&self.player, player_chunk)),
+            gizmo_model: self.config.show_gizmo.then(|| gizmo_model(player_chunk)),
+            clear_color: [0.0, 0.0, 0.0, 1.0],
+        };
+        // The info label shows the previous frame's draw stats.
+        let ui = self
+            .config
+            .show_egui
+            .then(|| self.build_ui(gfx, renderer.stats()));
+        renderer.render(&frame, ui);
     }
 
-    fn draw_ui(&mut self, gl: &glow::Context, gfx: &mut Gfx) {
-        let gpu_info = gfx.world.get_info();
+    fn build_ui(&mut self, gfx: &mut Gfx, stats: RenderStats) -> UiFrame {
+        let gpu_info = format!(
+            "GPU: {} chunk buffers, {} draw calls",
+            stats.chunk_buffers, stats.draw_calls
+        );
         {
-            gfx.egui.render_ui(gl, |ctx| {
+            gfx.egui.run_ui(|ctx| {
                 if self.is_paused {
                     egui::Window::new("PAUSE").show(ctx, |ui| {
                         ui.label("Game is paused");
@@ -419,7 +391,7 @@ impl Game {
                                 });
                         });
                 }
-            });
+            })
         }
     }
 }

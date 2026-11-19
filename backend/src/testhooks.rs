@@ -12,10 +12,8 @@ use wasm_bindgen_futures::JsFuture;
 
 use crate::{
     core::{Game, SceneConfig, SceneGenerator},
-    gui::EguiBackend,
-    objects::{compile_cube_shader, compile_gizmo_shader},
-    utils::get_webgl2_context,
-    world,
+    render::Renderer,
+    utils::get_canvas,
 };
 
 /// Virtual frame time, so runs do not depend on wall-clock speed.
@@ -25,7 +23,7 @@ const MAX_LOAD_POLLS: u32 = 3000;
 
 struct Harness {
     game: Game,
-    gl: glow::Context,
+    renderer: Renderer,
     /// Virtual clock (ms).
     time: f64,
 }
@@ -66,7 +64,7 @@ fn with_harness<R>(f: impl FnOnce(&mut Harness) -> Result<R, JsValue>) -> Result
 
 fn tick(h: &mut Harness, dt_ms: f64) -> Result<(), JsValue> {
     h.time += dt_ms;
-    h.game.tick(&h.gl, h.time).map_err(JsValue::from)
+    h.game.tick(&mut h.renderer, h.time).map_err(JsValue::from)
 }
 
 async fn next_macrotask() -> Result<(), JsValue> {
@@ -83,12 +81,14 @@ async fn next_macrotask() -> Result<(), JsValue> {
 #[wasm_bindgen]
 pub async fn test_start(scene: String) -> Result<(), JsValue> {
     let config = scene_config(&scene)?;
-    let gl = get_webgl2_context()?;
+    let renderer = Renderer::new(get_canvas()?)
+        .await
+        .map_err(|e| JsValue::from(e.to_string()))?;
     let game = Game::with_config(config)?;
     HARNESS.with(|h| {
         *h.borrow_mut() = Some(Harness {
             game,
-            gl,
+            renderer,
             time: 0.0,
         })
     });
@@ -157,29 +157,8 @@ pub fn test_set_camera(target: Vec<f32>, offset: Vec<f32>) -> Result<(), JsValue
 }
 
 /// Compile and link every shader program. Returns one message per failure
-/// (empty array = all good).
+/// (empty array = all good). Needs `test_start` first (one context per canvas).
 #[wasm_bindgen]
 pub fn test_compile_all_shaders() -> Result<Vec<String>, JsValue> {
-    let gl = match with_harness(|_| Ok(())) {
-        // Reuse the harness context so we do not create a second one on the canvas.
-        Ok(()) => None,
-        Err(_) => Some(get_webgl2_context()?),
-    };
-    let run = |gl: &glow::Context| {
-        let mut errors = Vec::new();
-        let mut check = |name: &str, r: Result<(), String>| {
-            if let Err(e) = r {
-                errors.push(format!("{name}: {e}"));
-            }
-        };
-        check("chunk", world::compile_shader(gl).map(|_| ()));
-        check("cube", compile_cube_shader(gl).map(|_| ()));
-        check("gizmo", compile_gizmo_shader(gl).map(|_| ()));
-        check("egui", EguiBackend::compile_shader(gl).map(|_| ()));
-        errors
-    };
-    match gl {
-        Some(gl) => Ok(run(&gl)),
-        None => with_harness(|h| Ok(run(&h.gl))),
-    }
+    with_harness(|h| Ok(h.renderer.compile_check()))
 }

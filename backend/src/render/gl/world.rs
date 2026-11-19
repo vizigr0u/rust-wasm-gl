@@ -1,9 +1,10 @@
+use glam::Mat4;
 use std::{cell::Cell, collections::HashMap, rc::Rc};
 
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 
 use crate::{
-    graphics::{Camera, ShaderDef, ShaderProgram, TextureType, UniformTypes},
+    graphics::{ShaderDef, ShaderProgram, TextureDef, UniformTypes},
     shader_def,
     world::{make_base_quad_data, ChunkDrawData, ChunkPos, CHUNK_SIZE},
 };
@@ -12,7 +13,6 @@ use voxel_core::render::{build_draw_list, pack_sides, SideRanges};
 #[derive(Debug)]
 struct GraphicContext {
     program: Rc<ShaderProgram>,
-    texture: Rc<(TextureType, glow::WebTextureKey)>,
 }
 
 /// One chunk's quads on the GPU: all 6 sides concatenated in one buffer.
@@ -36,12 +36,12 @@ pub struct WorldRenderData {
 }
 
 impl WorldRenderData {
-    pub fn get_info(&self) -> String {
-        format!(
-            "GPU: {} chunk buffers, {} draw calls",
-            self.gpu_chunks.len(),
-            self.draw_calls.get()
-        )
+    pub fn chunk_buffers(&self) -> usize {
+        self.gpu_chunks.len()
+    }
+
+    pub fn draw_calls(&self) -> u32 {
+        self.draw_calls.get()
     }
 
     /// Create or replace the GPU buffer of one chunk.
@@ -79,10 +79,7 @@ impl WorldRenderData {
         }
     }
 
-    pub fn new(
-        gl: &glow::Context,
-        texture: Rc<(TextureType, glow::WebTextureKey)>,
-    ) -> Result<Self, String> {
+    pub fn new(gl: &glow::Context) -> Result<Self, String> {
         let program = compile_shader(gl)?;
 
         unsafe {
@@ -115,7 +112,7 @@ impl WorldRenderData {
             gl.bind_vertex_array(None);
 
             Ok(Self {
-                graphics: GraphicContext { program, texture },
+                graphics: GraphicContext { program },
                 vertex_array,
                 gpu_chunks: HashMap::new(),
                 draw_calls: Cell::new(0),
@@ -123,14 +120,21 @@ impl WorldRenderData {
         }
     }
 
-    pub fn render(&self, gl: &glow::Context, camera: &Camera, player_chunk_pos: ChunkPos) {
+    pub fn render(
+        &self,
+        gl: &glow::Context,
+        texture: &TextureDef,
+        view: &Mat4,
+        projection: &Mat4,
+        player_chunk_pos: ChunkPos,
+    ) {
         let graphics = &self.graphics;
         unsafe {
             let program = &graphics.program;
             program.gl_use(gl);
-            gl.bind_texture(graphics.texture.0.into(), Some(graphics.texture.1));
-            program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
-            program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
+            gl.bind_texture(texture.0.into(), Some(texture.1));
+            program.set_matrix(gl, UniformTypes::ViewMatrix, view);
+            program.set_matrix(gl, UniformTypes::ProjMatrix, projection);
             gl.enable(glow::CULL_FACE);
             gl.enable(glow::DEPTH_TEST);
             gl.disable(glow::BLEND);

@@ -67,6 +67,8 @@ features = [
 ]
 
 [features]
-default = ["console_error_panic_hook", "console_log"]
+default = ["gl", "console_error_panic_hook", "console_log"]
+# Renderer backend (exactly one). `webgpu` comes with the wgpu port.
+gl = []
 # Deterministic scene driver for Playwright (window.__RWG_TEST__). Not for release builds.
 test-hooks = []

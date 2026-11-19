@@ -1,7 +1,7 @@
 use glow::HasContext;
 
 use wasm_bindgen::prelude::*;
-use web_sys::{Document, Performance, WebGl2RenderingContext, Window};
+use web_sys::{Document, Performance, Window};
 
 pub fn set_panic_hook() {
     // When the `console_error_panic_hook` feature is enabled, we can call the
@@ -35,19 +35,6 @@ pub fn get_canvas() -> Result<web_sys::HtmlCanvasElement, JsValue> {
         .ok_or("cannot find canvas")?
         .dyn_into::<web_sys::HtmlCanvasElement>()
         .map_err(|_| "canvas isnt a Canvas Element".into())
-}
-
-pub fn get_web_sys_context() -> Result<WebGl2RenderingContext, JsValue> {
-    let context = get_canvas()?
-        .get_context("webgl2")?
-        .ok_or("Unable to get WebGl2 context from canvas")?
-        .dyn_into::<WebGl2RenderingContext>()?;
-
-    Ok(context)
-}
-
-pub fn get_webgl2_context() -> Result<glow::Context, JsValue> {
-    Ok(glow::Context::from_webgl2_context(get_web_sys_context()?))
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
