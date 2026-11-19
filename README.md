@@ -39,3 +39,15 @@ pnpm dev
 # or build
 pnpm build
 ```
+
+
+## Testing
+
+```bash
+# run the logic tests (voxel-core)
+pnpm test
+
+# snapshot tests use insta; review and accept changed snapshots
+cargo install cargo-insta   # once
+cargo insta test -p voxel-core --review
+```

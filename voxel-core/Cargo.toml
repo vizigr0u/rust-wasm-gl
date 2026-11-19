@@ -9,3 +9,8 @@ fastrand = { version = "2.0.1", default-features = false }
 glam = "0.34"
 itertools = "0.15"
 log = "0.4.21"
+
+[dev-dependencies]
+insta = { version = "1.49", features = ["yaml"] }
+# keep in lockstep with the wgpu version egui-wgpu pins (wgpu 30 -> naga 30)
+naga = { version = "30.0.0", default-features = false, features = ["wgsl-in"] }
