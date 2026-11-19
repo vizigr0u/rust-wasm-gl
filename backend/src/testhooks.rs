@@ -117,6 +117,25 @@ pub fn test_step(frames: u32, dt_ms: f64) -> Result<(), JsValue> {
     })
 }
 
+/// Update-only frames (no draw calls) until settled or `max_frames`, then one
+/// full frame so the canvas holds the final picture. Returns frames used.
+#[wasm_bindgen]
+pub fn test_settle(max_frames: u32, dt_ms: f64) -> Result<u32, JsValue> {
+    with_harness(|h| {
+        // is_settled can be true before the first streaming pass queued anything.
+        const WARMUP: u32 = 30;
+        let mut used = 0;
+        h.game.set_skip_render(true);
+        while used < max_frames && !(used >= WARMUP && h.game.is_settled()) {
+            tick(h, dt_ms)?;
+            used += 1;
+        }
+        h.game.set_skip_render(false);
+        tick(h, dt_ms)?;
+        Ok(used + 1)
+    })
+}
+
 /// Running, streamer queue and chunks_to_load empty, last MeshChanges empty.
 #[wasm_bindgen]
 pub fn test_is_settled() -> Result<bool, JsValue> {

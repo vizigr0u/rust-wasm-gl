@@ -25,3 +25,6 @@ dist-ssr
 backend/target
 backend-tests/target
 voxel-core/src/*/snapshots/*
+/test-results
+/playwright-report
+e2e/__screenshots__/

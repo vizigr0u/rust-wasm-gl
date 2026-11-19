@@ -11,9 +11,13 @@
     "debug-wasm": "wasm-bindgen --keep-debug --out-dir ./backend/pkg ./target/wasm32-unknown-unknown/debug/backend.wasm --target web",
     "dev": "pnpm wasm && vite",
     "build": "pnpm wasm-release && tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "wasm:test": "CARGO_PROFILE_DEV_OPT_LEVEL=3 wasm-pack build --dev ./backend --target web -- --features test-hooks",
+    "test:pixels": "playwright test -c e2e/playwright.config.ts",
+    "test:pixels:update": "playwright test -c e2e/playwright.config.ts --update-snapshots"
   },
   "devDependencies": {
+    "@playwright/test": "1.57.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",
     "vite-plugin-wasm-pack": "^0.1.12"

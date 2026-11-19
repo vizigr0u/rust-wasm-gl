@@ -111,6 +111,8 @@ pub struct Game {
     last_changes_empty: bool,
     /// Test hooks place the camera by hand; skip the follow-the-player retarget.
     camera_pinned: bool,
+    /// Test hooks: run update only, skip draw calls (set while settling).
+    skip_render: bool,
 
     input_system: InputSystem,
     time: Time,
@@ -158,6 +160,7 @@ impl Game {
             config,
             last_changes_empty: false,
             camera_pinned: false,
+            skip_render: false,
             input_system: InputSystem::new()?,
             is_paused: false,
             time: Time::default(),
@@ -178,6 +181,11 @@ impl Game {
     #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     pub fn is_settled(&self) -> bool {
         self.is_running() && self.world.is_settled() && self.last_changes_empty
+    }
+
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn set_skip_render(&mut self, skip: bool) {
+        self.skip_render = skip;
     }
 
     /// Place the camera by hand. `target` is relative to the player's chunk.
@@ -258,10 +266,12 @@ impl Game {
         self.update_gui(&mut gfx.egui);
         let update_time = performance_now();
 
-        self.render(gl, gfx)?;
+        if !self.skip_render {
+            self.render(gl, gfx)?;
+        }
         let render_time = performance_now();
 
-        if self.config.show_egui {
+        if self.config.show_egui && !self.skip_render {
             self.draw_ui(gl, gfx);
         }
 
