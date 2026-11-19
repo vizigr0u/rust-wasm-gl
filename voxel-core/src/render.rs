@@ -125,8 +125,12 @@ mod tests {
         let list = build_draw_list(chunks.into_iter(), ivec3(0, 0, 0).into());
         assert!(list.windows(2).all(|w| key(w[0].chunk) <= key(w[1].chunk)));
         // player at 0: chunk x=1 hides Right (0>=1 false), chunk x=-1 hides Left (-1<=-1 true)
-        assert!(!list.iter().any(|d| d.chunk.as_vec().x == 1 && matches!(d.side, Side::Right)));
-        assert!(list.iter().any(|d| d.chunk.as_vec().x == -1 && matches!(d.side, Side::Right)));
+        assert!(!list
+            .iter()
+            .any(|d| d.chunk.as_vec().x == 1 && matches!(d.side, Side::Right)));
+        assert!(list
+            .iter()
+            .any(|d| d.chunk.as_vec().x == -1 && matches!(d.side, Side::Right)));
     }
 
     // ---- A4 snapshots ----
@@ -171,7 +175,11 @@ mod tests {
             .map(|d| {
                 format!(
                     "{:?} {:?} off={:?} first={} count={}",
-                    d.chunk.as_vec(), d.side, d.offset, d.first, d.count
+                    d.chunk.as_vec(),
+                    d.side,
+                    d.offset,
+                    d.first,
+                    d.count
                 )
             })
             .collect();
@@ -182,7 +190,8 @@ mod tests {
     fn draw_list_settled_world_summary() {
         let mut w = World::new(GeneratorV0::new());
         let player: ChunkPos = ivec3(0, 0, 0).into();
-        let mut meshes: std::collections::HashMap<ChunkPos, (usize, SideRanges)> = Default::default();
+        let mut meshes: std::collections::HashMap<ChunkPos, (usize, SideRanges)> =
+            Default::default();
         for _ in 0..2000 {
             let ch = w.update(player);
             for p in ch.removed {
@@ -203,7 +212,9 @@ mod tests {
             .collect();
         let total: u32 = list.iter().map(|d| d.count).sum();
         // chunks above/below world height are never meshed
-        assert!(list.iter().all(|d| (MIN_CHUNK_Y..MAX_CHUNK_Y).contains(&d.chunk.as_vec().y)));
+        assert!(list
+            .iter()
+            .all(|d| (MIN_CHUNK_Y..MAX_CHUNK_Y).contains(&d.chunk.as_vec().y)));
         insta::assert_yaml_snapshot!((meshes.len(), list.len(), total, hash_words(&words)));
     }
 }

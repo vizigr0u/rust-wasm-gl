@@ -280,11 +280,16 @@ mod tests {
     #[test]
     fn offset_priority_snapshot() {
         let p = make_offset_priority(LOAD_RADIUS);
-        assert!(p.windows(2).all(|w| w[0].length_squared() <= w[1].length_squared()));
+        assert!(p
+            .windows(2)
+            .all(|w| w[0].length_squared() <= w[1].length_squared()));
         assert_eq!(p[0], ivec3(0, 0, 0));
         assert!(p.iter().all(|o| o.length_squared() <= LOAD_RADIUS_SQUARED));
         let words: Vec<i32> = p.iter().flat_map(|o| [o.x, o.y, o.z]).collect();
-        let small: Vec<String> = make_offset_priority(1).iter().map(|o| o.to_string()).collect();
+        let small: Vec<String> = make_offset_priority(1)
+            .iter()
+            .map(|o| o.to_string())
+            .collect();
         insta::assert_yaml_snapshot!((p.len(), hash_words(&words), small));
     }
 

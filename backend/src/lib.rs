@@ -10,9 +10,9 @@ mod graphics;
 mod gui;
 pub mod math;
 mod objects;
-mod utils;
 #[cfg(feature = "test-hooks")]
 mod testhooks;
+mod utils;
 mod world;
 
 cfg_if! {

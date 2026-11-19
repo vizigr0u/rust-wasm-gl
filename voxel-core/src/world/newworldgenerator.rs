@@ -74,7 +74,11 @@ mod tests {
     #[test]
     fn deterministic_and_bounded() {
         let g = GeneratorV0::new();
-        for p in [IVec3::new(0, 0, 0), IVec3::new(-5, 1, 7), IVec3::new(2, -2, 2)] {
+        for p in [
+            IVec3::new(0, 0, 0),
+            IVec3::new(-5, 1, 7),
+            IVec3::new(2, -2, 2),
+        ] {
             let a: Vec<_> = g.generate(p.into()).iter_blocks().collect();
             let b: Vec<_> = g.generate(p.into()).iter_blocks().collect();
             assert_eq!(a, b);
@@ -88,7 +92,12 @@ mod tests {
     fn block_histogram_snapshot() {
         let g = GeneratorV0::new();
         let mut out = Vec::new();
-        for p in [IVec3::new(0, 0, 0), IVec3::new(3, -1, 2), IVec3::new(0, 2, 0), IVec3::new(0, -2, 0)] {
+        for p in [
+            IVec3::new(0, 0, 0),
+            IVec3::new(3, -1, 2),
+            IVec3::new(0, 2, 0),
+            IVec3::new(0, -2, 0),
+        ] {
             let pos: ChunkPos = p.into();
             let mut h: BTreeMap<String, usize> = BTreeMap::new();
             for b in g.generate(pos).iter_blocks() {

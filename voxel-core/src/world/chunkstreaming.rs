@@ -142,7 +142,11 @@ where
         if !self.pages_to_load.is_empty() {
             if self.chunk_page_pool.len() < self.pages_to_load.len() {
                 info!("Streaming: Pool size too small - trying to free some pages");
-                self.free_some_pages(PAGE_LOAD_PER_FRAME, player_chunk_pos, &mut update.pages_freed);
+                self.free_some_pages(
+                    PAGE_LOAD_PER_FRAME,
+                    player_chunk_pos,
+                    &mut update.pages_freed,
+                );
             }
             for _ in 0..PAGE_LOAD_PER_FRAME {
                 if let Some(page) = self.pages_to_load.pop() {

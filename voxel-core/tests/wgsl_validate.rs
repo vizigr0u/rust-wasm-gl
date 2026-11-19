@@ -35,5 +35,9 @@ fn all_wgsl_shaders_validate() {
     }
 
     println!("validated {} wgsl shader(s)", files.len());
-    assert!(failures.is_empty(), "WGSL failures:\n{}", failures.join("\n"));
+    assert!(
+        failures.is_empty(),
+        "WGSL failures:\n{}",
+        failures.join("\n")
+    );
 }

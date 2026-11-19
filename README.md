@@ -84,6 +84,14 @@ In `backend/Cargo.toml`:
 - `test-hooks`: deterministic scene driver for the e2e tests. Never enable it in release builds.
 - `webgpu`: not there yet (planned wgpu renderer, see `.claude/plan-wgpu-migration.md`). GL is the only backend today.
 
+### Git hook
+
+Pre-commit runs `cargo fmt --all --check`. Enable once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ### CI
 
 `.github/workflows/ci.yaml`: `rust` job (fmt, test, clippy) then `e2e` job (Playwright pixel tests, GL only).

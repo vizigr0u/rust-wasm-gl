@@ -174,8 +174,13 @@ mod tests {
 
     #[test]
     fn offset_clamped() {
-        assert!((OrbitCamera::new(Vec3::splat(0.0001)).offset.length() - MIN_CAMERA_DISTANCE).abs() < 1e-4);
-        assert!((OrbitCamera::new(Vec3::splat(1e6)).offset.length() - MAX_CAMERA_DISTANCE).abs() < 1e-2);
+        assert!(
+            (OrbitCamera::new(Vec3::splat(0.0001)).offset.length() - MIN_CAMERA_DISTANCE).abs()
+                < 1e-4
+        );
+        assert!(
+            (OrbitCamera::new(Vec3::splat(1e6)).offset.length() - MAX_CAMERA_DISTANCE).abs() < 1e-2
+        );
         let mut c = OrbitCamera::new(Vec3::new(0.0, 0.0, MAX_CAMERA_DISTANCE));
         c.zoom(1.0);
         assert!((c.offset.length() - MAX_CAMERA_DISTANCE).abs() < 1e-2);
@@ -199,7 +204,10 @@ mod tests {
 
     #[test]
     fn view_snapshots() {
-        let mut out = vec![("default".to_string(), fmt_mat4(OrbitCamera::default().view()))];
+        let mut out = vec![(
+            "default".to_string(),
+            fmt_mat4(OrbitCamera::default().view()),
+        )];
         for (name, off) in single_block_cameras() {
             let mut c = OrbitCamera::new(off);
             c.target = Vec3::splat(0.5);
@@ -217,7 +225,12 @@ mod tests {
     fn orbit_zoom_sequence_snapshot() {
         let mut c = OrbitCamera::default();
         let mut out = vec![fmt_vec3(c.offset)];
-        for (yaw, pitch, dy) in [(0.5, 0.2, 1.0), (-1.0, 0.4, -1.0), (2.0, -0.3, 1.0), (0.1, 0.1, -1.0)] {
+        for (yaw, pitch, dy) in [
+            (0.5, 0.2, 1.0),
+            (-1.0, 0.4, -1.0),
+            (2.0, -0.3, 1.0),
+            (0.1, 0.1, -1.0),
+        ] {
             c.orbit(yaw, pitch);
             c.zoom(dy);
             out.push(fmt_vec3(c.offset));
