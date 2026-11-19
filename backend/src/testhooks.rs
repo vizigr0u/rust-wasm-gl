@@ -42,6 +42,8 @@ fn scene_config(name: &str) -> Result<SceneConfig, JsValue> {
     match name {
         "default_spawn" => Ok(SceneConfig {
             show_egui: false,
+            frustum_culling: false,
+            debug_overlays: false,
             ..SceneConfig::default()
         }),
         "single_block" => Ok(SceneConfig {
@@ -49,6 +51,8 @@ fn scene_config(name: &str) -> Result<SceneConfig, JsValue> {
             show_player: false,
             show_gizmo: false,
             show_egui: false,
+            frustum_culling: false,
+            debug_overlays: false,
             ..SceneConfig::default()
         }),
         other => Err(format!("unknown scene '{other}'").into()),

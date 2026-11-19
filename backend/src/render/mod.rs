@@ -1,6 +1,7 @@
 //! Renderer seam: `Game` talks to the wgpu (WebGPU) `Renderer`.
 
 use glam::Mat4;
+use voxel_core::math::Frustum;
 
 use crate::world::ChunkPos;
 
@@ -44,6 +45,12 @@ pub struct FrameInput {
     pub player_model: Option<Mat4>,
     pub gizmo_model: Option<Mat4>,
     pub clear_color: [f32; 4],
+    /// Cull chunks outside this frustum (player-chunk-relative space). `None` = no culling.
+    pub cull_frustum: Option<Frustum>,
+    /// Model matrix (inverse view-projection) of the debug frustum lines.
+    pub frustum_lines: Option<Mat4>,
+    /// Draw wireframe boxes around culled chunks.
+    pub culled_boxes: bool,
 }
 
 /// Tessellated egui output for one frame.
@@ -63,6 +70,10 @@ pub struct RenderStats {
     pub arena_used: u32,
     pub arena_capacity: u32,
     pub arena_largest_free: u32,
+    /// Chunks with at least one drawn side, chunks culled by the frustum, quads drawn.
+    pub chunks_visible: u32,
+    pub chunks_culled: u32,
+    pub quads_drawn: u32,
     /// Bytes uploaded to the arena before the last `render`.
     pub upload_bytes: u64,
     /// CPU ms of the last `render` spent preparing (draw list, per-frame uploads).

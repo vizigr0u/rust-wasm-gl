@@ -1,6 +1,7 @@
 use egui::RichText;
 use fastrand::Rng;
 use glam::{vec3, Vec3};
+use voxel_core::{gpu::UploadQueue, math::Frustum};
 use wasm_bindgen::{JsCast, JsValue};
 
 use crate::{
@@ -9,10 +10,16 @@ use crate::{
     objects::{gizmo_model, player_model, Player},
     render::{FrameInput, RenderStats, Renderer, TextureId, UiFrame},
     utils::performance_now,
-    world::{Chunk, ChunkPos, GeneratorV0, SingleBlockGenerator, World, WorldGenerator},
+    world::{
+        Chunk, ChunkPos, GeneratorV0, InlineMesher, MeshExecutor, SingleBlockGenerator, World,
+        WorldGenerator,
+    },
 };
 
-use super::{HandleInputs, InputEventType, InputSystem, Time};
+use super::{meshworker::WorkerMesher, HandleInputs, InputEventType, InputSystem, Time};
+
+/// Mesh bytes written to the GPU arena per frame (at least one chunk always goes through).
+const UPLOAD_BUDGET_BYTES: usize = 64 * 1024;
 
 const BLOCKS_ATLAS_PATH: &str = "data/textures/blocks/blocks_atlas.png";
 const UV_CHECKER_PATH: &str = "data/textures/UV_checker_Map_byValle.jpg";
@@ -48,6 +55,9 @@ pub struct SceneConfig {
     pub show_player: bool,
     pub show_gizmo: bool,
     pub show_egui: bool,
+    /// Initial state of the culling toggle and the frustum/culled-box overlays.
+    pub frustum_culling: bool,
+    pub debug_overlays: bool,
 }
 
 impl Default for SceneConfig {
@@ -60,8 +70,20 @@ impl Default for SceneConfig {
             show_player: true,
             show_gizmo: true,
             show_egui: true,
+            frustum_culling: true,
+            debug_overlays: true,
         }
     }
+}
+
+/// Pause-menu and F3 debug switches.
+#[derive(Debug, Clone, Copy)]
+struct DebugToggles {
+    /// Render from the player's view instead of the orbit camera.
+    player_cam_view: bool,
+    frustum_culling: bool,
+    show_frustum: bool,
+    show_culled_boxes: bool,
 }
 
 fn make_generator(config: &SceneConfig, _rng: Rng) -> Generator {
@@ -90,6 +112,8 @@ pub struct Game {
     stage: Stage,
     texture_loader: TextureLoader,
     world: World<Generator>,
+    /// Meshes built but not yet written to the GPU.
+    upload_queue: UploadQueue,
     camera: Camera,
     config: SceneConfig,
     /// The last `World::update` produced no mesh changes (and they were applied).
@@ -103,6 +127,7 @@ pub struct Game {
     time: Time,
     is_paused: bool,
     gui_state: GuiState,
+    toggles: DebugToggles,
     player: Player,
     fps_display: FpsDisplay,
     /// ms spent in chunk upload/remove during this tick's `update`.
@@ -134,17 +159,34 @@ impl Default for GuiState {
 
 impl Game {
     pub fn new() -> Result<Self, JsValue> {
-        Self::with_config(SceneConfig::default())
+        let mesher: Box<dyn MeshExecutor> = match WorkerMesher::from_window() {
+            Some(w) => Box::new(w),
+            None => Box::<InlineMesher>::default(),
+        };
+        Self::with_mesher(SceneConfig::default(), mesher)
     }
 
+    /// Meshes inline: deterministic for tests.
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     pub fn with_config(config: SceneConfig) -> Result<Self, JsValue> {
+        Self::with_mesher(config, Box::<InlineMesher>::default())
+    }
+
+    fn with_mesher(config: SceneConfig, mesher: Box<dyn MeshExecutor>) -> Result<Self, JsValue> {
         let seed = config.seed;
         let rng = Rng::with_seed(seed);
+        let toggles = DebugToggles {
+            player_cam_view: false,
+            frustum_culling: config.frustum_culling,
+            show_frustum: config.debug_overlays,
+            show_culled_boxes: false,
+        };
         let game = Game {
             seed,
             stage: Stage::Loading,
             texture_loader: TextureLoader::new(10)?,
-            world: World::new(make_generator(&config, rng)),
+            upload_queue: UploadQueue::default(),
+            world: World::with_mesher(make_generator(&config, rng), mesher),
             camera: Camera::new(config.camera_offset),
             config,
             last_changes_empty: false,
@@ -154,6 +196,7 @@ impl Game {
             is_paused: false,
             time: Time::default(),
             gui_state: GuiState::default(),
+            toggles,
             player: Player::new(vec3(0.0, 16.0, 0.0)),
             fps_display: FpsDisplay::new(),
             upload_ms: 0.0,
@@ -283,12 +326,20 @@ impl Game {
             self.player.update(&self.time);
             let player_chunk_pos = self.player.get_position().chunk_pos();
             let changes = self.world.update(player_chunk_pos);
-            self.last_changes_empty = changes.added.is_empty() && changes.removed.is_empty();
             let t = performance_now();
             for pos in changes.removed {
+                self.upload_queue.remove(pos);
                 renderer.remove_chunk(pos);
             }
             for pos in changes.added {
+                self.upload_queue.push(pos);
+            }
+            let world = &self.world;
+            let batch = self.upload_queue.drain_budget(UPLOAD_BUDGET_BYTES, |p| {
+                world.mesh(p).map_or(0, |m| m.quad_count() * 4)
+            });
+            self.last_changes_empty = batch.is_empty();
+            for pos in batch {
                 if let Some(mesh) = self.world.mesh(pos) {
                     renderer.upload_chunk(pos, mesh);
                 }
@@ -313,6 +364,10 @@ impl Game {
                 }
                 match event.code().as_str() {
                     "Escape" => self.is_paused = !self.is_paused,
+                    "F3" => {
+                        self.toggles.player_cam_view = !self.toggles.player_cam_view;
+                        event.prevent_default();
+                    }
                     "F2" => {
                         self.gui_state.show_info = !self.gui_state.show_info;
                         event.prevent_default();
@@ -327,7 +382,9 @@ impl Game {
             false => {
                 // egui gets no input now; drop stale events so they don't replay every frame
                 egui.clear_events();
-                self.camera.handle_inputs(&inputs);
+                if !self.toggles.player_cam_view {
+                    self.camera.handle_inputs(&inputs);
+                }
                 self.player.handle_inputs(&inputs);
             }
         }
@@ -350,6 +407,7 @@ impl Game {
         }
         let (w, h) = (canvas.width(), canvas.height());
         self.camera.set_viewport_size(w, h);
+        self.player.view_mut().set_viewport_size(w, h);
         renderer.resize(w, h);
     }
 
@@ -357,16 +415,29 @@ impl Game {
         self.sync_canvas_size(renderer);
 
         let player_chunk = self.player.get_position().chunk_pos();
+        // Eye in player-chunk-relative space (floating origin), same space as the chunk AABBs.
+        let eye = self.player.get_screen_position();
+        let pv = self.player.view();
+        let t = self.toggles;
+        let (view, projection) = if t.player_cam_view {
+            (pv.view(eye), pv.projection())
+        } else {
+            (self.camera.look_at, self.camera.projection)
+        };
+        let cull_frustum: Option<Frustum> = t.frustum_culling.then(|| pv.frustum(eye));
+        // Debug-only drawing: hidden when looking through the player's own eyes.
+        let debug_view = !t.player_cam_view;
         let frame = FrameInput {
-            view: self.camera.look_at,
-            projection: self.camera.projection,
+            view,
+            projection,
             player_chunk,
-            player_model: self
-                .config
-                .show_player
+            player_model: (self.config.show_player && debug_view)
                 .then(|| player_model(&self.player, player_chunk)),
             gizmo_model: self.config.show_gizmo.then(|| gizmo_model(player_chunk)),
             clear_color: [0.0, 0.0, 0.0, 1.0],
+            cull_frustum,
+            frustum_lines: (t.show_frustum && debug_view).then(|| pv.view_proj(eye).inverse()),
+            culled_boxes: t.show_culled_boxes && debug_view && t.frustum_culling,
         };
         // The info label shows the previous frame's draw stats.
         let t = performance_now();
@@ -380,22 +451,32 @@ impl Game {
 
     fn build_ui(&mut self, gfx: &mut Gfx, stats: RenderStats) -> UiFrame {
         let gpu_info = format!(
-            "GPU: {} chunks, {} draw calls ({} before merge)\narena: {}/{} quads ({:.1}/{:.1} MB), largest free {}\nupload: {:.1} KB/frame",
+            "GPU: {} chunks, {} draw calls ({} before merge)\nView: {} (F3)  Frustum: {}/{} chunks, {} quads drawn [culling {}]\narena: {}/{} quads ({:.1}/{:.1} MB), largest free {}\nupload: {:.1} KB/frame, {} queued",
             stats.chunk_buffers,
             stats.draw_calls,
             stats.draw_entries_raw,
+            if self.toggles.player_cam_view { "player" } else { "debug" },
+            stats.chunks_visible,
+            stats.chunks_visible + stats.chunks_culled,
+            stats.quads_drawn,
+            if self.toggles.frustum_culling { "on" } else { "off" },
             stats.arena_used,
             stats.arena_capacity,
             stats.arena_used as f64 * 4e-6,
             stats.arena_capacity as f64 * 4e-6,
             stats.arena_largest_free,
-            stats.upload_bytes as f64 / 1024.0
+            stats.upload_bytes as f64 / 1024.0,
+            self.upload_queue.len()
         );
         {
             gfx.egui.run_ui(|ctx| {
                 if self.is_paused {
                     egui::Window::new("PAUSE").show(ctx, |ui| {
                         ui.label("Game is paused");
+                        ui.checkbox(&mut self.toggles.frustum_culling, "Frustum culling");
+                        ui.checkbox(&mut self.toggles.show_frustum, "Show frustum lines");
+                        ui.checkbox(&mut self.toggles.show_culled_boxes, "Show culled boxes");
+                        ui.checkbox(&mut self.toggles.player_cam_view, "Player camera view (F3)");
                     });
                 }
                 if self.gui_state.show_info {

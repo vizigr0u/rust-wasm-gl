@@ -177,6 +177,10 @@ impl InputSystem {
             "keydown",
             Box::new(|event: JsValue| {
                 let event: web_sys::KeyboardEvent = event.dyn_into().unwrap();
+                // Arrow keys look around; keep the page from scrolling.
+                if event.code().starts_with("Arrow") {
+                    event.prevent_default();
+                }
                 InputEventType::KeyDown(Rc::new(event))
             }),
         )?;

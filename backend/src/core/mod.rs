@@ -1,5 +1,6 @@
 mod game;
 mod inputs;
+mod meshworker;
 mod time;
 
 pub use game::Game;

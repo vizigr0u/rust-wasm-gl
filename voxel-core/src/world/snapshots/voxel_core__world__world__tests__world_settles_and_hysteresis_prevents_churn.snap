@@ -6,7 +6,7 @@ expression: "((a0, r0, meshes0, quads0, info0), (step, back),\n(walk, w.meshes.l
   - 0
   - 818
   - 17206
-  - "818 chunk meshes\nStreaming: 9 page(s) loaded\n17206 quads - 0.069 MB\ngpu"
+  - "818 chunk meshes (0 meshing)\nStreaming: 9 page(s) loaded\n17206 quads - 0.069 MB\ngpu"
 - - - 96
     - 0
   - - 0

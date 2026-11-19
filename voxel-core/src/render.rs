@@ -3,6 +3,8 @@ pub mod shader_ref;
 
 use glam::Vec3;
 
+use crate::math::Frustum;
+
 use crate::world::{ChunkDrawData, ChunkPos, Side, CHUNK_SIZE};
 
 pub const SIDES: [Side; 6] = [
@@ -58,6 +60,40 @@ pub struct ChunkDraw {
     pub offset: Vec3,
     pub first: u32,
     pub count: u32,
+}
+
+/// Chunk AABB in player-chunk-relative space.
+pub fn chunk_aabb(offset: Vec3) -> (Vec3, Vec3) {
+    (offset, offset + Vec3::splat(CHUNK_SIZE as f32))
+}
+
+/// Split draws by frustum. `None` keeps everything. Also returns the offsets of the
+/// culled chunks (once per chunk) for debug boxes.
+pub fn cull_draws(draws: Vec<ChunkDraw>, frustum: Option<&Frustum>) -> (Vec<ChunkDraw>, Vec<Vec3>) {
+    let Some(f) = frustum else {
+        return (draws, Vec::new());
+    };
+    let mut visible = Vec::with_capacity(draws.len());
+    let mut culled: Vec<Vec3> = Vec::new();
+    let mut last: Option<(ChunkPos, bool)> = None;
+    for d in draws {
+        let vis = match last {
+            Some((c, v)) if c == d.chunk => v,
+            _ => {
+                let (min, max) = chunk_aabb(d.offset);
+                let v = f.intersects_aabb(min, max);
+                if !v {
+                    culled.push(d.offset);
+                }
+                last = Some((d.chunk, v));
+                v
+            }
+        };
+        if vis {
+            visible.push(d);
+        }
+    }
+    (visible, culled)
 }
 
 fn key(p: ChunkPos) -> (i32, i32, i32) {
@@ -131,6 +167,23 @@ mod tests {
         assert!(list
             .iter()
             .any(|d| d.chunk.as_vec().x == -1 && matches!(d.side, Side::Right)));
+    }
+
+    #[test]
+    fn cull_splits_visible_and_culled() {
+        let f = crate::playerview::PlayerView::new().frustum(Vec3::ZERO);
+        let r = [(0, 1); 6];
+        let player: ChunkPos = ivec3(0, 0, 0).into();
+        let chunks = [ivec3(3, 0, 0), ivec3(-3, 0, 0)].map(|v| (v.into(), r));
+        let all = build_draw_list(chunks.clone().into_iter(), ivec3(3, 0, 0).into());
+        let n = all.len();
+        let (vis, culled) = cull_draws(all, None);
+        assert_eq!((vis.len(), culled.len()), (n, 0));
+        let draws = build_draw_list(chunks.into_iter(), player);
+        let (vis, culled) = cull_draws(draws, Some(&f));
+        assert!(vis.iter().all(|d| d.chunk.as_vec().x == 3));
+        assert!(!vis.is_empty());
+        assert_eq!(culled, vec![Vec3::new(-48.0, 0.0, 0.0)]);
     }
 
     // ---- A4 snapshots ----

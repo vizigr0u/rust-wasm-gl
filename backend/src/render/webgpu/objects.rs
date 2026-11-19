@@ -9,10 +9,21 @@ use crate::world::{BlockSideTexture, Side};
 const SLOT: u64 = 256;
 const CUBE_SLOT: u32 = 0;
 const GIZMO_SLOT: u32 = 1;
+const FRUSTUM_SLOT: u32 = 2;
+/// Culled-chunk boxes use slots `BOX_SLOT0..`.
+const BOX_SLOT0: u32 = 3;
 
 pub struct ObjectPipelines {
     cube: wgpu::RenderPipeline,
     gizmo: wgpu::RenderPipeline,
+    /// Gizmo shader, no depth test: the frustum lines show through terrain.
+    lines: wgpu::RenderPipeline,
+    frustum_vertices: wgpu::Buffer,
+    frustum_count: u32,
+    box_vertices: wgpu::Buffer,
+    box_count: u32,
+    model_layout: wgpu::BindGroupLayout,
+    model_slots: u64,
     cube_vertices: wgpu::Buffer,
     cube_count: u32,
     gizmo_vertices: wgpu::Buffer,
@@ -51,6 +62,7 @@ impl ObjectPipelines {
                     src: &str,
                     topology,
                     cull_mode,
+                    depth: bool,
                     attributes: &[wgpu::VertexAttribute]| {
             let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some(label),
@@ -83,8 +95,12 @@ impl ObjectPipelines {
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: depth_format,
-                    depth_write_enabled: Some(true),
-                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    depth_write_enabled: Some(depth),
+                    depth_compare: Some(if depth {
+                        wgpu::CompareFunction::Less
+                    } else {
+                        wgpu::CompareFunction::Always
+                    }),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
@@ -98,6 +114,7 @@ impl ObjectPipelines {
             include_str!("../../../shaders/cube.wgsl"),
             wgpu::PrimitiveTopology::TriangleList,
             Some(wgpu::Face::Back),
+            true,
             &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2, 2 => Float32],
         );
         // GL parity: gizmo has depth test but no culling and no blending.
@@ -106,8 +123,29 @@ impl ObjectPipelines {
             include_str!("../../../shaders/gizmo.wgsl"),
             wgpu::PrimitiveTopology::LineList,
             None,
+            true,
             &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
         );
+        let lines = make(
+            "debug lines",
+            include_str!("../../../shaders/gizmo.wgsl"),
+            wgpu::PrimitiveTopology::LineList,
+            None,
+            false,
+            &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
+        );
+        let frustum_data = frustum_vertices();
+        let frustum_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("frustum vertices"),
+            contents: bytemuck::cast_slice(&frustum_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+        let box_data = box_vertices();
+        let box_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("box vertices"),
+            contents: bytemuck::cast_slice(&box_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
         let cube_data = cube_vertices();
         let cube_vertices = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -120,27 +158,18 @@ impl ObjectPipelines {
             contents: bytemuck::cast_slice(&GIZMO_VERTICES),
             usage: wgpu::BufferUsages::VERTEX,
         });
-        let model_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("object models"),
-            size: 2 * SLOT,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let model_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("object model"),
-            layout: &model_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                    buffer: &model_buf,
-                    offset: 0,
-                    size: wgpu::BufferSize::new(64),
-                }),
-            }],
-        });
+        let model_slots = 64;
+        let (model_buf, model_bind) = create_model_buf(device, &model_layout, model_slots);
         Self {
             cube,
             gizmo,
+            lines,
+            frustum_vertices,
+            frustum_count: (frustum_data.len() / 6) as u32,
+            box_vertices,
+            box_count: (box_data.len() / 6) as u32,
+            model_layout,
+            model_slots,
             cube_vertices,
             cube_count: (cube_data.len() / 6) as u32,
             gizmo_vertices,
@@ -151,8 +180,26 @@ impl ObjectPipelines {
     }
 
     /// Upload this frame's model matrices (a missing object keeps its old slot, undrawn).
-    pub fn write_models(&self, queue: &wgpu::Queue, cube: Option<&Mat4>, gizmo: Option<&Mat4>) {
-        for (slot, m) in [(CUBE_SLOT, cube), (GIZMO_SLOT, gizmo)] {
+    pub fn write_models(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        cube: Option<&Mat4>,
+        gizmo: Option<&Mat4>,
+        frustum: Option<&Mat4>,
+        boxes: &[Mat4],
+    ) {
+        let needed = BOX_SLOT0 as u64 + boxes.len() as u64;
+        if needed > self.model_slots {
+            self.model_slots = needed.next_power_of_two();
+            (self.model_buf, self.model_bind) =
+                create_model_buf(device, &self.model_layout, self.model_slots);
+        }
+        for (slot, m) in [
+            (CUBE_SLOT, cube),
+            (GIZMO_SLOT, gizmo),
+            (FRUSTUM_SLOT, frustum),
+        ] {
             if let Some(m) = m {
                 queue.write_buffer(
                     &self.model_buf,
@@ -161,10 +208,25 @@ impl ObjectPipelines {
                 );
             }
         }
+        if !boxes.is_empty() {
+            let mut bytes = vec![0u8; boxes.len() * SLOT as usize];
+            for (i, m) in boxes.iter().enumerate() {
+                let at = i * SLOT as usize;
+                bytes[at..at + 64].copy_from_slice(bytemuck::cast_slice(&m.to_cols_array()));
+            }
+            queue.write_buffer(&self.model_buf, BOX_SLOT0 as u64 * SLOT, &bytes);
+        }
     }
 
     /// Group 0 (globals) must already be bound.
-    pub fn draw(&self, pass: &mut wgpu::RenderPass<'_>, cube: bool, gizmo: bool) {
+    pub fn draw(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        cube: bool,
+        gizmo: bool,
+        frustum: bool,
+        boxes: u32,
+    ) {
         if cube {
             pass.set_pipeline(&self.cube);
             pass.set_bind_group(1, &self.model_bind, &[CUBE_SLOT * SLOT as u32]);
@@ -177,7 +239,90 @@ impl ObjectPipelines {
             pass.set_vertex_buffer(0, self.gizmo_vertices.slice(..));
             pass.draw(0..self.gizmo_count, 0..1);
         }
+        if boxes > 0 {
+            // Same pipeline as the gizmo: depth tested.
+            pass.set_pipeline(&self.gizmo);
+            pass.set_vertex_buffer(0, self.box_vertices.slice(..));
+            for i in 0..boxes {
+                pass.set_bind_group(1, &self.model_bind, &[(BOX_SLOT0 + i) * SLOT as u32]);
+                pass.draw(0..self.box_count, 0..1);
+            }
+        }
+        if frustum {
+            pass.set_pipeline(&self.lines);
+            pass.set_bind_group(1, &self.model_bind, &[FRUSTUM_SLOT * SLOT as u32]);
+            pass.set_vertex_buffer(0, self.frustum_vertices.slice(..));
+            pass.draw(0..self.frustum_count, 0..1);
+        }
     }
+}
+
+fn create_model_buf(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    slots: u64,
+) -> (wgpu::Buffer, wgpu::BindGroup) {
+    let buf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("object models"),
+        size: slots * SLOT,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("object model"),
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 0,
+            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                buffer: &buf,
+                offset: 0,
+                size: wgpu::BufferSize::new(64),
+            }),
+        }],
+    });
+    (buf, bind)
+}
+
+/// 12 edges of a cube with corners at +-1 (x, y) and `z0`..`z1`, in one colour.
+fn cube_edges(z0: f32, z1: f32, rgb: [f32; 3], out: &mut Vec<f32>) {
+    let corner = |i: usize, z: f32| {
+        [
+            if i & 1 == 0 { -1.0 } else { 1.0 },
+            if i & 2 == 0 { -1.0 } else { 1.0 },
+            z,
+        ]
+    };
+    let mut push = |p: [f32; 3]| {
+        out.extend_from_slice(&p);
+        out.extend_from_slice(&rgb);
+    };
+    // near ring (0,1,3,2), far ring, and 4 connectors
+    for (i, j) in [(0, 1), (1, 3), (3, 2), (2, 0)] {
+        push(corner(i, z0));
+        push(corner(j, z0));
+        push(corner(i, z1));
+        push(corner(j, z1));
+    }
+    for i in 0..4 {
+        push(corner(i, z0));
+        push(corner(i, z1));
+    }
+}
+
+/// NDC volume of WebGPU clip space (z 0..1): yellow edges plus a cyan forward ray.
+fn frustum_vertices() -> Vec<f32> {
+    let mut out = Vec::new();
+    cube_edges(0.0, 1.0, [1.0, 1.0, 0.0], &mut out);
+    out.extend_from_slice(&[0.0, 0.0, 0.0, 0.0, 1.0, 1.0]);
+    out.extend_from_slice(&[0.0, 0.0, 1.0, 0.0, 1.0, 1.0]);
+    out
+}
+
+/// Red cube edges at +-1, scaled and moved per culled chunk.
+fn box_vertices() -> Vec<f32> {
+    let mut out = Vec::new();
+    cube_edges(-1.0, 1.0, [1.0, 0.0, 0.0], &mut out);
+    out
 }
 
 /// x y z r g b per vertex, `LineList`.

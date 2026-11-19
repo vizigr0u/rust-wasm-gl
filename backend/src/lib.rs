@@ -37,6 +37,11 @@ fn request_animation_frame(f: &Closure<dyn FnMut(f64) -> Result<(), JsValue>>) {
 
 #[wasm_bindgen(start)]
 fn start() -> Result<(), JsValue> {
+    // The mesh worker loads this module too: it only needs the `mesh_job` export.
+    if web_sys::window().is_none() {
+        utils::set_panic_hook();
+        return Ok(());
+    }
     utils::set_panic_hook();
     tracing_wasm::set_as_global_default();
 

@@ -146,6 +146,20 @@ impl Chunk {
         self.block_at_index(chunk_index_from_offset(&offset))
     }
 
+    /// Dense chunk from `BLOCKS_PER_CHUNK` block bytes (index order of `iter_blocks`).
+    pub fn from_block_bytes(bytes: &[u8]) -> Chunk {
+        assert_eq!(bytes.len(), BLOCKS_PER_CHUNK);
+        let mut blocks = Box::new([BlockType::Empty; BLOCKS_PER_CHUNK]);
+        for (b, v) in blocks.iter_mut().zip(bytes) {
+            *b = (*v).into();
+        }
+        let mut c = Chunk {
+            data: ChunkData::Dense(blocks),
+        };
+        c.compact();
+        c
+    }
+
     pub fn iter_blocks(&self) -> impl Iterator<Item = BlockType> + '_ {
         (0..BLOCKS_PER_CHUNK).map(|i| self.block_at_index(i))
     }
@@ -282,7 +296,7 @@ fn side_texture(block: BlockType, side: Side) -> BlockSideTexture {
 // }
 
 #[inline(always)]
-fn chunk_index_from_offset(offset: &U16Vec3) -> usize {
+pub(super) fn chunk_index_from_offset(offset: &U16Vec3) -> usize {
     offset.x as usize + offset.y as usize * CHUNK_SIZE + offset.z as usize * CHUNK_SIZE * CHUNK_SIZE
 }
 

@@ -59,6 +59,8 @@ features = [
     'MouseEvent',
     'WheelEvent',
     'KeyboardEvent',
+    'Worker',
+    'ErrorEvent',
 ]
 
 [features]

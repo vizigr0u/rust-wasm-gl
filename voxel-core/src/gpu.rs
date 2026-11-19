@@ -1,6 +1,8 @@
 //! Pure GPU-side bookkeeping: arena range allocator and merged draw list.
 use std::ops::Range;
 
+use crate::world::ChunkPos;
+
 /// Ranges are rounded up to this many quads.
 pub const ARENA_ALIGN: u32 = 64;
 
@@ -117,6 +119,54 @@ impl DrawList {
     }
 }
 
+/// Chunks whose mesh is waiting for a GPU upload, oldest first.
+#[derive(Debug, Default)]
+pub struct UploadQueue {
+    pending: std::collections::VecDeque<ChunkPos>,
+}
+
+impl UploadQueue {
+    pub fn len(&self) -> usize {
+        self.pending.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
+
+    /// Queue `pos`; a rebuilt chunk already waiting keeps its place.
+    pub fn push(&mut self, pos: ChunkPos) {
+        if !self.pending.contains(&pos) {
+            self.pending.push_back(pos);
+        }
+    }
+
+    pub fn remove(&mut self, pos: ChunkPos) {
+        self.pending.retain(|p| *p != pos);
+    }
+
+    /// Pop chunks until `bytes_of` adds up to `budget` bytes. Always pops at least one when
+    /// non-empty (a chunk bigger than the budget must still get through).
+    pub fn drain_budget(
+        &mut self,
+        budget: usize,
+        mut bytes_of: impl FnMut(ChunkPos) -> usize,
+    ) -> Vec<ChunkPos> {
+        let mut out = Vec::new();
+        let mut used = 0;
+        while let Some(pos) = self.pending.front().copied() {
+            let n = bytes_of(pos);
+            if !out.is_empty() && used + n > budget {
+                break;
+            }
+            used += n;
+            out.push(pos);
+            self.pending.pop_front();
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +242,31 @@ mod tests {
         l.push(e(0, 0, 4), false);
         l.push(e(0, 4, 2), false);
         assert_eq!(l.entries.len(), 2);
+    }
+
+    #[test]
+    fn upload_queue_budget() {
+        use glam::ivec3;
+        let p = |x| ChunkPos::from(ivec3(x, 0, 0));
+        let mut q = UploadQueue::default();
+        for x in [1, 2, 3, 2] {
+            q.push(p(x));
+        }
+        assert_eq!(q.len(), 3, "dedupe");
+        q.remove(p(2));
+        assert_eq!(
+            q.drain_budget(100, |_| 60),
+            vec![p(1)],
+            "second would bust budget"
+        );
+        q.push(p(4));
+        assert_eq!(
+            q.drain_budget(1, |_| 500),
+            vec![p(3)],
+            "oversized still passes alone"
+        );
+        assert_eq!(q.drain_budget(1000, |_| 10), vec![p(4)]);
+        assert!(q.is_empty());
+        assert!(q.drain_budget(10, |_| 1).is_empty());
     }
 }

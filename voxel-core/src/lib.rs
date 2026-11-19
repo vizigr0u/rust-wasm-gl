@@ -2,6 +2,7 @@
 pub mod camera;
 pub mod gpu;
 pub mod math;
+pub mod playerview;
 pub mod render;
 #[cfg(test)]
 mod testutil;

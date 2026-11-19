@@ -4,8 +4,8 @@ use glam::{ivec3, IVec3};
 use log::info;
 
 use super::{
-    ChunkDrawData, ChunkPos, ChunkStreamer, Neighbours, Side, WorldGenerator, MAX_CHUNK_Y,
-    MIN_CHUNK_Y,
+    decode_mesh_output, encode_mesh_input, ChunkDrawData, ChunkPos, ChunkStreamer, InlineMesher,
+    MeshExecutor, MeshJob, Neighbours, Side, WorldGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y,
 };
 
 /// Streaming loads whole 6x20x6 pages in a 3x3 ring around the player's page, so the
@@ -18,6 +18,8 @@ const LOAD_RADIUS_SQUARED: i32 = LOAD_RADIUS * LOAD_RADIUS;
 const UNLOAD_RADIUS_SQUARED: i32 = UNLOAD_RADIUS * UNLOAD_RADIUS;
 
 const MAX_LOADS_PER_FRAME: usize = 8;
+/// Mesh jobs submitted but not finished. Bounds the work queued behind a slow worker.
+const MAX_IN_FLIGHT: usize = 16;
 
 /// Chunk neighbour directions, indexed by `Side as usize`.
 const SIDE_DIRS: [IVec3; 6] = [
@@ -57,6 +59,13 @@ struct MeshEntry {
     complete: bool,
 }
 
+/// A submitted mesh job. `complete`: all 6 neighbours were known when it was encoded.
+#[derive(Debug)]
+struct InFlight {
+    id: u64,
+    complete: bool,
+}
+
 /// Mesh changes since the last `update`. The renderer applies them to the GPU.
 #[derive(Debug, Default)]
 pub struct MeshChanges {
@@ -71,6 +80,10 @@ where
     G: WorldGenerator,
 {
     meshes: HashMap<ChunkPos, MeshEntry>,
+    mesher: Box<dyn MeshExecutor>,
+    /// Chunks being meshed. A result whose id no longer matches is stale and dropped.
+    in_flight: HashMap<ChunkPos, InFlight>,
+    next_job_id: u64,
     loaded_quads: usize,
     streamer: ChunkStreamer<G>,
     last_computed_chunk_pos: Option<ChunkPos>,
@@ -91,9 +104,16 @@ where
     G: WorldGenerator,
 {
     pub fn new(generator: G) -> Self {
+        Self::with_mesher(generator, Box::<InlineMesher>::default())
+    }
+
+    pub fn with_mesher(generator: G, mesher: Box<dyn MeshExecutor>) -> Self {
         info!("World: Creating");
         Self {
             meshes: HashMap::new(),
+            mesher,
+            in_flight: HashMap::new(),
+            next_job_id: 0,
             loaded_quads: 0,
             streamer: ChunkStreamer::new(generator),
             offset_priority: make_offset_priority(LOAD_RADIUS),
@@ -107,8 +127,9 @@ where
         let quad_count = self.loaded_quads;
         let memory_used = (quad_count * QUAD_DATA_SIZE) as f32 / 1000000.0;
         format!(
-            "{} chunk meshes\nStreaming: {}\n{quad_count} quads - {memory_used:.3} MB\n{gpu_info}",
+            "{} chunk meshes ({} meshing)\nStreaming: {}\n{quad_count} quads - {memory_used:.3} MB\n{gpu_info}",
             self.meshes.len(),
+            self.in_flight.len(),
             self.streamer.get_info(),
         )
     }
@@ -124,6 +145,7 @@ where
             let freed: Vec<ChunkPos> = self
                 .meshes
                 .keys()
+                .chain(self.in_flight.keys())
                 .filter(|c| page.has_chunk_pos(**c))
                 .copied()
                 .collect();
@@ -137,13 +159,14 @@ where
             self.on_chunk_changed(player_chunk_pos, &mut changes);
         }
 
-        self.load_some_chunks(&mut changes);
+        self.load_some_chunks();
+        self.collect_meshes(&mut changes);
         changes
     }
 
     /// Nothing left to stream or mesh for the current player position.
     pub fn is_settled(&self) -> bool {
-        self.streamer.is_idle() && self.chunks_to_load.is_empty()
+        self.streamer.is_idle() && self.chunks_to_load.is_empty() && self.in_flight.is_empty()
     }
 
     pub fn mesh(&self, pos: ChunkPos) -> Option<&ChunkDrawData> {
@@ -155,6 +178,8 @@ where
     }
 
     fn remove_mesh(&mut self, pos: ChunkPos, changes: &mut MeshChanges) {
+        // A job for this chunk would resurrect it (or mesh freed block data).
+        self.in_flight.remove(&pos);
         if let Some(entry) = self.meshes.remove(&pos) {
             self.loaded_quads -= entry.draw_data.quad_count();
             changes.removed.push(pos);
@@ -190,21 +215,26 @@ where
         if !self.streamer.is_chunked_streamed(pos) {
             return false;
         }
+        if self.in_flight.contains_key(&pos) {
+            return false;
+        }
         match self.meshes.get(&pos) {
             None => true,
             Some(entry) => !entry.complete && self.gather_neighbours(pos).1,
         }
     }
 
-    fn load_some_chunks(&mut self, changes: &mut MeshChanges) {
+    /// Encode and submit mesh jobs for the nearest chunks that need one.
+    fn load_some_chunks(&mut self) {
         if self.chunks_to_load.is_empty() {
             return;
         }
+        let budget = MAX_LOADS_PER_FRAME.min(MAX_IN_FLIGHT.saturating_sub(self.in_flight.len()));
         let todo: Vec<ChunkPos> = self
             .chunks_to_load
             .iter()
             .filter(|c| self.needs_mesh(**c))
-            .take(MAX_LOADS_PER_FRAME)
+            .take(budget)
             .copied()
             .collect();
 
@@ -213,18 +243,11 @@ where
                 continue;
             };
             let (neighbours, complete) = self.gather_neighbours(pos);
-            let draw_data = ChunkDrawData::load(chunk, &neighbours);
-            self.loaded_quads += draw_data.quad_count();
-            if let Some(old) = self.meshes.insert(
-                pos,
-                MeshEntry {
-                    draw_data,
-                    complete,
-                },
-            ) {
-                self.loaded_quads -= old.draw_data.quad_count();
-            }
-            changes.added.push(pos);
+            let input = encode_mesh_input(chunk, &neighbours);
+            let id = self.next_job_id;
+            self.next_job_id += 1;
+            self.in_flight.insert(pos, InFlight { id, complete });
+            self.mesher.submit(MeshJob { id, pos, input });
         }
         // Keep only what still needs work (new, or incomplete and now completable).
         let still: Vec<ChunkPos> = self
@@ -236,6 +259,33 @@ where
         self.chunks_to_load = still;
     }
 
+    /// Store finished meshes. Results of unloaded or superseded jobs are dropped.
+    fn collect_meshes(&mut self, changes: &mut MeshChanges) {
+        for result in self.mesher.poll() {
+            let Some(pos) = self
+                .in_flight
+                .iter()
+                .find(|(_, f)| f.id == result.id)
+                .map(|(p, _)| *p)
+            else {
+                continue;
+            };
+            let flight = self.in_flight.remove(&pos).expect("found above");
+            let draw_data = decode_mesh_output(&result.output);
+            self.loaded_quads += draw_data.quad_count();
+            if let Some(old) = self.meshes.insert(
+                pos,
+                MeshEntry {
+                    draw_data,
+                    complete: flight.complete,
+                },
+            ) {
+                self.loaded_quads -= old.draw_data.quad_count();
+            }
+            changes.added.push(pos);
+        }
+    }
+
     fn on_chunk_changed(&mut self, new_chunk_pos: ChunkPos, changes: &mut MeshChanges) {
         info!("World: recompute for chunk pos: {new_chunk_pos:?}");
 
@@ -243,6 +293,7 @@ where
         let too_far: Vec<ChunkPos> = self
             .meshes
             .keys()
+            .chain(self.in_flight.keys())
             .filter(|c| new_chunk_pos.distance_squared(**c) > UNLOAD_RADIUS_SQUARED)
             .copied()
             .collect();
@@ -329,5 +380,80 @@ mod tests {
         ));
         let real: usize = w.meshes.values().map(|m| m.draw_data.quad_count()).sum();
         assert_eq!(real, w.loaded_quads);
+    }
+
+    /// Holds finished meshes back until `release`, like a busy worker.
+    #[derive(Debug, Default)]
+    struct DelayedMesher {
+        inner: InlineMesher,
+        held: Vec<super::super::MeshResult>,
+        release: std::rc::Rc<std::cell::Cell<bool>>,
+        max_pending: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl MeshExecutor for DelayedMesher {
+        fn submit(&mut self, job: MeshJob) {
+            self.inner.submit(job);
+            self.held.extend(self.inner.poll());
+            self.max_pending
+                .set(self.max_pending.get().max(self.held.len()));
+        }
+        fn poll(&mut self) -> Vec<super::super::MeshResult> {
+            if self.release.get() {
+                std::mem::take(&mut self.held)
+            } else {
+                vec![]
+            }
+        }
+    }
+
+    #[test]
+    fn async_mesher_matches_inline_and_drops_stale_results() {
+        let origin: ChunkPos = ivec3(0, 0, 0).into();
+        let mut inline = World::new(GeneratorV0::new());
+        settle(&mut inline, origin);
+
+        let release = std::rc::Rc::new(std::cell::Cell::new(false));
+        let max_pending = std::rc::Rc::new(std::cell::Cell::new(0));
+        let mesher = DelayedMesher {
+            release: release.clone(),
+            max_pending: max_pending.clone(),
+            ..Default::default()
+        };
+        let mut w = World::with_mesher(GeneratorV0::new(), Box::new(mesher));
+        for _ in 0..200 {
+            w.update(origin);
+        }
+        assert!(!w.is_settled(), "jobs still in flight");
+        assert!(w.meshes.is_empty());
+        assert!(max_pending.get() <= MAX_IN_FLIGHT);
+
+        // walk far away while jobs are held: the old results must not resurrect chunks
+        for x in 1..=30 {
+            w.update(ivec3(x, 0, 0).into());
+        }
+        release.set(true);
+        settle(&mut w, ivec3(30, 0, 0).into());
+        assert!(w.is_settled());
+        assert!(
+            w.meshes
+                .keys()
+                .all(|c| ChunkPos::from(ivec3(30, 0, 0)).distance_squared(*c)
+                    <= UNLOAD_RADIUS_SQUARED)
+        );
+
+        // back at the origin every in-range mesh equals the inline one
+        // (retained far chunks depend on the walk path, so compare the load sphere only)
+        settle(&mut w, origin);
+        let mut checked = 0;
+        for pos in w.meshes.keys() {
+            if origin.distance_squared(*pos) <= LOAD_RADIUS_SQUARED {
+                let a = w.mesh(*pos).unwrap();
+                let b = inline.mesh(*pos).expect("inline has it");
+                assert_eq!(a.vertex_data, b.vertex_data);
+                checked += 1;
+            }
+        }
+        assert!(checked > 100);
     }
 }

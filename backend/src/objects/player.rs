@@ -1,4 +1,5 @@
-use glam::Vec3;
+use glam::{Vec2, Vec3};
+use voxel_core::playerview::{PlayerView, LOOK_SPEED_DEG_PER_S};
 
 use crate::{
     core::{HandleInputs, Time},
@@ -15,20 +16,46 @@ pub const PLAYER_SCALE: f32 = 0.5;
 pub struct Player {
     position: WorldPos,
     velocity: Vec3,
+    view: PlayerView,
+    /// (forward/back, right/left), each -1..=1.
+    move_axis: Vec2,
+    /// (yaw, pitch) input, each -1..=1.
+    look_axis: Vec2,
 }
 
 impl Player {
     pub fn new(origin: Vec3) -> Player {
         Player {
             position: WorldPos::ZERO + origin,
-            velocity: Vec3::ZERO,
+            ..Default::default()
         }
     }
 
+    pub fn view(&self) -> &PlayerView {
+        &self.view
+    }
+
+    pub fn view_mut(&mut self) -> &mut PlayerView {
+        &mut self.view
+    }
+
+    /// Fly velocity: W/S along the view (with pitch), A/D along the yaw-only right axis.
+    fn fly_velocity(view: &PlayerView, axis: Vec2) -> Vec3 {
+        (view.forward() * axis.x + view.right() * axis.y).normalize_or_zero() * MAX_SPEED
+    }
+
     pub fn update(&mut self, time: &Time) {
-        if time.delta_time() > 0.0 && self.velocity != Vec3::ZERO {
-            let dt = (time.delta_time() as f32).min(MAX_DELTA_MS);
-            self.position += self.velocity * dt * 0.001;
+        if time.delta_time() <= 0.0 {
+            return;
+        }
+        let dt = (time.delta_time() as f32).min(MAX_DELTA_MS) * 0.001;
+        // Rotate first so movement uses this frame's view.
+        let turn = (LOOK_SPEED_DEG_PER_S * dt).to_radians();
+        self.view
+            .rotate(self.look_axis.x * turn, self.look_axis.y * turn);
+        self.velocity = Self::fly_velocity(&self.view, self.move_axis);
+        if self.velocity != Vec3::ZERO {
+            self.position += self.velocity * dt;
         }
     }
 
@@ -47,8 +74,11 @@ impl HandleInputs for Player {
         let axis = |pos: &str, neg: &str| {
             inputs.is_key_down(pos) as i32 as f32 - inputs.is_key_down(neg) as i32 as f32
         };
-        let velocity = Vec3::new(axis("KeyW", "KeyS"), 0.0, axis("KeyD", "KeyA"));
-        self.velocity = velocity.normalize_or_zero() * MAX_SPEED;
+        self.move_axis = Vec2::new(axis("KeyW", "KeyS"), axis("KeyD", "KeyA"));
+        self.look_axis = Vec2::new(
+            axis("ArrowRight", "ArrowLeft"),
+            axis("ArrowUp", "ArrowDown"),
+        );
     }
 }
 
@@ -58,8 +88,20 @@ mod tests {
 
     #[test]
     fn diagonal_is_normalized() {
-        let v = Vec3::new(1.0, 0.0, 1.0).normalize_or_zero() * MAX_SPEED;
-        assert!((v.length() - MAX_SPEED).abs() < 1e-4);
-        assert_eq!(Vec3::ZERO.normalize_or_zero(), Vec3::ZERO);
+        let v = PlayerView::new();
+        let vel = Player::fly_velocity(&v, Vec2::new(1.0, 1.0));
+        assert!((vel.length() - MAX_SPEED).abs() < 1e-4);
+        assert_eq!(Player::fly_velocity(&v, Vec2::ZERO), Vec3::ZERO);
+    }
+
+    #[test]
+    fn default_view_moves_plus_x_and_strafes_plus_z() {
+        let v = PlayerView::new();
+        assert!(
+            (Player::fly_velocity(&v, Vec2::new(1.0, 0.0)) - Vec3::X * MAX_SPEED).length() < 1e-4
+        );
+        assert!(
+            (Player::fly_velocity(&v, Vec2::new(0.0, 1.0)) - Vec3::Z * MAX_SPEED).length() < 1e-4
+        );
     }
 }

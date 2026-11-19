@@ -9,7 +9,7 @@ use web_sys::{HtmlCanvasElement, HtmlImageElement};
 use super::{FrameInput, RenderError, RenderStats, TextureId, UiFrame};
 use crate::world::{make_base_quad_data, ChunkDrawData, ChunkPos};
 use voxel_core::gpu::{DrawEntry, DrawList, RangeAllocator};
-use voxel_core::render::{build_draw_list, pack_sides, SideRanges};
+use voxel_core::render::{build_draw_list, cull_draws, pack_sides, SideRanges};
 
 /// Initial arena size in quads (4 B each = 8 MB).
 const ARENA_QUADS: u32 = 2 << 20;
@@ -221,6 +221,9 @@ pub struct Renderer {
     /// Bytes written to the arena since the last `render`.
     uploaded_bytes: u64,
     draw_calls: u32,
+    /// Chunk-box model matrices for this frame's culled chunks (empty unless shown).
+    culled_boxes: Vec<glam::Mat4>,
+    cull_counts: (u32, u32, u32),
     times: RenderStats,
 }
 
@@ -341,6 +344,8 @@ impl Renderer {
             draw_list: DrawList::default(),
             uploaded_bytes: 0,
             draw_calls: 0,
+            culled_boxes: Vec::new(),
+            cull_counts: (0, 0, 0),
             times: RenderStats::default(),
             textures: HashMap::new(),
             sampler,
@@ -513,6 +518,31 @@ impl Renderer {
             self.gpu_chunks.iter().map(|(p, c)| (*p, c.side_ranges)),
             frame.player_chunk,
         );
+        let (draws, culled) = cull_draws(draws, frame.cull_frustum.as_ref());
+        let half = voxel_core::world::CHUNK_SIZE as f32 / 2.0;
+        self.culled_boxes.clear();
+        if frame.culled_boxes {
+            self.culled_boxes.extend(culled.iter().map(|o| {
+                glam::Mat4::from_scale_rotation_translation(
+                    glam::Vec3::splat(half),
+                    glam::Quat::IDENTITY,
+                    *o + glam::Vec3::splat(half),
+                )
+            }));
+        }
+        let mut visible_chunks = 0;
+        let mut prev = None;
+        for d in &draws {
+            if prev != Some(d.chunk) {
+                prev = Some(d.chunk);
+                visible_chunks += 1;
+            }
+        }
+        self.cull_counts = (
+            visible_chunks,
+            culled.len() as u32,
+            draws.iter().map(|d| d.count).sum(),
+        );
         let mut slot_data: Vec<u8> = Vec::new();
         self.draw_list.clear();
         let mut last = None;
@@ -574,9 +604,12 @@ impl Renderer {
         self.prepare_chunks(frame);
         self.draw_calls = self.draw_list.entries.len() as u32;
         self.objects.write_models(
+            &self.device,
             &self.queue,
             frame.player_model.as_ref(),
             frame.gizmo_model.as_ref(),
+            frame.frustum_lines.as_ref(),
+            &self.culled_boxes,
         );
         let t2 = crate::utils::performance_now();
         let [r, g, b, a] = frame.clear_color.map(f64::from);
@@ -626,6 +659,8 @@ impl Renderer {
                     &mut pass,
                     frame.player_model.is_some(),
                     frame.gizmo_model.is_some(),
+                    frame.frustum_lines.is_some(),
+                    self.culled_boxes.len() as u32,
                 );
             }
         }
@@ -682,6 +717,9 @@ impl Renderer {
             draw_calls: 0,
             chunk_buffers: 0,
             draw_entries_raw: self.draw_list.pushed,
+            chunks_visible: self.cull_counts.0,
+            chunks_culled: self.cull_counts.1,
+            quads_drawn: self.cull_counts.2,
             arena_used: self.alloc.used(),
             arena_capacity: self.alloc.capacity(),
             arena_largest_free: self.alloc.largest_free(),
