@@ -21,8 +21,8 @@ const UV_CHECKER_PATH: &str = "data/textures/UV_checker_Map_byValle.jpg";
 
 type WorldGenerator = GeneratorV0;
 
-fn make_generator(rng: Rng) -> WorldGenerator {
-    GeneratorV0::new(rng)
+fn make_generator(_rng: Rng) -> WorldGenerator {
+    GeneratorV0::new()
 }
 
 #[derive(Debug)]
@@ -202,8 +202,14 @@ impl Game {
         if !self.is_paused {
             self.player.update(&self.time);
             let player_chunk_pos = self.player.get_position().chunk_pos();
-            if self.world.update(player_chunk_pos) {
-                gfx.world.gather_draw_data(gl, player_chunk_pos, self.world.chunks());
+            let changes = self.world.update(player_chunk_pos);
+            for pos in changes.removed {
+                gfx.world.remove_chunk(gl, pos);
+            }
+            for pos in changes.added {
+                if let Some(mesh) = self.world.mesh(pos) {
+                    gfx.world.upload_chunk(gl, pos, mesh);
+                }
             }
         }
 
@@ -282,7 +288,7 @@ impl Game {
     }
 
     fn draw_ui(&mut self, gl: &glow::Context, gfx: &mut Gfx) {
-        let peak = gfx.world.peak_cache_len();
+        let gpu_info = gfx.world.get_info();
         {
             gfx.egui.render_ui(gl, |ctx| {
                 if self.is_paused {
@@ -304,7 +310,7 @@ impl Game {
                                             self.seed,
                                             env!("GIT_HASH"),
                                             self.player.get_position(),
-                                            self.world.get_info(peak)
+                                            self.world.get_info(&gpu_info)
                                         )).monospace());
                                 });
                         });

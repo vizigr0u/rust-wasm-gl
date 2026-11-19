@@ -1,11 +1,11 @@
 use fastrand::Rng;
 use glam::U16Vec3;
 
-use super::{BlockType, Chunk, ChunkPos, WorldGenerator, CHUNK_SIZE};
+use super::{rng_for, BlockType, Chunk, ChunkPos, WorldGenerator, CHUNK_SIZE};
 
 #[derive(Debug)]
 pub struct TestGenerator {
-    pub rng: Rng,
+    pub seed: u64,
 }
 
 fn dirt_with_grass_on_top(rng: &mut Rng) -> Chunk {
@@ -13,7 +13,7 @@ fn dirt_with_grass_on_top(rng: &mut Rng) -> Chunk {
     let max_dirt_height = 4;
     let min_grass_y = 14;
     let max_grass_y = 16;
-    let mut res = Chunk::new(false);
+    let mut res = Chunk::empty();
     for x in 0..CHUNK_SIZE {
         for z in 0..CHUNK_SIZE {
             let max_y = rng.u8(min_grass_y..=max_grass_y as u8) as u16;
@@ -35,13 +35,13 @@ fn dirt_with_grass_on_top(rng: &mut Rng) -> Chunk {
 }
 
 impl WorldGenerator for TestGenerator {
-    fn generate(&mut self, chunk_position: ChunkPos) -> Chunk {
+    fn generate(&self, chunk_position: ChunkPos) -> Chunk {
         match chunk_position.as_vec().y {
-            // -5 => Chunk::random(&mut self.rng),
+            // -5 => Chunk::random(&mut rng_for(self.seed, chunk_position)),
             // -1 | -4 | -2 => Chunk::plain(BlockType::Stone),
             // -3 => Chunk::plain(BlockType::Lava),
             // -2 => Chunk::plain(BlockType::Stone),
-            -1 => dirt_with_grass_on_top(&mut self.rng),
+            -1 => dirt_with_grass_on_top(&mut rng_for(self.seed, chunk_position)),
             _ => Chunk::empty(),
         }
     }

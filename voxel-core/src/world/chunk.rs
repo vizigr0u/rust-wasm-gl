@@ -1,5 +1,5 @@
 use fastrand::Rng;
-use glam::{U16Vec3, Vec3};
+use glam::{ivec3, U16Vec3, Vec3};
 use itertools::iproduct;
 
 use super::Side;
@@ -36,39 +36,46 @@ impl From<u8> for BlockType {
     }
 }
 
+/// Block storage for one chunk. Air and single-block chunks cost no 4 KB array.
 #[derive(Debug, Clone)]
-pub struct Chunk {
-    pub blocks: [BlockType; BLOCKS_PER_CHUNK],
-    is_empty_flag: bool,
+pub enum ChunkData {
+    /// All air. Never `Uniform(Empty)`.
+    Empty,
+    Uniform(BlockType),
+    Dense(Box<[BlockType; BLOCKS_PER_CHUNK]>),
 }
 
-const OPTIMIZATION_LEVEL: usize = 1;
+#[derive(Debug, Clone)]
+pub struct Chunk {
+    data: ChunkData,
+}
 
 impl Default for Chunk {
     fn default() -> Self {
         Chunk {
-            blocks: [BlockType::Empty; BLOCKS_PER_CHUNK],
-            is_empty_flag: true,
+            data: ChunkData::Empty,
         }
     }
 }
 
+/// The 6 chunks touching a chunk's faces, indexed by `Side as usize`.
+/// `None` means the neighbour is not available (treated as air by the mesher).
+pub type Neighbours<'a> = [Option<&'a Chunk>; 6];
+pub const NO_NEIGHBOURS: Neighbours<'static> = [None; 6];
+
 impl Chunk {
-    pub fn new(is_empty: bool) -> Chunk {
-        Chunk {
-            is_empty_flag: is_empty,
-            ..Default::default()
-        }
+    pub fn is_empty(&self) -> bool {
+        matches!(self.data, ChunkData::Empty)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.is_empty_flag
+    pub fn data(&self) -> &ChunkData {
+        &self.data
     }
 
     pub fn random(rng: &mut Rng) -> Chunk {
-        let mut res = Self::new(false);
+        let mut res = Self::default();
         for i in 0..BLOCKS_PER_CHUNK {
-            res.blocks[i] = Into::<BlockType>::into(rng.u8(..9));
+            res.set_index(i, Into::<BlockType>::into(rng.u8(..9)));
         }
         res
     }
@@ -78,43 +85,93 @@ impl Chunk {
     }
 
     pub fn plain(block: BlockType) -> Chunk {
-        let mut res = Self::new(block == BlockType::Empty);
-        for i in 0..BLOCKS_PER_CHUNK {
-            res.blocks[i] = block;
+        Chunk {
+            data: if block == BlockType::Empty {
+                ChunkData::Empty
+            } else {
+                ChunkData::Uniform(block)
+            },
         }
-        res
     }
-
-    // pub fn at(&self, offset: U16Vec3) -> &BlockType {
-    //     &self.blocks[chunk_index_from_offset(&offset)]
-    // }
 
     pub fn set(&mut self, offset: U16Vec3, block: BlockType) {
         debug_assert!(offset.x < CHUNK_SIZE as u16);
         debug_assert!(offset.y < CHUNK_SIZE as u16);
         debug_assert!(offset.z < CHUNK_SIZE as u16);
-        self.blocks[chunk_index_from_offset(&offset)] = block;
-        if block != BlockType::Empty {
-            self.is_empty_flag = false;
+        self.set_index(chunk_index_from_offset(&offset), block);
+    }
+
+    fn set_index(&mut self, index: usize, block: BlockType) {
+        if self.block_at_index(index) == block {
+            return;
+        }
+        let dense = self.make_dense();
+        dense[index] = block;
+    }
+
+    fn make_dense(&mut self) -> &mut [BlockType; BLOCKS_PER_CHUNK] {
+        if !matches!(self.data, ChunkData::Dense(_)) {
+            let fill = match self.data {
+                ChunkData::Uniform(b) => b,
+                _ => BlockType::Empty,
+            };
+            self.data = ChunkData::Dense(Box::new([fill; BLOCKS_PER_CHUNK]));
+        }
+        match &mut self.data {
+            ChunkData::Dense(d) => d,
+            _ => unreachable!(),
         }
     }
 
-    // fn at_mut(&mut self, offset: U16Vec3) -> &mut BlockType {
-    //     &mut self.blocks[chunk_index_from_offset(&offset)]
-    // }
+    /// Demote to `Empty`/`Uniform` when every block is the same.
+    pub fn compact(&mut self) {
+        if let ChunkData::Dense(d) = &self.data {
+            let first = d[0];
+            if d.iter().all(|b| *b == first) {
+                *self = Chunk::plain(first);
+            }
+        }
+    }
 
-    // pub fn dirt_with_grass_on_top(chunk_pos: IVec3) -> Chunk {
-    //     let mut res = Self::plain(chunk_pos, BlockType::Dirt);
-    //     for x in 0..CHUNK_SIZE {
-    //         for z in 0..CHUNK_SIZE {
-    //             *res.at_mut(U16Vec3::new(x as _, CHUNK_SIZE as u16 - 1, z as _)) = BlockType::Grass;
-    //         }
-    //     }
-    //     res
-    // }
+    fn block_at_index(&self, index: usize) -> BlockType {
+        match &self.data {
+            ChunkData::Empty => BlockType::Empty,
+            ChunkData::Uniform(b) => *b,
+            ChunkData::Dense(d) => d[index],
+        }
+    }
 
     pub fn get_block(&self, offset: U16Vec3) -> BlockType {
-        self.blocks[chunk_index_from_offset(&offset)]
+        self.block_at_index(chunk_index_from_offset(&offset))
+    }
+
+    pub fn iter_blocks(&self) -> impl Iterator<Item = BlockType> + '_ {
+        (0..BLOCKS_PER_CHUNK).map(|i| self.block_at_index(i))
+    }
+
+    /// Block at `offset` (may be 1 outside the chunk) looking through neighbours.
+    /// Unavailable neighbour => air.
+    fn block_with_neighbours(&self, n: &Neighbours, x: i32, y: i32, z: i32) -> BlockType {
+        let s = CHUNK_SIZE as i32;
+        let (side, wrap) = if x < 0 {
+            (Side::Left, ivec3(x + s, y, z))
+        } else if x >= s {
+            (Side::Right, ivec3(x - s, y, z))
+        } else if y < 0 {
+            (Side::Bottom, ivec3(x, y + s, z))
+        } else if y >= s {
+            (Side::Top, ivec3(x, y - s, z))
+        } else if z < 0 {
+            (Side::Back, ivec3(x, y, z + s))
+        } else if z >= s {
+            (Side::Front, ivec3(x, y, z - s))
+        } else {
+            return self.get_block(U16Vec3::new(x as _, y as _, z as _));
+        };
+        match n[side as usize] {
+            Some(c) => c.get_block(U16Vec3::new(wrap.x as _, wrap.y as _, wrap.z as _)),
+            None => BlockType::Empty,
+        }
     }
 
     const TEST_ONE_CUBE: bool = false;
@@ -128,7 +185,7 @@ impl Chunk {
         Vec::new(),
     ];
 
-    pub fn to_vertex_data(&self) -> [Vec<i32>; 6] {
+    pub fn to_vertex_data(&self, neighbours: &Neighbours) -> [Vec<i32>; 6] {
         let mut result = Self::NO_DATA.clone();
         if self.is_empty() {
             return result;
@@ -142,38 +199,32 @@ impl Chunk {
             add_side_data(&mut result, Side::Left, side, offset);
             add_side_data(&mut result, Side::Front, side, offset);
             add_side_data(&mut result, Side::Back, side, offset);
-        } else {
-            for (x, y, z) in iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE) {
-                let offset = U16Vec3::new(x as _, y as _, z as _);
-                let (top, side, bottom) = match self.get_block(offset) {
-                    BlockType::Empty => continue,
-                    t => t.into(),
-                };
-                {
-                    if y == CHUNK_SIZE - 1
-                        || self.get_block(offset + U16Vec3::Y) == BlockType::Empty
-                    {
-                        add_side_data(&mut result, Side::Top, top, offset);
-                    }
-                    if y == 0 || self.get_block(offset - U16Vec3::Y) == BlockType::Empty {
-                        add_side_data(&mut result, Side::Bottom, bottom, offset);
-                    }
-                    if x == CHUNK_SIZE - 1
-                        || self.get_block(offset + U16Vec3::X) == BlockType::Empty
-                    {
-                        add_side_data(&mut result, Side::Right, side, offset);
-                    }
-                    if x == 0 || self.get_block(offset - U16Vec3::X) == BlockType::Empty {
-                        add_side_data(&mut result, Side::Left, side, offset);
-                    }
-                    if z == CHUNK_SIZE - 1
-                        || self.get_block(offset + U16Vec3::Z) == BlockType::Empty
-                    {
-                        add_side_data(&mut result, Side::Front, side, offset);
-                    }
-                    if z == 0 || self.get_block(offset - U16Vec3::Z) == BlockType::Empty {
-                        add_side_data(&mut result, Side::Back, side, offset);
-                    }
+            return result;
+        }
+        // (side, neighbour direction, is top/bottom)
+        let faces = [
+            (Side::Top, ivec3(0, 1, 0)),
+            (Side::Bottom, ivec3(0, -1, 0)),
+            (Side::Right, ivec3(1, 0, 0)),
+            (Side::Left, ivec3(-1, 0, 0)),
+            (Side::Front, ivec3(0, 0, 1)),
+            (Side::Back, ivec3(0, 0, -1)),
+        ];
+        for (x, y, z) in iproduct!(0..CHUNK_SIZE, 0..CHUNK_SIZE, 0..CHUNK_SIZE) {
+            let offset = U16Vec3::new(x as _, y as _, z as _);
+            let (top, side, bottom) = match self.get_block(offset) {
+                BlockType::Empty => continue,
+                t => t.into(),
+            };
+            for (face, dir) in faces {
+                let (nx, ny, nz) = (x as i32 + dir.x, y as i32 + dir.y, z as i32 + dir.z);
+                if self.block_with_neighbours(neighbours, nx, ny, nz) == BlockType::Empty {
+                    let tex = match face {
+                        Side::Top => top,
+                        Side::Bottom => bottom,
+                        _ => side,
+                    };
+                    add_side_data(&mut result, face, tex, offset);
                 }
             }
         }
@@ -435,3 +486,46 @@ const SIDE_VERTICES: [SideVertices; 6] = [
         d: A,
     },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn quads(c: &Chunk, n: &Neighbours) -> usize {
+        c.to_vertex_data(n).iter().map(Vec::len).sum()
+    }
+
+    #[test]
+    fn storage_is_sparse_until_written() {
+        let mut c = Chunk::empty();
+        assert!(c.is_empty());
+        c.set(U16Vec3::ZERO, BlockType::Empty);
+        assert!(matches!(c.data(), ChunkData::Empty));
+        assert!(matches!(
+            Chunk::plain(BlockType::Stone).data(),
+            ChunkData::Uniform(BlockType::Stone)
+        ));
+        c.set(U16Vec3::new(1, 2, 3), BlockType::Dirt);
+        assert!(!c.is_empty());
+        assert_eq!(c.get_block(U16Vec3::new(1, 2, 3)), BlockType::Dirt);
+        assert_eq!(c.get_block(U16Vec3::ZERO), BlockType::Empty);
+        c.set(U16Vec3::new(1, 2, 3), BlockType::Empty);
+        c.compact();
+        assert!(c.is_empty());
+    }
+
+    #[test]
+    fn mesher_culls_faces_against_neighbours() {
+        let solid = Chunk::plain(BlockType::Stone);
+        // alone: 6 faces of 16x16
+        assert_eq!(quads(&solid, &NO_NEIGHBOURS), 6 * 256);
+        // solid neighbour on +X hides that whole face
+        let mut n = NO_NEIGHBOURS;
+        n[Side::Right as usize] = Some(&solid);
+        assert_eq!(quads(&solid, &n), 5 * 256);
+        // empty neighbour hides nothing
+        let air = Chunk::empty();
+        n[Side::Right as usize] = Some(&air);
+        assert_eq!(quads(&solid, &n), 6 * 256);
+    }
+}

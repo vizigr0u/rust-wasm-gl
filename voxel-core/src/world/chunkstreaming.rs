@@ -30,6 +30,12 @@ impl Default for ChunkPage {
 }
 
 impl ChunkPage {
+    /// Release block data; the page goes back to the pool.
+    fn clear(&mut self) {
+        self.chunks.iter_mut().for_each(|c| *c = Chunk::empty());
+        self.content_bounds = AABB::empty();
+    }
+
     fn get_chunk(&self, chunk_pos: ChunkPos) -> Option<&Chunk> {
         let (page_pos, offset) = chunk_pos.get_page_pos_with_offset();
         debug_assert!(page_pos == self.position);
@@ -37,7 +43,7 @@ impl ChunkPage {
         self.chunks.get(index)
     }
 
-    fn fill_from<G>(&mut self, generator: &mut G, page_pos: PagePos)
+    fn fill_from<G>(&mut self, generator: &G, page_pos: PagePos)
     where
         G: WorldGenerator,
     {
@@ -55,6 +61,14 @@ impl ChunkPage {
             self.chunks[i] = chunk;
         }
     }
+}
+
+/// What one `tick_streaming` did. Anything built from a freed page's chunks
+/// (meshes) must be dropped by the caller: the streamer owns the block data.
+#[derive(Debug, Default)]
+pub struct StreamingUpdate {
+    pub pages_loaded: usize,
+    pub pages_freed: Vec<PagePos>,
 }
 
 #[derive(Debug)]
@@ -113,27 +127,27 @@ where
         }
     }
 
-    pub fn tick_streaming(&mut self, player_chunk_pos: ChunkPos) -> i32 {
+    pub fn tick_streaming(&mut self, player_chunk_pos: ChunkPos) -> StreamingUpdate {
+        let mut update = StreamingUpdate::default();
         let player_page_index: PagePos = player_chunk_pos.into();
         if self.last_computed_page_pos != Some(player_page_index) {
             self.last_computed_page_pos = Some(player_page_index);
             self.on_new_page_index(player_page_index, player_chunk_pos);
         }
-        let mut new_pages_loaded = 0;
         if !self.pages_to_load.is_empty() {
             if self.chunk_page_pool.len() < self.pages_to_load.len() {
                 info!("Streaming: Pool size too small - trying to free some pages");
-                self.free_some_pages(PAGE_LOAD_PER_FRAME, player_chunk_pos);
+                self.free_some_pages(PAGE_LOAD_PER_FRAME, player_chunk_pos, &mut update.pages_freed);
             }
             for _ in 0..PAGE_LOAD_PER_FRAME {
                 if let Some(page) = self.pages_to_load.pop() {
                     if self.load_page(page) {
-                        new_pages_loaded += 1;
+                        update.pages_loaded += 1;
                     }
                 }
             }
         }
-        new_pages_loaded
+        update
     }
 
     fn on_new_page_index(&mut self, page_index: PagePos, player_chunk_pos: ChunkPos) {
@@ -161,7 +175,12 @@ where
         });
     }
 
-    fn free_some_pages(&mut self, num_pages: usize, player_chunk_pos: ChunkPos) {
+    fn free_some_pages(
+        &mut self,
+        num_pages: usize,
+        player_chunk_pos: ChunkPos,
+        freed: &mut Vec<PagePos>,
+    ) {
         // Iterate over the loaded_chunk_pages vector in reverse to remove items while iterating
         let indices: Vec<usize> = self
             .loaded_chunk_pages
@@ -186,8 +205,9 @@ where
             );
             for i in indices {
                 info!("Freeing page {:?}", self.loaded_chunk_pages[i].position);
-                let removed_page = self.loaded_chunk_pages.remove(i);
-                // TODO: free stuff in uloaded page
+                let mut removed_page = self.loaded_chunk_pages.remove(i);
+                freed.push(removed_page.position);
+                removed_page.clear();
                 self.chunk_page_pool.push(removed_page);
             }
             self.update_bounds();
@@ -219,7 +239,7 @@ where
             warn!("Streaming: pool empty, cannot load page {:?}", page_index);
             return false;
         };
-        page.fill_from(&mut self.generator, page_index);
+        page.fill_from(&self.generator, page_index);
         self.loaded_chunk_pages.push(page);
 
         self.update_bounds();

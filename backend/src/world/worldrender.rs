@@ -1,12 +1,11 @@
 use std::{collections::HashMap, rc::Rc};
 
-use glam::Vec3;
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 
 use crate::{
     graphics::{Camera, ShaderDef, ShaderProgram, TextureType, UniformTypes},
     shader_def,
-    world::{Chunk, Side, CHUNK_SIZE},
+    world::{Chunk, Neighbours, Side, CHUNK_SIZE},
 };
 
 use super::{make_base_quad_data, ChunkPos};
@@ -22,17 +21,31 @@ pub struct ChunkDrawData {
     pub vertex_data: [Vec<i32>; 6],
 }
 
+/// One chunk's quads on the GPU: all 6 sides concatenated in one buffer.
+#[derive(Debug)]
+struct GpuChunk {
+    buffer: WebBufferKey,
+    /// (first quad, quad count) per `Side`.
+    side_ranges: [(i32, i32); 6],
+}
+
+const DATA_ATTR: u32 = 1;
+const OFFSET_ATTR: u32 = 2;
+
+const SIDES: [Side; 6] = [
+    Side::Top,
+    Side::Bottom,
+    Side::Front,
+    Side::Back,
+    Side::Right,
+    Side::Left,
+];
+
 #[derive(Debug)]
 pub struct WorldRenderData {
     graphics: GraphicContext,
     vertex_array: WebVertexArrayKey,
-    num_quads_to_draw: i32,
-    vertex_data_buffer: WebBufferKey,
-    location_data_buffer: WebBufferKey,
-    vertex_data_cache: Vec<i32>,
-    location_data_cache: Vec<Vec3>,
-    peak_vertex_len: usize,
-    peak_location_len: usize,
+    gpu_chunks: HashMap<ChunkPos, GpuChunk>,
 }
 
 impl ChunkDrawData {
@@ -40,16 +53,16 @@ impl ChunkDrawData {
         self.vertex_data.iter().map(Vec::len).sum()
     }
 
-    pub fn load(chunk: &Chunk) -> Result<Self, String> {
-        let vertex_data = chunk.to_vertex_data();
-        Ok(Self { vertex_data })
+    pub fn load(chunk: &Chunk, neighbours: &Neighbours) -> Self {
+        Self {
+            vertex_data: chunk.to_vertex_data(neighbours),
+        }
     }
 }
 
 impl WorldRenderData {
-    /// Peak (vertex i32 count, location Vec3 count) seen in a gather.
-    pub fn peak_cache_len(&self) -> (usize, usize) {
-        (self.peak_vertex_len, self.peak_location_len)
+    pub fn get_info(&self) -> String {
+        format!("GPU: {} chunk buffers", self.gpu_chunks.len())
     }
 
     // INTENTIONAL: cull faces relative to the *player* chunk, not the camera.
@@ -67,74 +80,44 @@ impl WorldRenderData {
         }
     }
 
-    fn add_if_visible(
-        &mut self,
-        data: &ChunkDrawData,
-        side: Side,
-        player_chunk_pos: ChunkPos,
-        data_pos: ChunkPos,
-    ) -> usize {
-        if !Self::is_visible(player_chunk_pos, data_pos, side) {
-            return 0;
+    /// Create or replace the GPU buffer of one chunk.
+    pub fn upload_chunk(&mut self, gl: &glow::Context, pos: ChunkPos, data: &ChunkDrawData) {
+        self.remove_chunk(gl, pos);
+        if data.quad_count() == 0 {
+            return;
         }
-        let data = &data.vertex_data[side as usize];
-        self.vertex_data_cache.extend_from_slice(data);
-        let block_pos_f3 = data_pos.get_origin_block_pos().as_vec3();
-        self.location_data_cache
-            .extend(std::iter::repeat_n(block_pos_f3, data.len()));
-        data.len()
+        let mut all: Vec<i32> = Vec::with_capacity(data.quad_count());
+        let mut side_ranges = [(0, 0); 6];
+        for side in SIDES {
+            let quads = &data.vertex_data[side as usize];
+            side_ranges[side as usize] = (all.len() as i32, quads.len() as i32);
+            all.extend_from_slice(quads);
+        }
+        unsafe {
+            let Ok(buffer) = gl.create_buffer() else {
+                log::error!("World: could not create chunk buffer");
+                return;
+            };
+            gl.bind_buffer(glow::ARRAY_BUFFER, Some(buffer));
+            gl.buffer_data_u8_slice(
+                glow::ARRAY_BUFFER,
+                all.align_to::<u8>().1,
+                glow::STATIC_DRAW,
+            );
+            gl.bind_buffer(glow::ARRAY_BUFFER, None);
+            self.gpu_chunks.insert(
+                pos,
+                GpuChunk {
+                    buffer,
+                    side_ranges,
+                },
+            );
+        }
     }
 
-    pub fn gather_draw_data(
-        &mut self,
-        gl: &glow::Context,
-        player_chunk_pos: ChunkPos,
-        loaded_chunks: &HashMap<ChunkPos, Option<ChunkDrawData>>,
-    ) {
-        self.num_quads_to_draw = 0;
-        self.vertex_data_cache.clear();
-        self.location_data_cache.clear();
-        for (chunk_pos, draw_data) in loaded_chunks {
-            if let Some(draw_data) = draw_data {
-                let quad_count: usize = [
-                    Side::Front,
-                    Side::Back,
-                    Side::Left,
-                    Side::Right,
-                    Side::Top,
-                    Side::Bottom,
-                ]
-                .into_iter()
-                .map(|side| self.add_if_visible(draw_data, side, player_chunk_pos, *chunk_pos))
-                .sum();
-                self.num_quads_to_draw += quad_count as i32;
-            }
-        }
-
-        self.peak_vertex_len = self.peak_vertex_len.max(self.vertex_data_cache.len());
-        self.peak_location_len = self.peak_location_len.max(self.location_data_cache.len());
-
-        unsafe {
-            {
-                // upload vertex data
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.vertex_data_buffer));
-                gl.buffer_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    self.vertex_data_cache.align_to::<u8>().1,
-                    glow::STATIC_DRAW,
-                );
-            }
-
-            {
-                // upload location data
-                gl.bind_buffer(glow::ARRAY_BUFFER, Some(self.location_data_buffer));
-                gl.buffer_data_u8_slice(
-                    glow::ARRAY_BUFFER,
-                    self.location_data_cache.align_to::<u8>().1,
-                    glow::STATIC_DRAW,
-                );
-            }
-            gl.bind_buffer(glow::ARRAY_BUFFER, None);
+    pub fn remove_chunk(&mut self, gl: &glow::Context, pos: ChunkPos) {
+        if let Some(chunk) = self.gpu_chunks.remove(&pos) {
+            unsafe { gl.delete_buffer(chunk.buffer) };
         }
     }
 
@@ -164,20 +147,11 @@ impl WorldRenderData {
             gl.enable_vertex_attrib_array(mesh_pos_location);
 
             // vertex data attributes - 1 per quad
-            let vertex_data_buffer = gl.create_buffer()?;
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(vertex_data_buffer));
-            let data_attr_pos = 1;
-            gl.enable_vertex_attrib_array(data_attr_pos);
-            gl.vertex_attrib_pointer_i32(data_attr_pos, 1, glow::INT, 0, 0);
-            gl.vertex_attrib_divisor(data_attr_pos, 1);
+            gl.enable_vertex_attrib_array(DATA_ATTR);
+            gl.vertex_attrib_divisor(DATA_ATTR, 1);
 
-            // vertex location attributes - 1 per quad
-            let location_data_buffer = gl.create_buffer()?;
-            gl.bind_buffer(glow::ARRAY_BUFFER, Some(location_data_buffer));
-            let location_attr_pos = 2;
-            gl.enable_vertex_attrib_array(location_attr_pos);
-            gl.vertex_attrib_pointer_f32(location_attr_pos, 3, glow::FLOAT, false, 0, 0);
-            gl.vertex_attrib_divisor(location_attr_pos, 1);
+            // attribute 2 (chunk offset from player) is a constant set per draw call
+            gl.disable_vertex_attrib_array(OFFSET_ATTR);
 
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
             gl.bind_vertex_array(None);
@@ -185,13 +159,7 @@ impl WorldRenderData {
             Ok(Self {
                 graphics: GraphicContext { program, texture },
                 vertex_array,
-                num_quads_to_draw: 0,
-                vertex_data_buffer,
-                location_data_buffer,
-                vertex_data_cache: Vec::new(),
-                location_data_cache: Vec::new(),
-                peak_vertex_len: 0,
-                peak_location_len: 0,
+                gpu_chunks: HashMap::new(),
             })
         }
     }
@@ -202,14 +170,29 @@ impl WorldRenderData {
             let program = &graphics.program;
             program.gl_use(gl);
             gl.bind_texture(graphics.texture.0.into(), Some(graphics.texture.1));
-            program.set_current_player_chunk(gl, player_chunk_pos);
             program.set_matrix(gl, UniformTypes::ViewMatrix, &camera.look_at);
             program.set_matrix(gl, UniformTypes::ProjMatrix, &camera.projection);
             gl.enable(glow::CULL_FACE);
             gl.enable(glow::DEPTH_TEST);
             gl.disable(glow::BLEND);
             gl.bind_vertex_array(Some(self.vertex_array));
-            gl.draw_arrays_instanced(glow::TRIANGLE_STRIP, 0, 4, self.num_quads_to_draw);
+            // Floating origin: the CPU sends each chunk's offset from the player's chunk
+            // (exact in f32), so the shader does no rebase.
+            let player = player_chunk_pos.as_vec();
+            for (pos, chunk) in &self.gpu_chunks {
+                let offset = ((pos.as_vec() - player) * CHUNK_SIZE as i32).as_vec3();
+                gl.vertex_attrib_3_f32(OFFSET_ATTR, offset.x, offset.y, offset.z);
+                gl.bind_buffer(glow::ARRAY_BUFFER, Some(chunk.buffer));
+                for side in SIDES {
+                    let (first, count) = chunk.side_ranges[side as usize];
+                    if count == 0 || !Self::is_visible(player_chunk_pos, *pos, side) {
+                        continue;
+                    }
+                    gl.vertex_attrib_pointer_i32(DATA_ATTR, 1, glow::INT, 0, first * 4);
+                    gl.draw_arrays_instanced(glow::TRIANGLE_STRIP, 0, 4, count);
+                }
+            }
+            gl.bind_buffer(glow::ARRAY_BUFFER, None);
             gl.bind_vertex_array(None);
         }
     }
@@ -227,8 +210,7 @@ fn compile_shader(gl: &glow::Context) -> Result<Rc<ShaderProgram>, String> {
             vec!(),
             vec!(
                 (UniformTypes::ViewMatrix, "view"),
-                (UniformTypes::ProjMatrix, "projection"),
-                (UniformTypes::PlayerChunkPos, "player_chunk_pos")
+                (UniformTypes::ProjMatrix, "projection")
             )
         )
         .compile(gl)?;

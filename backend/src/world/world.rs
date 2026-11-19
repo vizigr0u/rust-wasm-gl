@@ -3,43 +3,65 @@ use std::{collections::HashMap, mem::size_of};
 use glam::{ivec3, IVec3};
 use log::info;
 
-const FRAME_RENDER_DELAY: usize = 8;
-
-const MAX_LOAD_CHUNK_DISTANCE: i32 = 15;
-const MAX_LOAD_CHUNK_DISTANCE_SQUARED: i32 = MAX_LOAD_CHUNK_DISTANCE * MAX_LOAD_CHUNK_DISTANCE;
-const MAX_MESH_TO_KEEP: usize = 1024;
-
-// const CHUNK_LOADING_WEIGHT: f32 = 1.0;
-// const CHUNK_GENERATION_WEIGHT: f32 = 0.5;
-const MAX_LOADS_PER_FRAME: usize = 8;
-
-use crate::{
-    world::{WorldGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y},
-};
+use crate::world::{Neighbours, Side, WorldGenerator, MAX_CHUNK_Y, MIN_CHUNK_Y};
 
 use super::{ChunkDrawData, ChunkPos, ChunkStreamer};
 
+/// Streaming loads whole 6x20x6 pages in a 3x3 ring around the player's page, so the
+/// guaranteed horizontal reach is one page = 6 chunks. Load radius matches that.
+const LOAD_RADIUS: i32 = 6;
+/// Unload radius > load radius (hysteresis): a chunk loaded at the edge is not
+/// unloaded by the next small move, so crossing chunk borders does not churn meshes.
+const UNLOAD_RADIUS: i32 = LOAD_RADIUS + 2;
+const LOAD_RADIUS_SQUARED: i32 = LOAD_RADIUS * LOAD_RADIUS;
+const UNLOAD_RADIUS_SQUARED: i32 = UNLOAD_RADIUS * UNLOAD_RADIUS;
+
+const MAX_LOADS_PER_FRAME: usize = 8;
+
+/// Chunk neighbour directions, indexed by `Side as usize`.
+const SIDE_DIRS: [IVec3; 6] = [
+    ivec3(0, 1, 0),  // Top
+    ivec3(0, -1, 0), // Bottom
+    ivec3(0, 0, 1),  // Front
+    ivec3(0, 0, -1), // Back
+    ivec3(1, 0, 0),  // Right
+    ivec3(-1, 0, 0), // Left
+];
+
 type OffsetPriority = Vec<IVec3>;
 
-fn make_offset_priority(size: i32) -> OffsetPriority {
-    let total_offsets = size * size * size;
-    let mut offsets = Vec::with_capacity(total_offsets as _);
-    for z in -size + 1..size {
-        for y in -size + 1..size {
-            for x in -size + 1..size {
-                offsets.push(ivec3(x, y, z));
+/// All offsets within `radius` (a sphere: the same metric as unloading), nearest first.
+fn make_offset_priority(radius: i32) -> OffsetPriority {
+    let side = 2 * radius + 1;
+    let mut offsets = Vec::with_capacity((side * side * side) as usize);
+    for z in -radius..=radius {
+        for y in -radius..=radius {
+            for x in -radius..=radius {
+                let o = ivec3(x, y, z);
+                if o.length_squared() <= radius * radius {
+                    offsets.push(o);
+                }
             }
         }
     }
     offsets.sort_by_key(|p| p.length_squared());
-    // info!(
-    //     "offset: {}, {}, ..., {}, {}",
-    //     offsets[0],
-    //     offsets[1],
-    //     offsets[total_offsets as usize - 2],
-    //     offsets[total_offsets as usize - 1]
-    // );
     offsets
+}
+
+/// A mesh plus whether all 6 neighbours were available when it was built. An
+/// incomplete mesh treated missing neighbours as air and is remeshed once they stream in.
+#[derive(Debug)]
+struct MeshEntry {
+    draw_data: ChunkDrawData,
+    complete: bool,
+}
+
+/// Mesh changes since the last `update`. The renderer applies them to the GPU.
+#[derive(Debug, Default)]
+pub struct MeshChanges {
+    /// Meshes created or rebuilt: fetch with `World::mesh`.
+    pub added: Vec<ChunkPos>,
+    pub removed: Vec<ChunkPos>,
 }
 
 #[derive(Debug)]
@@ -47,20 +69,21 @@ pub struct World<G>
 where
     G: WorldGenerator,
 {
-    chunks: HashMap<ChunkPos, Option<ChunkDrawData>>,
+    meshes: HashMap<ChunkPos, MeshEntry>,
     loaded_quads: usize,
-    // loaded_meshes: Vec<LoadedChunkMesh>,
     streamer: ChunkStreamer<G>,
     last_computed_chunk_pos: Option<ChunkPos>,
     offset_priority: OffsetPriority,
     chunks_to_load: Vec<ChunkPos>,
-    render_frame_delay: usize,
-    render_dirty: bool,
     player_chunk_pos: ChunkPos,
 }
 
 /// Each quad is one packed `i32` word in `ChunkDrawData::vertex_data`.
 const QUAD_DATA_SIZE: usize = size_of::<i32>();
+
+fn in_world_height(pos: IVec3) -> bool {
+    pos.y >= MIN_CHUNK_Y && pos.y < MAX_CHUNK_Y
+}
 
 impl<G> World<G>
 where
@@ -68,155 +91,176 @@ where
 {
     pub fn new(generator: G) -> Self {
         info!("World: Creating");
-        let offset_priority = make_offset_priority(MAX_LOAD_CHUNK_DISTANCE);
-
         Self {
-            chunks: HashMap::new(),
+            meshes: HashMap::new(),
             loaded_quads: 0,
             streamer: ChunkStreamer::new(generator),
-            offset_priority,
+            offset_priority: make_offset_priority(LOAD_RADIUS),
             last_computed_chunk_pos: None,
-            chunks_to_load: Vec::with_capacity(MAX_MESH_TO_KEEP * 2),
-            render_frame_delay: 0,
-            render_dirty: false,
+            chunks_to_load: Vec::new(),
             player_chunk_pos: ChunkPos::default(),
         }
     }
 
-    pub fn get_info(&self, peak_cache: (usize, usize)) -> String {
+    pub fn get_info(&self, gpu_info: &str) -> String {
         let quad_count = self.loaded_quads;
         let memory_used = (quad_count * QUAD_DATA_SIZE) as f32 / 1000000.0;
-        let loaded_meshes = self.chunks.values().filter(|c| c.is_some()).count();
-        let (peak_v, peak_l) = peak_cache;
         format!(
-            "Loaded {loaded_meshes}/{} chunks\nStreaming: {}\n{quad_count} quads - {memory_used:.3} MB\nPeak gather: {peak_v} verts, {peak_l} locs",
-            self.chunks.len(),
+            "{} chunk meshes\nStreaming: {}\n{quad_count} quads - {memory_used:.3} MB\n{gpu_info}",
+            self.meshes.len(),
             self.streamer.get_info(),
         )
     }
 
-    /// Streams/meshes. Returns true when the render buffers should be regathered
-    /// (see `chunks()`); the caller owns the GPU side.
-    pub fn update(&mut self, player_chunk_pos: ChunkPos) -> bool {
+    /// Streams and meshes. Returns the mesh changes for the caller to mirror on the GPU.
+    pub fn update(&mut self, player_chunk_pos: ChunkPos) -> MeshChanges {
         self.player_chunk_pos = player_chunk_pos;
-        // let player_block_pos: BlockPos = player_pos.as_ivec3().into();
-        // let player_chunk_pos: ChunkPos = player_block_pos.into();
+        let mut changes = MeshChanges::default();
 
-        let mut geom_changed = false;
-        if self.streamer.tick_streaming(player_chunk_pos) > 0 {
-            geom_changed = true;
+        let streaming = self.streamer.tick_streaming(player_chunk_pos);
+        // Single owner: the streamer owns block data, so meshes of freed pages go too.
+        for page in &streaming.pages_freed {
+            let freed: Vec<ChunkPos> = self
+                .meshes
+                .keys()
+                .filter(|c| page.has_chunk_pos(**c))
+                .copied()
+                .collect();
+            for pos in freed {
+                self.remove_mesh(pos, &mut changes);
+            }
         }
 
-        if geom_changed || self.last_computed_chunk_pos != Some(player_chunk_pos) {
+        if streaming.pages_loaded > 0 || self.last_computed_chunk_pos != Some(player_chunk_pos) {
             self.last_computed_chunk_pos = Some(player_chunk_pos);
-            self.on_chunk_changed(player_chunk_pos);
-            geom_changed = true;
+            self.on_chunk_changed(player_chunk_pos, &mut changes);
         }
 
-        if self.load_some_chunks() > 0 {
-            geom_changed = true;
-        }
-
-        if geom_changed {
-            self.render_dirty = true;
-        }
-        if self.render_frame_delay > 0 {
-            self.render_frame_delay -= 1;
-        }
-        if self.render_dirty && self.render_frame_delay == 0 {
-            self.render_dirty = false;
-            self.render_frame_delay = FRAME_RENDER_DELAY;
-            return true;
-        }
-
-        false
+        self.load_some_chunks(&mut changes);
+        changes
     }
 
-    pub fn chunks(&self) -> &HashMap<ChunkPos, Option<ChunkDrawData>> {
-        &self.chunks
+    pub fn mesh(&self, pos: ChunkPos) -> Option<&ChunkDrawData> {
+        self.meshes.get(&pos).map(|m| &m.draw_data)
     }
 
     pub fn player_chunk_pos(&self) -> ChunkPos {
         self.player_chunk_pos
     }
 
-    fn load_some_chunks(&mut self) -> usize {
-        if self.chunks_to_load.is_empty() {
-            return 0;
+    fn remove_mesh(&mut self, pos: ChunkPos, changes: &mut MeshChanges) {
+        if let Some(entry) = self.meshes.remove(&pos) {
+            self.loaded_quads -= entry.draw_data.quad_count();
+            changes.removed.push(pos);
         }
-        let chunks_to_load: Vec<ChunkPos> = self
+    }
+
+    /// Neighbours of `pos` plus whether all are known. Outside the world height is
+    /// known air; a not-yet-streamed neighbour is unknown.
+    fn gather_neighbours(&self, pos: ChunkPos) -> (Neighbours<'_>, bool) {
+        let mut result: Neighbours = [None; 6];
+        let mut complete = true;
+        for side in [
+            Side::Top,
+            Side::Bottom,
+            Side::Front,
+            Side::Back,
+            Side::Right,
+            Side::Left,
+        ] {
+            let n = pos.as_vec() + SIDE_DIRS[side as usize];
+            if !in_world_height(n) {
+                continue;
+            }
+            match self.streamer.get_chunk(n.into()) {
+                Some(c) => result[side as usize] = Some(c),
+                None => complete = false,
+            }
+        }
+        (result, complete)
+    }
+
+    fn needs_mesh(&self, pos: ChunkPos) -> bool {
+        if !self.streamer.is_chunked_streamed(pos) {
+            return false;
+        }
+        match self.meshes.get(&pos) {
+            None => true,
+            Some(entry) => !entry.complete && self.gather_neighbours(pos).1,
+        }
+    }
+
+    fn load_some_chunks(&mut self, changes: &mut MeshChanges) {
+        if self.chunks_to_load.is_empty() {
+            return;
+        }
+        let todo: Vec<ChunkPos> = self
             .chunks_to_load
             .iter()
-            .filter(|c| !self.chunks.contains_key(c) && self.streamer.is_chunked_streamed(**c))
+            .filter(|c| self.needs_mesh(**c))
             .take(MAX_LOADS_PER_FRAME)
             .copied()
             .collect();
-        let mut loaded_count = 0;
 
-        for chunk_pos in chunks_to_load {
-            // Page may have been freed: leave it queued, never insert None.
-            if let Some(chunk) = self.streamer.get_chunk(chunk_pos) {
-                let draw_data = ChunkDrawData::load(chunk).expect("can't load mesh");
-                self.loaded_quads += draw_data.quad_count();
-                self.chunks.insert(chunk_pos, Some(draw_data));
-                loaded_count += 1;
+        for pos in todo {
+            let Some(chunk) = self.streamer.get_chunk(pos) else {
+                continue;
+            };
+            let (neighbours, complete) = self.gather_neighbours(pos);
+            let draw_data = ChunkDrawData::load(chunk, &neighbours);
+            self.loaded_quads += draw_data.quad_count();
+            if let Some(old) = self.meshes.insert(
+                pos,
+                MeshEntry {
+                    draw_data,
+                    complete,
+                },
+            ) {
+                self.loaded_quads -= old.draw_data.quad_count();
             }
+            changes.added.push(pos);
         }
-        self.chunks_to_load.retain(|c| !self.chunks.contains_key(c));
-
-        loaded_count
+        // Keep only what still needs work (new, or incomplete and now completable).
+        let still: Vec<ChunkPos> = self
+            .chunks_to_load
+            .iter()
+            .filter(|c| self.needs_mesh(**c))
+            .copied()
+            .collect();
+        self.chunks_to_load = still;
     }
 
-    pub fn on_chunk_changed(&mut self, new_chunk_pos: ChunkPos) {
+    fn on_chunk_changed(&mut self, new_chunk_pos: ChunkPos, changes: &mut MeshChanges) {
         info!("World: recompute for chunk pos: {new_chunk_pos:?}");
 
-        // delete some chunks
-        {
-            let mut chunks_we_can_unload = Vec::with_capacity(MAX_MESH_TO_KEEP * 2);
-            for (&chunk_pos, c) in self.chunks.iter() {
-                if c.is_some() {
-                    if new_chunk_pos.distance_squared(chunk_pos) > MAX_LOAD_CHUNK_DISTANCE_SQUARED {
-                        chunks_we_can_unload.push(chunk_pos);
-                    }
-                }
-            }
-            chunks_we_can_unload.sort_by(|a, b| {
-                a.distance_squared(new_chunk_pos)
-                    .cmp(&b.distance_squared(new_chunk_pos))
-            });
-            if chunks_we_can_unload.len() > MAX_MESH_TO_KEEP {
-                info!(
-                    "World: unloading {} chunks",
-                    chunks_we_can_unload.len() - MAX_MESH_TO_KEEP
-                );
-                for chunk_pos in chunks_we_can_unload.drain(MAX_MESH_TO_KEEP..) {
-                    let draw_data = self
-                        .chunks
-                        .remove(&chunk_pos)
-                        .expect("added inexistent chunk")
-                        .expect("added empty chunk");
-                    self.loaded_quads -= draw_data.quad_count();
-                }
-            }
+        // Unload with the same metric as load plus hysteresis.
+        let too_far: Vec<ChunkPos> = self
+            .meshes
+            .keys()
+            .filter(|c| new_chunk_pos.distance_squared(**c) > UNLOAD_RADIUS_SQUARED)
+            .copied()
+            .collect();
+        if !too_far.is_empty() {
+            info!("World: unloading {} chunk meshes", too_far.len());
+        }
+        for pos in too_far {
+            self.remove_mesh(pos, changes);
         }
 
-        // add new chunks
-        {
-            // Rebuild queue: avoids duplicates and drops stale far chunks.
-            self.chunks_to_load.clear();
-            for offset in &self.offset_priority {
-                let chunk_vec_pos = new_chunk_pos.as_vec() + *offset;
-                if chunk_vec_pos.y < MIN_CHUNK_Y || chunk_vec_pos.y >= MAX_CHUNK_Y {
-                    continue;
-                }
-                let chunk_pos: ChunkPos = chunk_vec_pos.into();
-                if !self.chunks.contains_key(&chunk_pos)
-                    && self.streamer.is_chunked_streamed(chunk_pos)
-                // && self.streamer.get_chunk(chunk_pos).is_some()
-                {
-                    self.chunks_to_load.push(chunk_pos);
-                }
+        // Rebuild the queue (nearest first). Everything queued is within LOAD_RADIUS,
+        // so nothing just unloaded (beyond UNLOAD_RADIUS) can be re-queued.
+        self.chunks_to_load.clear();
+        for offset in &self.offset_priority {
+            let v = new_chunk_pos.as_vec() + *offset;
+            if !in_world_height(v) {
+                continue;
+            }
+            let pos: ChunkPos = v.into();
+            if self.needs_mesh(pos) {
+                self.chunks_to_load.push(pos);
             }
         }
     }
 }
+
+const _: () = assert!(LOAD_RADIUS_SQUARED < UNLOAD_RADIUS_SQUARED);

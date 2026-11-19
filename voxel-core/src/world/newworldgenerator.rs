@@ -1,21 +1,18 @@
-use fastrand::Rng;
 use glam::U16Vec3;
 
 use super::{BlockType, Chunk, ChunkPos, WorldGenerator};
 
-#[derive(Debug)]
-pub struct GeneratorV0 {
-    rng: Rng,
-}
+#[derive(Debug, Default)]
+pub struct GeneratorV0;
 
 impl GeneratorV0 {
-    pub fn new(rng: Rng) -> Self {
-        Self { rng }
+    pub fn new() -> Self {
+        Self
     }
 }
 
 impl WorldGenerator for GeneratorV0 {
-    fn generate(&mut self, chunk_position: ChunkPos) -> Chunk {
+    fn generate(&self, chunk_position: ChunkPos) -> Chunk {
         if chunk_position.as_vec().y < -2 || chunk_position.as_vec().y > 2 {
             return Chunk::empty();
         }
@@ -45,6 +42,7 @@ impl WorldGenerator for GeneratorV0 {
                 res.set(offset, block);
             }
         }
+        res.compact();
         res
     }
 }
@@ -56,16 +54,16 @@ mod tests {
 
     #[test]
     fn generated_chunk_emptiness_matches_content() {
-        let mut g = GeneratorV0::new(Rng::with_seed(1));
+        let g = GeneratorV0::new();
         // far above terrain: all air -> must be flagged empty
         let air = g.generate(IVec3::new(0, 2, 0).into());
         assert_eq!(
             air.is_empty(),
-            air.blocks.iter().all(|b| *b == BlockType::Empty)
+            air.iter_blocks().all(|b| b == BlockType::Empty)
         );
         // terrain chunk: must be non-empty
         let ground = g.generate(IVec3::new(0, -1, 0).into());
-        assert!(ground.blocks.iter().any(|b| *b != BlockType::Empty));
+        assert!(ground.iter_blocks().any(|b| b != BlockType::Empty));
         assert!(!ground.is_empty());
     }
 }
