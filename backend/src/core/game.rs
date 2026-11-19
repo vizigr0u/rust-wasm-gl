@@ -175,6 +175,7 @@ impl Game {
 
         self.handle_inputs(&mut gfx.egui);
 
+        self.texture_loader.tick(gl)?;
         self.update(gl, gfx);
 
         self.update_gui(&mut gfx.egui);
@@ -264,7 +265,6 @@ impl Game {
     }
 
     fn render(&mut self, gl: &glow::Context, gfx: &Gfx) -> Result<(), String> {
-        self.texture_loader.tick(gl)?;
         self.sync_canvas_size(gl);
         unsafe {
             gl.clear_color(0.0, 0.0, 0.0, 1.0);
