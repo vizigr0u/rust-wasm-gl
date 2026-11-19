@@ -1,4 +1,4 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{cell::Cell, collections::HashMap, rc::Rc};
 
 use glow::{HasContext, WebBufferKey, WebVertexArrayKey};
 
@@ -46,6 +46,8 @@ pub struct WorldRenderData {
     graphics: GraphicContext,
     vertex_array: WebVertexArrayKey,
     gpu_chunks: HashMap<ChunkPos, GpuChunk>,
+    /// Draw calls issued by the last `render` (kept by both backends).
+    draw_calls: Cell<u32>,
 }
 
 impl ChunkDrawData {
@@ -62,7 +64,11 @@ impl ChunkDrawData {
 
 impl WorldRenderData {
     pub fn get_info(&self) -> String {
-        format!("GPU: {} chunk buffers", self.gpu_chunks.len())
+        format!(
+            "GPU: {} chunk buffers, {} draw calls",
+            self.gpu_chunks.len(),
+            self.draw_calls.get()
+        )
     }
 
     // INTENTIONAL: cull faces relative to the *player* chunk, not the camera.
@@ -160,6 +166,7 @@ impl WorldRenderData {
                 graphics: GraphicContext { program, texture },
                 vertex_array,
                 gpu_chunks: HashMap::new(),
+                draw_calls: Cell::new(0),
             })
         }
     }
@@ -179,6 +186,7 @@ impl WorldRenderData {
             // Floating origin: the CPU sends each chunk's offset from the player's chunk
             // (exact in f32), so the shader does no rebase.
             let player = player_chunk_pos.as_vec();
+            let mut draw_calls = 0;
             for (pos, chunk) in &self.gpu_chunks {
                 let offset = ((pos.as_vec() - player) * CHUNK_SIZE as i32).as_vec3();
                 gl.vertex_attrib_3_f32(OFFSET_ATTR, offset.x, offset.y, offset.z);
@@ -190,8 +198,10 @@ impl WorldRenderData {
                     }
                     gl.vertex_attrib_pointer_i32(DATA_ATTR, 1, glow::INT, 0, first * 4);
                     gl.draw_arrays_instanced(glow::TRIANGLE_STRIP, 0, 4, count);
+                    draw_calls += 1;
                 }
             }
+            self.draw_calls.set(draw_calls);
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
             gl.bind_vertex_array(None);
         }

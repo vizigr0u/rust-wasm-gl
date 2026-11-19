@@ -4,7 +4,7 @@ use egui::RichText;
 use fastrand::Rng;
 use glam::{vec3, Vec3};
 use glow::HasContext;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsCast, JsValue};
 
 use crate::{
     graphics::{Camera, TextureDef, TextureLoader, TextureType},
@@ -305,17 +305,47 @@ impl Game {
                                 .show(ui, |ui| {
                                     self.fps_display.display(ui);
 
-                                        ui.colored_label(egui::Color32::WHITE,RichText::new(format!(
-                                            "RNG seed: {}\ngit rev: {}\nPlayer position: {:?}\nWorld: {}",
-                                            self.seed,
-                                            env!("GIT_HASH"),
-                                            self.player.get_position(),
-                                            self.world.get_info(&gpu_info)
-                                        )).monospace());
+                                    let info = format!(
+                                        "FPS: {}\nRNG seed: {}\ngit rev: {}\nPlayer position: {:?}\nWorld: {}",
+                                        self.fps_display.get_debug_info(),
+                                        self.seed,
+                                        env!("GIT_HASH"),
+                                        self.player.get_position(),
+                                        self.world.get_info(&gpu_info)
+                                    );
+                                    ui.colored_label(
+                                        egui::Color32::WHITE,
+                                        RichText::new(&info).monospace(),
+                                    );
+                                    if ui.button("Copy").clicked() {
+                                        copy_to_clipboard(&info);
+                                    }
                                 });
                         });
                 }
             });
         }
+    }
+}
+
+/// Write text to the system clipboard via `navigator.clipboard.writeText`.
+fn copy_to_clipboard(text: &str) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let clipboard = js_sys::Reflect::get(&window, &"navigator".into())
+        .and_then(|n| js_sys::Reflect::get(&n, &"clipboard".into()))
+        .ok();
+    let write = clipboard.as_ref().and_then(|c| {
+        let f = js_sys::Reflect::get(c, &"writeText".into()).ok()?;
+        f.dyn_into::<js_sys::Function>().ok()
+    });
+    match (clipboard, write) {
+        (Some(c), Some(f)) => {
+            if f.call1(&c, &text.into()).is_err() {
+                log::error!("clipboard write failed");
+            }
+        }
+        _ => log::error!("clipboard not available"),
     }
 }
