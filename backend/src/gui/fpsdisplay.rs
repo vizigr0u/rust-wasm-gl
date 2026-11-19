@@ -133,11 +133,14 @@ impl FpsDisplay {
         if self.avg_times.interval <= 0.0 {
             return "???".to_string();
         }
+        let t = self.avg_times;
         // fps = real frame rate; max = theoretical rate if the CPU work were the only limit
         format!(
-            "{:.1} (max {:.0})",
+            "{:.0} (actual {:.1}) | ui {:.2}ms, render {:.2}ms",
+            1000.0 / self.avg_times.frame.max(0.001),
             1000.0 / self.avg_times.interval,
-            1000.0 / self.avg_times.frame.max(0.001)
+            self.avg_times.ui,
+            t.prepare + t.acquire + t.pass + t.egui + t.submit
         )
     }
 
