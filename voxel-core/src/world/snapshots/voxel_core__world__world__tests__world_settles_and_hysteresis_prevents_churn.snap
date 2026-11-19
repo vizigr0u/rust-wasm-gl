@@ -1,0 +1,17 @@
+---
+source: voxel-core/src/world/world.rs
+expression: "((a0, r0, meshes0, quads0, info0), (step, back),\n(walk, w.meshes.len(), w.loaded_quads),)"
+---
+- - 818
+  - 0
+  - 818
+  - 69788
+  - "818 chunk meshes\nStreaming: 9 page(s) loaded\n69788 quads - 0.279 MB\ngpu"
+- - - 96
+    - 0
+  - - 0
+    - 0
+- - - 1827
+    - 1676
+  - 1062
+  - 89362

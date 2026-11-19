@@ -1,0 +1,10 @@
+---
+source: voxel-core/src/render.rs
+expression: rows
+---
+- "Top: VVV VVV VVV V.V V.V "
+- "Bottom: V.V VVV VVV VVV VVV "
+- "Front: VVV VVV VVV VV. VV. "
+- "Back: VV. VVV VVV VVV VVV "
+- "Right: VVV VVV VVV .VV .VV "
+- "Left: .VV VVV VVV VVV VVV "

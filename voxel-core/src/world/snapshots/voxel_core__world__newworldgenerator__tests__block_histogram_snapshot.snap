@@ -1,0 +1,15 @@
+---
+source: voxel-core/src/world/newworldgenerator.rs
+expression: out
+---
+- - "[0, 0, 0]"
+  - Dirt: 474
+    Empty: 2871
+    Grass: 256
+    Stone: 495
+- - "[3, -1, 2]"
+  - Empty: 4096
+- - "[0, 2, 0]"
+  - Empty: 4096
+- - "[0, -2, 0]"
+  - Empty: 4096

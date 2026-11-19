@@ -1,0 +1,13 @@
+---
+source: voxel-core/src/world/world.rs
+expression: "(p.len(), hash_words(&words), small)"
+---
+- 925
+- 9be0a987ae8fcf33
+- - "[0, 0, 0]"
+  - "[0, 0, -1]"
+  - "[0, -1, 0]"
+  - "[-1, 0, 0]"
+  - "[1, 0, 0]"
+  - "[0, 1, 0]"
+  - "[0, 0, 1]"

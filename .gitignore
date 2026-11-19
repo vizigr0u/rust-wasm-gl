@@ -24,7 +24,6 @@ dist-ssr
 /target
 backend/target
 backend-tests/target
-voxel-core/src/*/snapshots/*
 /test-results
 /playwright-report
-e2e/__screenshots__/
+e2e/__screenshots__/*.snap.new

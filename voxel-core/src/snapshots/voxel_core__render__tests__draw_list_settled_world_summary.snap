@@ -1,0 +1,8 @@
+---
+source: voxel-core/src/render.rs
+expression: "(meshes.len(), list.len(), total, hash_words(&words))"
+---
+- 818
+- 541
+- 62119
+- 10bfdae4994ee24e

@@ -1,0 +1,44 @@
+---
+source: voxel-core/src/world/chunk.rs
+expression: out
+---
+- - empty
+  - per_side:
+      - 0
+      - 0
+      - 0
+      - 0
+      - 0
+      - 0
+    total: 0
+    hash: cbf29ce484222325
+- - full_stone
+  - per_side:
+      - 256
+      - 256
+      - 256
+      - 256
+      - 256
+      - 256
+    total: 1536
+    hash: 984d4f88e8bbfce5
+- - single_block
+  - per_side:
+      - 1
+      - 1
+      - 1
+      - 1
+      - 1
+      - 1
+    total: 6
+    hash: 893619e16bc7a94a
+- - checkerboard
+  - per_side:
+      - 2048
+      - 2048
+      - 2048
+      - 2048
+      - 2048
+      - 2048
+    total: 12288
+    hash: 9844dfcd295f2d25
