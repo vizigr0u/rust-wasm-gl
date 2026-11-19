@@ -59,6 +59,12 @@ impl Player {
         }
     }
 
+    /// Teleport by `delta` (profiling hooks drive deterministic streaming with this).
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn translate(&mut self, delta: Vec3) {
+        self.position += delta;
+    }
+
     /// Chunk-local offset of the player.
     pub fn get_screen_position(&self) -> Vec3 {
         self.position.offset()

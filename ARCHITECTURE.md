@@ -7,12 +7,12 @@ Rust → WASM voxel engine, wgpu (WebGPU only). Browser shell in TS + Vite.
 | Path | Role |
 |---|---|
 | `voxel-core/` | Pure game logic. No glow/web-sys/wasm-bindgen. Builds and tests natively (`pnpm test`). |
-| `voxel-core/src/world/` | Chunks, chunk streaming, draw data (what to render). |
+| `voxel-core/src/world/` | Chunks, chunk streaming, draw data (what to render), `meshjob.rs` (bytes-in/words-out mesh job + `MeshExecutor`). |
 | `voxel-core/src/camera.rs`, `math/` | Camera, AABB, math helpers. |
 | `voxel-core/src/render*` | Renderer-agnostic render types (e.g. shader refs). |
 | `backend/` | WASM crate. Glue to browser + wgpu rendering. Built via wasm-pack. |
 | `backend/src/lib.rs` | wasm-bindgen entry, wires game loop to canvas. |
-| `backend/src/core/` | Game loop, input, time. |
+| `backend/src/core/` | Game loop, input, time, `meshworker.rs` (Web Worker mesher, pairs with `src/mesh-worker.ts`). |
 | `backend/src/graphics/` | Camera, texture loading. |
 | `backend/src/world/` | World rendering (chunks → arena draws). |
 | `backend/src/objects/` | Player, gizmo, renderers for scene objects. |
@@ -25,7 +25,8 @@ Rust → WASM voxel engine, wgpu (WebGPU only). Browser shell in TS + Vite.
 
 | Path | Role |
 |---|---|
-| `index.html`, `src/main.ts` | Loads WASM pkg, starts the app. |
+| `index.html`, `src/main.ts` | Loads WASM pkg, starts the app, creates the mesh worker. |
+| `src/mesh-worker.ts` | Worker: loads the same WASM, runs `mesh_job`. |
 | `src/shaders/`, `src/style.css` | Misc web-side assets. |
 | `public/data/textures/` | Texture atlas and block textures. |
 | `vite.config.ts`, `package.json` | Dev server and scripts (`dev`, `build`, `wasm`, `test`). |

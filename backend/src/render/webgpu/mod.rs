@@ -1,5 +1,6 @@
 //! wgpu renderer (WebGPU only). Port in progress: C6 = egui done.
 
+mod gpuprobe;
 mod objects;
 
 use std::collections::HashMap;
@@ -225,6 +226,9 @@ pub struct Renderer {
     culled_boxes: Vec<glam::Mat4>,
     cull_counts: (u32, u32, u32),
     times: RenderStats,
+    probe: gpuprobe::GpuProbe,
+    /// Adapter description, for profile reports.
+    adapter_info: String,
 }
 
 impl std::fmt::Debug for Renderer {
@@ -274,11 +278,15 @@ impl Renderer {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("rwg device"),
+                // Optional: only for profiling GPU time. Absent = no GPU timings.
+                required_features: adapter.features() & gpuprobe::GpuProbe::FEATURE,
                 ..Default::default()
             })
             .await
             .map_err(|e| RenderError(format!("request_device: {e}")))?;
 
+        let probe = gpuprobe::GpuProbe::new(&device, &queue);
+        let adapter_info = format!("{:?}", adapter.get_info());
         device.set_device_lost_callback(|reason, msg| {
             log::error!("wgpu device lost ({reason:?}): {msg}");
         });
@@ -347,6 +355,8 @@ impl Renderer {
             culled_boxes: Vec::new(),
             cull_counts: (0, 0, 0),
             times: RenderStats::default(),
+            probe,
+            adapter_info,
             textures: HashMap::new(),
             sampler,
             surface,
@@ -636,6 +646,7 @@ impl Renderer {
                     }),
                     stencil_ops: None,
                 }),
+                timestamp_writes: self.probe.pass_writes(),
                 ..Default::default()
             });
             if let Some(globals) = &self.chunk_pipeline.globals_bind {
@@ -664,6 +675,7 @@ impl Renderer {
                 );
             }
         }
+        self.probe.resolve(&mut enc);
         let t3 = crate::utils::performance_now();
         let mut extra = Vec::new();
         if let Some(ui) = &ui {
@@ -705,6 +717,7 @@ impl Renderer {
         let t4 = crate::utils::performance_now();
         self.queue.submit(extra.into_iter().chain([enc.finish()]));
         self.queue.present(tex);
+        self.probe.after_submit(&self.queue, t4);
         if let Some(mut ui) = ui {
             for id in &ui.textures_delta.free {
                 self.egui_renderer.free_texture(id);
@@ -730,6 +743,25 @@ impl Renderer {
             egui_ms: t4 - t3,
             submit_ms: t5 - t4,
         };
+    }
+
+    /// GPU readbacks of the last submitted frame still in flight.
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn gpu_busy(&self) -> bool {
+        self.probe.busy()
+    }
+
+    /// `(main pass ms, submit -> done ms)` of the last finished frame, NaN when not available.
+    /// Each reading is returned once.
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn collect_gpu(&mut self) -> (f64, f64) {
+        (self.probe.take_pass_ms(), self.probe.take_done_ms())
+    }
+
+    /// Adapter description and whether GPU timestamp queries are available.
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn gpu_report(&self) -> (String, bool) {
+        (self.adapter_info.clone(), self.probe.has_timestamps())
     }
 
     pub fn stats(&self) -> RenderStats {

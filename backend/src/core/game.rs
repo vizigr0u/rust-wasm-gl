@@ -134,6 +134,8 @@ pub struct Game {
     upload_ms: f64,
     /// ms spent building egui this tick.
     ui_ms: f64,
+    /// Timings of the last running tick (profiling hooks read these).
+    last_times: FrameTimes,
 }
 
 #[derive(Debug)]
@@ -201,6 +203,7 @@ impl Game {
             fps_display: FpsDisplay::new(),
             upload_ms: 0.0,
             ui_ms: 0.0,
+            last_times: FrameTimes::default(),
         };
 
         Ok(game)
@@ -220,6 +223,30 @@ impl Game {
     #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     pub fn set_skip_render(&mut self, skip: bool) {
         self.skip_render = skip;
+    }
+
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn last_times(&self) -> FrameTimes {
+        self.last_times
+    }
+
+    /// Flip a debug/scene switch by name. Returns false for an unknown name.
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn set_toggle(&mut self, name: &str, on: bool) -> bool {
+        match name {
+            "frustum_culling" => self.toggles.frustum_culling = on,
+            "player_cam_view" => self.toggles.player_cam_view = on,
+            "show_frustum" => self.toggles.show_frustum = on,
+            "egui" => self.config.show_egui = on,
+            _ => return false,
+        }
+        true
+    }
+
+    /// Move the player by `delta` blocks (streams new chunks when it crosses a border).
+    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
+    pub fn translate_player(&mut self, delta: Vec3) {
+        self.player.translate(delta);
     }
 
     /// Place the camera by hand. `target` is relative to the player's chunk.
@@ -297,21 +324,20 @@ impl Game {
         let end = performance_now();
 
         let stats = renderer.stats();
-        self.fps_display.update_fps_report(
-            start,
-            FrameTimes {
-                script: update_time - start - self.upload_ms,
-                upload: self.upload_ms,
-                ui: self.ui_ms,
-                prepare: stats.prepare_ms,
-                acquire: stats.acquire_ms,
-                pass: stats.pass_ms,
-                egui: stats.egui_ms,
-                submit: stats.submit_ms,
-                frame: end - start,
-                interval: 0.0,
-            },
-        );
+        let times = FrameTimes {
+            script: update_time - start - self.upload_ms,
+            upload: self.upload_ms,
+            ui: self.ui_ms,
+            prepare: stats.prepare_ms,
+            acquire: stats.acquire_ms,
+            pass: stats.pass_ms,
+            egui: stats.egui_ms,
+            submit: stats.submit_ms,
+            frame: end - start,
+            interval: 0.0,
+        };
+        self.last_times = times;
+        self.fps_display.update_fps_report(start, times);
 
         Ok(())
     }

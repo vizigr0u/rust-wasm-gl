@@ -7,7 +7,7 @@
 use std::cell::RefCell;
 
 use glam::Vec3;
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{prelude::*, JsCast};
 use wasm_bindgen_futures::JsFuture;
 
 use crate::{
@@ -166,4 +166,142 @@ pub fn test_set_camera(target: Vec<f32>, offset: Vec<f32>) -> Result<(), JsValue
 pub async fn test_compile_all_shaders() -> Result<Vec<String>, JsValue> {
     let check = with_harness(|h| Ok(h.renderer.compile_check()))?;
     Ok(check.await)
+}
+
+// ---------------------------------------------------------------------------
+// Profiling API (driven by profile/profile.spec.ts). Same harness as the pixel tests.
+// ---------------------------------------------------------------------------
+
+/// Column order of `test_profile_step`'s result. Times are ms, the rest are counters.
+/// GPU timings come separately from `test_gpu_collect`.
+const PROFILE_FIELDS: [&str; 20] = [
+    // CPU timings
+    "frame",
+    "script",
+    "upload",
+    "ui",
+    "prepare",
+    "acquire",
+    "pass",
+    "egui",
+    "submit",
+    // deterministic counters
+    "draw_calls",
+    "draw_entries_raw",
+    "chunks_visible",
+    "chunks_culled",
+    "quads_drawn",
+    "upload_bytes",
+    "chunk_buffers",
+    "arena_used",
+    "arena_capacity",
+    "arena_largest_free",
+    "wasm_mem_mb",
+];
+
+#[wasm_bindgen]
+pub fn test_profile_fields() -> Vec<String> {
+    PROFILE_FIELDS.iter().map(|s| s.to_string()).collect()
+}
+
+/// One full frame of `dt_ms` virtual time. Returns the metrics in `PROFILE_FIELDS` order.
+#[wasm_bindgen]
+pub fn test_profile_step(dt_ms: f64) -> Result<Vec<f64>, JsValue> {
+    with_harness(|h| {
+        tick(h, dt_ms)?;
+        let t = h.game.last_times();
+        let s = h.renderer.stats();
+        let mem_mb = js_sys::Reflect::get(&wasm_bindgen::memory(), &"buffer".into())
+            .ok()
+            .and_then(|b| b.dyn_into::<js_sys::ArrayBuffer>().ok())
+            .map_or(f64::NAN, |b| b.byte_length() as f64 / 1048576.0);
+        Ok(vec![
+            t.frame,
+            t.script,
+            t.upload,
+            t.ui,
+            t.prepare,
+            t.acquire,
+            t.pass,
+            t.egui,
+            t.submit,
+            s.draw_calls as f64,
+            s.draw_entries_raw as f64,
+            s.chunks_visible as f64,
+            s.chunks_culled as f64,
+            s.quads_drawn as f64,
+            s.upload_bytes as f64,
+            s.chunk_buffers as f64,
+            s.arena_used as f64,
+            s.arena_capacity as f64,
+            s.arena_largest_free as f64,
+            mem_mb,
+        ])
+    })
+}
+
+/// Flip a switch: `frustum_culling`, `egui`, `show_frustum`, `player_cam_view`.
+#[wasm_bindgen]
+pub fn test_set_toggle(name: String, on: bool) -> Result<(), JsValue> {
+    with_harness(|h| {
+        if h.game.set_toggle(&name, on) {
+            Ok(())
+        } else {
+            Err(format!("unknown toggle '{name}'").into())
+        }
+    })
+}
+
+/// Move the player by `[x, y, z]` blocks (deterministic streaming load).
+#[wasm_bindgen]
+pub fn test_move_player(delta: Vec<f32>) -> Result<(), JsValue> {
+    let [x, y, z] = delta[..] else {
+        return Err("expected [x, y, z]".into());
+    };
+    with_harness(|h| {
+        h.game.translate_player(Vec3::new(x, y, z));
+        Ok(())
+    })
+}
+
+/// Wait until the GPU finished the last frame and its timing readbacks landed.
+/// Without this a slow adapter (SwiftShader) lets the CPU run ahead and queue frames up,
+/// so GPU timings would include the backlog.
+#[wasm_bindgen]
+pub async fn test_gpu_idle() -> Result<(), JsValue> {
+    for _ in 0..20_000 {
+        if !with_harness(|h| Ok(h.renderer.gpu_busy()))? {
+            return Ok(());
+        }
+        next_macrotask().await?;
+    }
+    Err("GPU did not go idle".into())
+}
+
+/// `[gpu_pass_ms, gpu_done_ms]` of the last frame (NaN = unavailable). Call after `test_gpu_idle`.
+#[wasm_bindgen]
+pub fn test_gpu_collect() -> Result<Vec<f64>, JsValue> {
+    with_harness(|h| {
+        let (pass, done) = h.renderer.collect_gpu();
+        Ok(vec![pass, done])
+    })
+}
+
+/// JSON object describing the environment of this run.
+#[wasm_bindgen]
+pub fn test_profile_info() -> Result<String, JsValue> {
+    with_harness(|h| {
+        let (adapter, timestamps) = h.renderer.gpu_report();
+        let canvas = get_canvas()?;
+        Ok(format!(
+            "{{\"adapter\":{},\"gpu_timestamps\":{},\"canvas\":[{},{}],\"git\":\"{}\",\"opt_level\":\"{}\",\"debug_assertions\":{}}}",
+            js_sys::JSON::stringify(&adapter.into())?.as_string().unwrap_or_default(),
+            timestamps,
+            canvas.width(),
+            canvas.height(),
+            env!("GIT_HASH"),
+            if cfg!(debug_assertions) { "dev" } else { "release" },
+            cfg!(debug_assertions),
+        ))
+    })
 }

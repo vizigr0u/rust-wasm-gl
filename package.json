@@ -14,7 +14,9 @@
     "preview": "vite preview",
     "wasm:test": "CARGO_PROFILE_DEV_OPT_LEVEL=3 wasm-pack build --dev ./backend --target web -- --features test-hooks",
     "test:pixels": "playwright test -c e2e/playwright.config.ts",
-    "test:pixels:update": "playwright test -c e2e/playwright.config.ts --update-snapshots"
+    "test:pixels:update": "playwright test -c e2e/playwright.config.ts --update-snapshots",
+    "profile": "node profile/run.mjs",
+    "profile:compare": "node profile/compare.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.57.0",
