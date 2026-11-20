@@ -71,14 +71,14 @@ pub fn chunk_aabb(offset: Vec3) -> (Vec3, Vec3) {
 
 /// Split draws by frustum. `None` keeps everything. Also returns the offsets of the
 /// culled chunks (once per chunk) for debug boxes.
-pub fn cull_draws(draws: Vec<ChunkDraw>, frustum: Option<&Frustum>) -> (Vec<ChunkDraw>, Vec<Vec3>) {
+pub fn cull_draws(draws: &[ChunkDraw], frustum: Option<&Frustum>) -> (Vec<ChunkDraw>, Vec<Vec3>) {
     let Some(f) = frustum else {
-        return (draws, Vec::new());
+        return (draws.to_vec(), Vec::new());
     };
     let mut visible = Vec::with_capacity(draws.len());
     let mut culled: Vec<Vec3> = Vec::new();
     let mut last: Option<(ChunkPos, bool)> = None;
-    for d in draws {
+    for &d in draws {
         let vis = match last {
             Some((c, v)) if c == d.chunk => v,
             _ => {
@@ -107,6 +107,32 @@ fn dist2(p: ChunkPos, player: ChunkPos) -> i64 {
     let d = p.as_vec() - player.as_vec();
     let d = d.as_i64vec3();
     d.x * d.x + d.y * d.y + d.z * d.z
+}
+
+/// Unculled draw list, rebuilt only when the player chunk changes or the
+/// chunk set changes (`invalidate`).
+#[derive(Default)]
+pub struct DrawListCache {
+    key: Option<ChunkPos>,
+    draws: Vec<ChunkDraw>,
+}
+
+impl DrawListCache {
+    pub fn invalidate(&mut self) {
+        self.key = None;
+    }
+
+    pub fn get(
+        &mut self,
+        chunks: impl Iterator<Item = (ChunkPos, SideRanges)>,
+        player_chunk: ChunkPos,
+    ) -> &[ChunkDraw] {
+        if self.key != Some(player_chunk) {
+            self.draws = build_draw_list(chunks, player_chunk);
+            self.key = Some(player_chunk);
+        }
+        &self.draws
+    }
 }
 
 /// Visible draws, front to back (squared chunk distance to the player, then
@@ -182,6 +208,30 @@ mod tests {
     }
 
     #[test]
+    fn cache_matches_fresh_build() {
+        let r = [(0, 1); 6];
+        let mut set: Vec<(ChunkPos, SideRanges)> = Vec::new();
+        let mut cache = DrawListCache::default();
+        let mut player: ChunkPos = ivec3(0, 0, 0).into();
+        for step in 0..6 {
+            match step {
+                0 | 1 => set.push((ivec3(step + 1, 0, 0).into(), r)),
+                2 => player = ivec3(2, 0, 0).into(),
+                3 => {
+                    set.remove(0);
+                }
+                4 => player = ivec3(-1, 0, 1).into(),
+                _ => set.push((ivec3(5, 0, 5).into(), r)),
+            }
+            if matches!(step, 0 | 1 | 3 | 5) {
+                cache.invalidate();
+            }
+            let fresh = build_draw_list(set.iter().copied(), player);
+            assert_eq!(cache.get(set.iter().copied(), player), &fresh[..]);
+        }
+    }
+
+    #[test]
     fn cull_splits_visible_and_culled() {
         let f = crate::playerview::PlayerView::new().frustum(Vec3::ZERO);
         let r = [(0, 1); 6];
@@ -189,10 +239,10 @@ mod tests {
         let chunks = [ivec3(3, 0, 0), ivec3(-3, 0, 0)].map(|v| (v.into(), r));
         let all = build_draw_list(chunks.clone().into_iter(), ivec3(3, 0, 0).into());
         let n = all.len();
-        let (vis, culled) = cull_draws(all, None);
+        let (vis, culled) = cull_draws(&all, None);
         assert_eq!((vis.len(), culled.len()), (n, 0));
         let draws = build_draw_list(chunks.into_iter(), player);
-        let (vis, culled) = cull_draws(draws, Some(&f));
+        let (vis, culled) = cull_draws(&draws, Some(&f));
         assert!(vis.iter().all(|d| d.chunk.as_vec().x == 3));
         assert!(!vis.is_empty());
         assert_eq!(culled, vec![Vec3::new(-48.0, 0.0, 0.0)]);

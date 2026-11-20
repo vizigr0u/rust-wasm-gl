@@ -12,7 +12,7 @@ use crate::world::{ChunkDrawData, ChunkPos};
 use voxel_core::gpu::{
     quad_indices, DrawEntry, DrawList, RangeAllocator, SlotAllocator, MAX_QUADS_PER_DRAW,
 };
-use voxel_core::render::{build_draw_list, cull_draws, pack_sides, SideRanges};
+use voxel_core::render::{cull_draws, pack_sides, DrawListCache, SideRanges};
 
 /// Initial arena size in quads (4 B each = 8 MB).
 const ARENA_QUADS: u32 = 2 << 20;
@@ -231,6 +231,7 @@ pub struct Renderer {
     arena: wgpu::Buffer,
     alloc: RangeAllocator,
     draw_list: DrawList,
+    draw_cache: DrawListCache,
     /// Bytes written to the arena since the last `render`.
     uploaded_bytes: u64,
     draw_calls: u32,
@@ -364,6 +365,7 @@ impl Renderer {
             arena,
             alloc: RangeAllocator::new(ARENA_QUADS),
             draw_list: DrawList::default(),
+            draw_cache: DrawListCache::default(),
             uploaded_bytes: 0,
             draw_calls: 0,
             culled_boxes: Vec::new(),
@@ -501,6 +503,7 @@ impl Renderer {
         let slot = self.chunk_slots.alloc();
         self.ensure_chunk_slots();
         self.write_chunk_entry(slot, pos);
+        self.draw_cache.invalidate();
         self.gpu_chunks.insert(
             pos,
             GpuChunk {
@@ -513,6 +516,7 @@ impl Renderer {
 
     pub fn remove_chunk(&mut self, pos: ChunkPos) {
         if let Some(c) = self.gpu_chunks.remove(&pos) {
+            self.draw_cache.invalidate();
             self.alloc.free(c.range);
             self.chunk_slots.free(c.slot);
         }
@@ -581,7 +585,7 @@ impl Renderer {
         self.queue.write_buffer(&cp.globals_buf, 0, &globals);
 
         // Floating origin: each chunk's offset from the player's chunk (exact in f32).
-        let draws = build_draw_list(
+        let draws = self.draw_cache.get(
             self.gpu_chunks.iter().map(|(p, c)| (*p, c.side_ranges)),
             frame.player_chunk,
         );
