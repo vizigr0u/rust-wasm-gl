@@ -97,7 +97,7 @@ impl ObjectPipelines {
                     format: depth_format,
                     depth_write_enabled: Some(depth),
                     depth_compare: Some(if depth {
-                        wgpu::CompareFunction::Less
+                        wgpu::CompareFunction::Greater
                     } else {
                         wgpu::CompareFunction::Always
                     }),

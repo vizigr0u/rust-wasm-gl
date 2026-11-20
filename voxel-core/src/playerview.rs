@@ -67,7 +67,7 @@ impl PlayerView {
     }
 
     pub fn projection(&self) -> Mat4 {
-        glam::camera::rh::proj::directx::perspective(
+        crate::camera::reversed_perspective(
             PLAYER_FOV_Y_DEGREES.to_radians(),
             self.aspect,
             PLAYER_NEAR,

@@ -41,12 +41,8 @@ mod tests {
     /// Eye at origin looking +X, 90 degree fov, near 1, far 100.
     fn frustum() -> Frustum {
         let view = glam::camera::rh::view::look_at_mat4(Vec3::ZERO, Vec3::X, Vec3::Y);
-        let proj = glam::camera::rh::proj::directx::perspective(
-            std::f32::consts::FRAC_PI_2,
-            1.0,
-            1.0,
-            100.0,
-        );
+        let proj =
+            crate::camera::reversed_perspective(std::f32::consts::FRAC_PI_2, 1.0, 1.0, 100.0);
         Frustum::from_view_proj(proj * view)
     }
 
@@ -63,6 +59,36 @@ mod tests {
     fn in_front_visible_behind_culled() {
         assert!(visible(Vec3::new(10.0, 0.0, 0.0), 1.0));
         assert!(!visible(Vec3::new(-10.0, 0.0, 0.0), 1.0));
+    }
+
+    #[test]
+    fn reversed_and_standard_z_give_same_planes() {
+        let view = glam::camera::rh::view::look_at_mat4(Vec3::ZERO, Vec3::X, Vec3::Y);
+        let std_proj = glam::camera::rh::proj::directx::perspective(
+            std::f32::consts::FRAC_PI_2,
+            1.0,
+            1.0,
+            100.0,
+        );
+        let a = Frustum::from_view_proj(std_proj * view);
+        let b = frustum();
+        for x in [-10.0, 0.5, 1.0, 50.0, 98.0, 99.5, 101.0, 120.0] {
+            for y in [-200.0, -3.0, 0.0, 3.0, 200.0] {
+                let (lo, hi) = cube(Vec3::new(x, y, 0.0), 0.4);
+                assert_eq!(a.intersects_aabb(lo, hi), b.intersects_aabb(lo, hi));
+            }
+        }
+    }
+
+    #[test]
+    fn reversed_z_maps_near_to_one_far_to_zero() {
+        let p = crate::camera::reversed_perspective(1.0, 1.0, 1.0, 100.0);
+        let ndc = |d: f32| {
+            let c = p * Vec4::new(0.0, 0.0, -d, 1.0);
+            c.z / c.w
+        };
+        assert!((ndc(1.0) - 1.0).abs() < 1e-5);
+        assert!(ndc(100.0).abs() < 1e-5);
     }
 
     #[test]
@@ -92,12 +118,8 @@ mod tests {
             Vec3::new(1.0, 1.0, 0.0).normalize(),
             Vec3::Y,
         );
-        let proj = glam::camera::rh::proj::directx::perspective(
-            std::f32::consts::FRAC_PI_2,
-            1.0,
-            1.0,
-            100.0,
-        );
+        let proj =
+            crate::camera::reversed_perspective(std::f32::consts::FRAC_PI_2, 1.0, 1.0, 100.0);
         let f = Frustum::from_view_proj(proj * view);
         let (a, b) = cube(Vec3::new(10.0, -10.0, 0.0), 1.0);
         assert!(!f.intersects_aabb(a, b));

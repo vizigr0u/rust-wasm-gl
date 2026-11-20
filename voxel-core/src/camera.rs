@@ -95,14 +95,14 @@ impl OrbitCamera {
     }
 }
 
-/// Right-handed perspective, clip-space z in 0..1 (WebGPU).
+/// Right-handed reversed-Z perspective (near -> z=1, far -> z=0), clip-space z in 0..1 (WebGPU).
+/// Pair with depth clear 0.0 and `CompareFunction::Greater`.
+pub fn reversed_perspective(fov_y: f32, aspect: f32, near: f32, far: f32) -> Mat4 {
+    glam::camera::rh::proj::directx::perspective(fov_y, aspect, far, near)
+}
+
 pub fn projection(aspect: f32) -> Mat4 {
-    glam::camera::rh::proj::directx::perspective(
-        f32::to_radians(FOV_Y_DEGREES),
-        aspect,
-        NEAR_VIEW,
-        FAR_VIEW,
-    )
+    reversed_perspective(f32::to_radians(FOV_Y_DEGREES), aspect, NEAR_VIEW, FAR_VIEW)
 }
 
 #[cfg(test)]
