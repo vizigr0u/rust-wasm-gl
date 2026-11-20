@@ -10,6 +10,10 @@ if (!(window as any).__RWG_TEST__) {
   (window as any).__meshWorker = new Worker(new URL('./mesh-worker.ts', import.meta.url), {
     type: 'module',
   });
+  // ?trace: the worker emits its own DevTools timing entries.
+  if (new URLSearchParams(location.search).has('trace')) {
+    (window as any).__meshWorker.postMessage({ trace: true });
+  }
 }
 
 init().then(() => {

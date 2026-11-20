@@ -43,7 +43,6 @@ fn start() -> Result<(), JsValue> {
         return Ok(());
     }
     utils::set_panic_hook();
-    tracing_wasm::set_as_global_default();
 
     init_log();
 

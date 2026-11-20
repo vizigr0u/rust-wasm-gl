@@ -783,6 +783,7 @@ impl Renderer {
             pass_ms: t3 - t2,
             egui_ms: t4 - t3,
             submit_ms: t5 - t4,
+            marks: [t0, t1, t2, t3, t4, t5],
         };
     }
 

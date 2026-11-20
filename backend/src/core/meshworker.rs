@@ -7,6 +7,8 @@ use voxel_core::world::{mesh_input, MeshExecutor, MeshJob, MeshResult};
 use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{MessageEvent, Worker};
 
+use crate::utils::trace::{Span, Track};
+
 /// Worker entry point (called from `mesh-worker.ts`): `encode_mesh_input` bytes in, quad words out.
 #[wasm_bindgen]
 pub fn mesh_job(input: &[u8]) -> Vec<u32> {
@@ -37,6 +39,7 @@ impl WorkerMesher {
         let results: Rc<RefCell<Vec<MeshResult>>> = Rc::default();
         let sink = results.clone();
         let on_message = Closure::<dyn FnMut(MessageEvent)>::new(move |e: MessageEvent| {
+            let _s = Span::new("mesh result", Track::World);
             let data = e.data();
             let (Ok(id), Ok(out)) = (
                 Reflect::get(&data, &"id".into()),

@@ -65,3 +65,21 @@ Tune with `--min-effect PCT`, `--alpha P`, `--verbose` (show every row).
 - Run on an idle machine. Host `load1` is recorded in the JSON. Use `--runs 5` for small effects.
 - Viewport defaults to 640x360 (`--size WxH`): SwiftShader fill cost scales with pixels.
 - A scenario change invalidates baselines: names are matched, contents are not.
+
+## DevTools tracing
+
+Frame phases show up as custom tracks in the Chrome Performance panel. Opt-in: open the page with
+`?trace` (e.g. `/?trace`). Without it nothing is emitted and no extra JS calls or clock reads happen.
+
+Record: DevTools > Performance > record a few seconds > look for the **Engine** group (needs a
+recent Chrome; Firefox ignores the track arguments and shows no tracks).
+
+| Track | Entries |
+|---|---|
+| Frame | `frame` = whole tick |
+| World | `script` (input + update), `upload` (arena uploads), `ui` (debug UI build), `textures`, `world.update` (streaming + queueing mesh jobs), `mesh result` (worker message decode) |
+| Render | `acquire`, `prepare`, `pass` (main pass encode), `submit`. The gap between `pass` and `submit` is the egui pass. |
+| Mesher (worker thread) | `mesh` = one meshing job |
+
+Code: `backend/src/utils/trace.rs` (`entry`, `Span`). Frame phases reuse the `performance.now()`
+marks the renderer already takes (`RenderStats::marks`).

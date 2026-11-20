@@ -9,7 +9,10 @@ use crate::{
     gui::{EguiBackend, FpsDisplay, FrameTimes},
     objects::{gizmo_model, player_model, Player},
     render::{FrameInput, RenderStats, Renderer, TextureId, UiFrame},
-    utils::performance_now,
+    utils::{
+        performance_now,
+        trace::{self, Track},
+    },
     world::{
         Chunk, ChunkPos, GeneratorV0, InlineMesher, MeshExecutor, SingleBlockGenerator, World,
         WorldGenerator,
@@ -311,8 +314,11 @@ impl Game {
 
         self.handle_inputs(&mut gfx.egui);
 
-        self.texture_loader
-            .tick(|id, img, layers| renderer.load_texture(id, img, layers))?;
+        {
+            let _s = trace::Span::new("textures", Track::World);
+            self.texture_loader
+                .tick(|id, img, layers| renderer.load_texture(id, img, layers))?;
+        }
         self.update(renderer);
 
         self.update_gui(&mut gfx.egui);
@@ -339,6 +345,27 @@ impl Game {
         self.last_times = times;
         self.fps_display.update_fps_report(start, times);
 
+        if trace::enabled() {
+            let m = stats.marks;
+            let script_end = start + times.script;
+            trace::entry("frame", start, end, Track::Frame);
+            trace::entry("script", start, script_end, Track::World);
+            trace::entry(
+                "upload",
+                script_end,
+                script_end + self.upload_ms,
+                Track::World,
+            );
+            if !self.skip_render {
+                // `ui` runs right before `Renderer::render`, so it ends at mark t0.
+                trace::entry("ui", m[0] - self.ui_ms, m[0], Track::World);
+                trace::entry("acquire", m[0], m[1], Track::Render);
+                trace::entry("prepare", m[1], m[2], Track::Render);
+                trace::entry("pass", m[2], m[3], Track::Render);
+                trace::entry("submit", m[4], m[5], Track::Render);
+            }
+        }
+
         Ok(())
     }
 
@@ -351,7 +378,10 @@ impl Game {
         if !self.is_paused {
             self.player.update(&self.time);
             let player_chunk_pos = self.player.get_position().chunk_pos();
-            let changes = self.world.update(player_chunk_pos);
+            let changes = {
+                let _s = trace::Span::new("world.update", Track::World);
+                self.world.update(player_chunk_pos)
+            };
             let t = performance_now();
             for pos in changes.removed {
                 self.upload_queue.remove(pos);

@@ -86,6 +86,8 @@ pub struct RenderStats {
     pub egui_ms: f64,
     /// CPU ms of the last `render`: submit + present (webgpu only).
     pub submit_ms: f64,
+    /// Absolute `performance.now()` marks t0..t5: start, acquired, prepared, pass, egui, submitted.
+    pub marks: [f64; 6],
 }
 
 impl From<&str> for RenderError {
