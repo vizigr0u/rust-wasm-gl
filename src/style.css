@@ -28,9 +28,147 @@ body {
   background: #000;
 }
 
-canvas {
+#canvas {
   display: block;
   width: 100vw;
   height: 100dvh;
   outline: none;
+}
+
+/* ---- debug overlay (src/debug-overlay.ts) ---- */
+#rwg-debug {
+  font: 14px monospace;
+  color: #fff;
+}
+
+#rwg-debug .info {
+  margin: 0;
+  padding: 4px 6px;
+  background: rgba(20, 20, 20, 0.8);
+  backdrop-filter: blur(8px);
+  white-space: pre;
+  contain: layout paint style;
+  will-change: transform;
+}
+
+#rwg-debug .pause {
+  background: rgba(20, 20, 20, 0.92);
+  backdrop-filter: blur(12px);
+  padding: 12px 16px;
+  pointer-events: auto;
+}
+
+#rwg-debug .pause[hidden],
+#rwg-debug .graph-wrap[hidden] {
+  display: none;
+}
+
+#rwg-debug .graph-wrap {
+  position: relative;
+}
+
+#rwg-debug .graph {
+  display: block;
+  width: 100%;
+  height: 130px;
+}
+
+#rwg-debug .legend {
+  padding: 2px 4px;
+  background: rgba(20, 20, 20, 0.8);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  pointer-events: none;
+  font-size: 14px;
+  text-shadow: 0 0 2px #000, 0 0 2px #000;
+  contain: layout paint style;
+}
+
+#rwg-debug .legend .item {
+  color: var(--c);
+  white-space: nowrap;
+}
+
+#rwg-debug .legend .sw {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  background: var(--c);
+}
+
+#rwg-debug .legend .val {
+  display: inline-block;
+  min-width: 5ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#rwg-debug.docked .graph-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+#rwg-debug .pause .title {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+#rwg-debug .pause label {
+  display: block;
+}
+
+#rwg-debug .pause .row {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+#rwg-debug.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#rwg-debug.overlay .info {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+#rwg-debug.overlay .pause {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+#rwg-debug.overlay .graph-wrap {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+}
+
+body.debug-docked {
+  display: flex;
+  flex-direction: column;
+}
+
+body.debug-docked #canvas {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+#rwg-debug.docked {
+  flex: none;
+  height: 230px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  overflow: hidden;
+  background: #111;
+  pointer-events: auto;
 }

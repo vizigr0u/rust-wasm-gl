@@ -53,12 +53,6 @@ pub struct FrameInput {
     pub culled_boxes: bool,
 }
 
-/// Tessellated egui output for one frame.
-pub struct UiFrame {
-    pub textures_delta: egui::TexturesDelta,
-    pub primitives: Vec<egui::ClippedPrimitive>,
-}
-
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderStats {
     /// Draw calls issued by the last `render`.
@@ -82,12 +76,10 @@ pub struct RenderStats {
     pub acquire_ms: f64,
     /// CPU ms of the last `render`: encoding the main 3D pass.
     pub pass_ms: f64,
-    /// CPU ms of the last `render`: egui buffers, pass and paint.
-    pub egui_ms: f64,
     /// CPU ms of the last `render`: submit + present (webgpu only).
     pub submit_ms: f64,
-    /// Absolute `performance.now()` marks t0..t5: start, acquired, prepared, pass, egui, submitted.
-    pub marks: [f64; 6],
+    /// Absolute `performance.now()` marks t0..t4: start, acquired, prepared, pass, submitted.
+    pub marks: [f64; 5],
 }
 
 impl From<&str> for RenderError {

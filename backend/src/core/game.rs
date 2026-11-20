@@ -1,14 +1,13 @@
-use egui::RichText;
 use fastrand::Rng;
 use glam::{vec3, Vec3};
 use voxel_core::{gpu::UploadQueue, math::Frustum};
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
 
 use crate::{
     graphics::{Camera, TextureLoader},
-    gui::{EguiBackend, FpsDisplay, FrameTimes},
+    gui::{DebugOverlay, FrameStats, FrameTimes},
     objects::{gizmo_model, player_model, Player},
-    render::{FrameInput, RenderStats, Renderer, TextureId, UiFrame},
+    render::{FrameInput, RenderStats, Renderer, TextureId},
     utils::{
         performance_now,
         trace::{self, Track},
@@ -18,6 +17,10 @@ use crate::{
         WorldGenerator,
     },
 };
+
+use std::cell::RefCell;
+
+use wasm_bindgen::prelude::wasm_bindgen;
 
 use super::{meshworker::WorkerMesher, HandleInputs, InputEventType, InputSystem, Time};
 
@@ -57,7 +60,7 @@ pub struct SceneConfig {
     pub camera_offset: Vec3,
     pub show_player: bool,
     pub show_gizmo: bool,
-    pub show_egui: bool,
+    pub show_overlay: bool,
     /// Initial state of the culling toggle and the frustum/culled-box overlays.
     pub frustum_culling: bool,
     pub debug_overlays: bool,
@@ -72,7 +75,7 @@ impl Default for SceneConfig {
             camera_offset: vec3(-10.0, 5.0, 0.0),
             show_player: true,
             show_gizmo: true,
-            show_egui: true,
+            show_overlay: true,
             frustum_culling: true,
             debug_overlays: true,
         }
@@ -87,6 +90,19 @@ struct DebugToggles {
     frustum_culling: bool,
     show_frustum: bool,
     show_culled_boxes: bool,
+    /// Frame-time graph in the debug overlay.
+    show_graph: bool,
+}
+
+thread_local! {
+    /// Toggles requested from the DOM overlay, drained at the start of each tick.
+    static PENDING_TOGGLES: RefCell<Vec<(String, bool)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Called by `src/debug-overlay.ts` when the user flips a checkbox or the graph button.
+#[wasm_bindgen]
+pub fn debug_set_toggle(name: String, on: bool) {
+    PENDING_TOGGLES.with(|q| q.borrow_mut().push((name, on)));
 }
 
 fn make_generator(config: &SceneConfig, _rng: Rng) -> Generator {
@@ -96,17 +112,11 @@ fn make_generator(config: &SceneConfig, _rng: Rng) -> Generator {
     }
 }
 
-/// Game-side state that exists once textures are ready (the GPU side lives in `Renderer`).
-#[derive(Debug)]
-struct Gfx {
-    egui: EguiBackend,
-}
-
 #[derive(Debug)]
 enum Stage {
     Loading,
     WaitingForTextures,
-    Running(Box<Gfx>),
+    Running,
 }
 
 #[derive(Debug)]
@@ -132,10 +142,12 @@ pub struct Game {
     gui_state: GuiState,
     toggles: DebugToggles,
     player: Player,
-    fps_display: FpsDisplay,
+    frame_stats: FrameStats,
+    overlay: DebugOverlay,
+    chart_buf: Vec<f64>,
     /// ms spent in chunk upload/remove during this tick's `update`.
     upload_ms: f64,
-    /// ms spent building egui this tick.
+    /// ms spent updating the DOM overlay; reported with the next tick (it runs after the stats).
     ui_ms: f64,
     /// Timings of the last running tick (profiling hooks read these).
     last_times: FrameTimes,
@@ -143,22 +155,12 @@ pub struct Game {
 
 #[derive(Debug)]
 struct GuiState {
-    show_pause_menu: bool,
     show_info: bool,
-}
-
-impl GuiState {
-    pub fn eats_input(&self) -> bool {
-        self.show_pause_menu
-    }
 }
 
 impl Default for GuiState {
     fn default() -> Self {
-        Self {
-            show_pause_menu: false,
-            show_info: true,
-        }
+        Self { show_info: true }
     }
 }
 
@@ -185,6 +187,7 @@ impl Game {
             frustum_culling: config.frustum_culling,
             show_frustum: config.debug_overlays,
             show_culled_boxes: false,
+            show_graph: false,
         };
         let game = Game {
             seed,
@@ -203,7 +206,9 @@ impl Game {
             gui_state: GuiState::default(),
             toggles,
             player: Player::new(vec3(0.0, 16.0, 0.0)),
-            fps_display: FpsDisplay::new(),
+            frame_stats: FrameStats::new(),
+            overlay: DebugOverlay::new(),
+            chart_buf: Vec::new(),
             upload_ms: 0.0,
             ui_ms: 0.0,
             last_times: FrameTimes::default(),
@@ -214,7 +219,7 @@ impl Game {
 
     #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     pub fn is_running(&self) -> bool {
-        matches!(self.stage, Stage::Running(_))
+        matches!(self.stage, Stage::Running)
     }
 
     /// Running, and nothing is left to stream, mesh or upload.
@@ -234,13 +239,14 @@ impl Game {
     }
 
     /// Flip a debug/scene switch by name. Returns false for an unknown name.
-    #[cfg_attr(not(feature = "test-hooks"), allow(dead_code))]
     pub fn set_toggle(&mut self, name: &str, on: bool) -> bool {
         match name {
             "frustum_culling" => self.toggles.frustum_culling = on,
             "player_cam_view" => self.toggles.player_cam_view = on,
             "show_frustum" => self.toggles.show_frustum = on,
-            "egui" => self.config.show_egui = on,
+            "show_culled_boxes" => self.toggles.show_culled_boxes = on,
+            "graph" => self.toggles.show_graph = on,
+            "overlay" => self.config.show_overlay = on,
             _ => return false,
         }
         true
@@ -280,39 +286,33 @@ impl Game {
             return Ok(Stage::WaitingForTextures);
         }
 
-        Ok(Stage::Running(Box::new(Gfx {
-            egui: EguiBackend::new(),
-        })))
+        self.overlay.init(&FrameStats::SERIES);
+        Ok(Stage::Running)
     }
 
     pub fn tick(&mut self, renderer: &mut Renderer, time: f64) -> Result<(), String> {
-        // Take the stage out so Running's Gfx can be borrowed alongside &mut self.
         // On error the game is stuck in Loading, but the error is fatal upstream anyway.
         match std::mem::replace(&mut self.stage, Stage::Loading) {
             Stage::Loading => self.stage = self.tick_loading()?,
             Stage::WaitingForTextures => self.stage = self.tick_waiting_for_textures(renderer)?,
-            Stage::Running(mut gfx) => {
-                let r = self.tick_running(renderer, &mut gfx, time);
-                self.stage = Stage::Running(gfx);
+            Stage::Running => {
+                let r = self.tick_running(renderer, time);
+                self.stage = Stage::Running;
                 r?;
             }
         }
         Ok(())
     }
 
-    fn tick_running(
-        &mut self,
-        renderer: &mut Renderer,
-        gfx: &mut Gfx,
-        time: f64,
-    ) -> Result<(), String> {
+    fn tick_running(&mut self, renderer: &mut Renderer, time: f64) -> Result<(), String> {
         let start = performance_now();
         self.upload_ms = 0.0;
-        self.ui_ms = 0.0;
+        let ui_ms = std::mem::take(&mut self.ui_ms);
 
         self.time.update(time);
 
-        self.handle_inputs(&mut gfx.egui);
+        self.apply_pending_toggles();
+        self.handle_inputs();
 
         {
             let _s = trace::Span::new("textures", Track::World);
@@ -321,11 +321,10 @@ impl Game {
         }
         self.update(renderer);
 
-        self.update_gui(&mut gfx.egui);
         let update_time = performance_now();
 
         if !self.skip_render {
-            self.render(renderer, gfx);
+            self.render(renderer);
         }
         let end = performance_now();
 
@@ -333,17 +332,16 @@ impl Game {
         let times = FrameTimes {
             script: update_time - start - self.upload_ms,
             upload: self.upload_ms,
-            ui: self.ui_ms,
+            ui: ui_ms,
             prepare: stats.prepare_ms,
             acquire: stats.acquire_ms,
             pass: stats.pass_ms,
-            egui: stats.egui_ms,
             submit: stats.submit_ms,
             frame: end - start,
             interval: 0.0,
         };
         self.last_times = times;
-        self.fps_display.update_fps_report(start, times);
+        let refreshed = self.frame_stats.update_fps_report(start, times);
 
         if trace::enabled() {
             let m = stats.marks;
@@ -357,21 +355,56 @@ impl Game {
                 Track::World,
             );
             if !self.skip_render {
-                // `ui` runs right before `Renderer::render`, so it ends at mark t0.
-                trace::entry("ui", m[0] - self.ui_ms, m[0], Track::World);
                 trace::entry("acquire", m[0], m[1], Track::Render);
                 trace::entry("prepare", m[1], m[2], Track::Render);
                 trace::entry("pass", m[2], m[3], Track::Render);
-                trace::entry("submit", m[4], m[5], Track::Render);
+                trace::entry("submit", m[3], m[4], Track::Render);
             }
         }
+
+        self.update_overlay(renderer, refreshed);
 
         Ok(())
     }
 
-    fn update_gui(&mut self, egui: &mut EguiBackend) {
-        self.gui_state.show_pause_menu = self.is_paused;
-        egui.set_time(&self.time);
+    /// Push state to the DOM overlay. Setters skip unchanged values; the info text and graph
+    /// only go out when the stats refreshed (every 10 frames) and the overlay is visible.
+    fn update_overlay(&mut self, renderer: &Renderer, refreshed: bool) {
+        let visible = self.gui_state.show_info && self.config.show_overlay;
+        self.overlay.set_visible(visible);
+        self.overlay.set_paused(self.is_paused);
+        if !(refreshed && visible) {
+            return;
+        }
+        let t = performance_now();
+        let info = self.build_info(renderer.stats());
+        self.overlay.set_info(&info);
+        if self.toggles.show_graph {
+            self.frame_stats.fill_chart(&mut self.chart_buf);
+            self.overlay
+                .set_graph(&self.chart_buf, &self.frame_stats.averages());
+        }
+        let end = performance_now();
+        self.ui_ms = end - t;
+        trace::entry("ui", t, end, Track::World);
+    }
+
+    /// Apply toggles queued by the DOM overlay, then echo the real state back to it.
+    fn apply_pending_toggles(&mut self) {
+        let pending = PENDING_TOGGLES.with(|q| std::mem::take(&mut *q.borrow_mut()));
+        for (name, on) in pending {
+            if !self.set_toggle(&name, on) {
+                log::warn!("unknown debug toggle: {name}");
+            }
+        }
+        let t = self.toggles;
+        self.overlay.set_toggles(&[
+            ("frustum_culling", t.frustum_culling),
+            ("show_frustum", t.show_frustum),
+            ("show_culled_boxes", t.show_culled_boxes),
+            ("player_cam_view", t.player_cam_view),
+            ("graph", t.show_graph),
+        ]);
     }
 
     fn update(&mut self, renderer: &mut Renderer) {
@@ -410,7 +443,7 @@ impl Game {
         self.camera.update(&self.time);
     }
 
-    fn handle_inputs(&mut self, egui: &mut EguiBackend) {
+    fn handle_inputs(&mut self) {
         let inputs = self.input_system.get_inputs();
 
         for event in inputs.get_events() {
@@ -433,16 +466,12 @@ impl Game {
             }
         }
 
-        match self.gui_state.eats_input() {
-            true => egui.handle_inputs(&inputs),
-            false => {
-                // egui gets no input now; drop stale events so they don't replay every frame
-                egui.clear_events();
-                if !self.toggles.player_cam_view {
-                    self.camera.handle_inputs(&inputs);
-                }
-                self.player.handle_inputs(&inputs);
+        // The pause panel is DOM; while paused the game gets no input.
+        if !self.is_paused {
+            if !self.toggles.player_cam_view {
+                self.camera.handle_inputs(&inputs);
             }
+            self.player.handle_inputs(&inputs);
         }
 
         self.input_system.clear_events();
@@ -467,7 +496,7 @@ impl Game {
         renderer.resize(w, h);
     }
 
-    fn render(&mut self, renderer: &mut Renderer, gfx: &mut Gfx) {
+    fn render(&mut self, renderer: &mut Renderer) {
         self.sync_canvas_size(renderer);
 
         let player_chunk = self.player.get_position().chunk_pos();
@@ -495,17 +524,10 @@ impl Game {
             frustum_lines: (t.show_frustum && debug_view).then(|| pv.view_proj(eye).inverse()),
             culled_boxes: t.show_culled_boxes && debug_view && t.frustum_culling,
         };
-        // The info label shows the previous frame's draw stats.
-        let t = performance_now();
-        let ui = self
-            .config
-            .show_egui
-            .then(|| self.build_ui(gfx, renderer.stats()));
-        self.ui_ms = performance_now() - t;
-        renderer.render(&frame, ui);
+        renderer.render(&frame);
     }
 
-    fn build_ui(&mut self, gfx: &mut Gfx, stats: RenderStats) -> UiFrame {
+    fn build_info(&self, stats: RenderStats) -> String {
         let gpu_info = format!(
             "GPU: {} chunks, {} draw calls ({} before merge)\nView: {} (F4)  Frustum: {}/{} chunks, {} quads drawn [culling {}]\narena: {}/{} quads ({:.1}/{:.1} MB), largest free {}\nupload: {:.1} KB/frame, {} queued",
             stats.chunk_buffers,
@@ -524,71 +546,13 @@ impl Game {
             stats.upload_bytes as f64 / 1024.0,
             self.upload_queue.len()
         );
-        {
-            gfx.egui.run_ui(|ctx| {
-                if self.is_paused {
-                    egui::Window::new("PAUSE").show(ctx, |ui| {
-                        ui.label("Game is paused");
-                        ui.checkbox(&mut self.toggles.frustum_culling, "Frustum culling");
-                        ui.checkbox(&mut self.toggles.show_frustum, "Show frustum lines");
-                        ui.checkbox(&mut self.toggles.show_culled_boxes, "Show culled boxes");
-                        ui.checkbox(&mut self.toggles.player_cam_view, "Player camera view (F4)");
-                    });
-                }
-                if self.gui_state.show_info {
-                    // egui::Window::new("Game Info").show(ctx, |ui| {
-                        egui::Area::new(egui::Id::unique("my_area"))
-                            .show(ctx, |ui| {
-                                egui::Frame::new()
-                                .fill(egui::Color32::from_rgba_unmultiplied(20, 20, 20, 100))
-                                .show(ui, |ui| {
-                                    let info = format!(
-                                        "FPS: {}\nRNG seed: {}\ngit rev: {}\nPlayer position: {:?}\nWorld: {}",
-                                        self.fps_display.get_debug_info(),
-                                        self.seed,
-                                        env!("GIT_HASH"),
-                                        self.player.get_position(),
-                                        self.world.get_info(&gpu_info)
-                                    );
-                                    ui.colored_label(
-                                        egui::Color32::WHITE,
-                                        RichText::new(&info).monospace(),
-                                    );
-                                    if self.is_paused {
-                                        ui.horizontal(|ui| {
-                                            if ui.button("Copy").clicked() {
-                                                copy_to_clipboard(&info);
-                                            }
-                                            self.fps_display.graph_button(ui);
-                                        });
-                                    }
-                                    self.fps_display.display(ui);
-                                });
-                        });
-                }
-            })
-        }
-    }
-}
-
-/// Write text to the system clipboard via `navigator.clipboard.writeText`.
-fn copy_to_clipboard(text: &str) {
-    let Some(window) = web_sys::window() else {
-        return;
-    };
-    let clipboard = js_sys::Reflect::get(&window, &"navigator".into())
-        .and_then(|n| js_sys::Reflect::get(&n, &"clipboard".into()))
-        .ok();
-    let write = clipboard.as_ref().and_then(|c| {
-        let f = js_sys::Reflect::get(c, &"writeText".into()).ok()?;
-        f.dyn_into::<js_sys::Function>().ok()
-    });
-    match (clipboard, write) {
-        (Some(c), Some(f)) => {
-            if f.call1(&c, &text.into()).is_err() {
-                log::error!("clipboard write failed");
-            }
-        }
-        _ => log::error!("clipboard not available"),
+        format!(
+            "FPS: {}\nRNG seed: {}\ngit rev: {}\nPlayer position: {:?}\nWorld: {}",
+            self.frame_stats.get_debug_info(),
+            self.seed,
+            env!("GIT_HASH"),
+            self.player.get_position(),
+            self.world.get_info(&gpu_info)
+        )
     }
 }

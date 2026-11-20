@@ -1,5 +1,5 @@
-mod eguibackend;
-mod fpsdisplay;
+mod framestats;
+mod overlay;
 
-pub use eguibackend::EguiBackend;
-pub use fpsdisplay::*;
+pub use framestats::*;
+pub use overlay::DebugOverlay;

@@ -15,7 +15,7 @@ const VERBOSE = argv.includes('--verbose');
 const FAIL = argv.includes('--fail-on-regress');
 const ABS_FLOOR_MS = 0.02; // below this both medians are timer noise
 
-const TIMES = ['frame', 'script', 'upload', 'ui', 'prepare', 'acquire', 'pass', 'egui', 'submit', 'gpu_pass', 'gpu_done'];
+const TIMES = ['frame', 'script', 'upload', 'ui', 'prepare', 'acquire', 'pass', 'submit', 'gpu_pass', 'gpu_done'];
 const HEADLINE = new Set(['frame', 'script', 'prepare', 'pass', 'submit', 'gpu_pass', 'gpu_done']);
 const COUNTERS = ['draw_calls', 'draw_entries_raw', 'chunks_visible', 'chunks_culled', 'quads_drawn', 'upload_bytes', 'chunk_buffers', 'arena_used', 'arena_largest_free', 'wasm_mem_mb'];
 

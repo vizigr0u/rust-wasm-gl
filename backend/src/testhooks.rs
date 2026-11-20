@@ -41,7 +41,7 @@ pub fn is_test_mode() -> bool {
 fn scene_config(name: &str) -> Result<SceneConfig, JsValue> {
     match name {
         "default_spawn" => Ok(SceneConfig {
-            show_egui: false,
+            show_overlay: false,
             frustum_culling: false,
             debug_overlays: false,
             ..SceneConfig::default()
@@ -50,7 +50,7 @@ fn scene_config(name: &str) -> Result<SceneConfig, JsValue> {
             generator: SceneGenerator::SingleBlock,
             show_player: false,
             show_gizmo: false,
-            show_egui: false,
+            show_overlay: false,
             frustum_culling: false,
             debug_overlays: false,
             ..SceneConfig::default()
@@ -174,7 +174,7 @@ pub async fn test_compile_all_shaders() -> Result<Vec<String>, JsValue> {
 
 /// Column order of `test_profile_step`'s result. Times are ms, the rest are counters.
 /// GPU timings come separately from `test_gpu_collect`.
-const PROFILE_FIELDS: [&str; 20] = [
+const PROFILE_FIELDS: [&str; 19] = [
     // CPU timings
     "frame",
     "script",
@@ -183,7 +183,6 @@ const PROFILE_FIELDS: [&str; 20] = [
     "prepare",
     "acquire",
     "pass",
-    "egui",
     "submit",
     // deterministic counters
     "draw_calls",
@@ -223,7 +222,6 @@ pub fn test_profile_step(dt_ms: f64) -> Result<Vec<f64>, JsValue> {
             t.prepare,
             t.acquire,
             t.pass,
-            t.egui,
             t.submit,
             s.draw_calls as f64,
             s.draw_entries_raw as f64,
@@ -240,7 +238,7 @@ pub fn test_profile_step(dt_ms: f64) -> Result<Vec<f64>, JsValue> {
     })
 }
 
-/// Flip a switch: `frustum_culling`, `egui`, `show_frustum`, `player_cam_view`.
+/// Flip a switch: `frustum_culling`, `overlay`, `show_frustum`, `player_cam_view`.
 #[wasm_bindgen]
 pub fn test_set_toggle(name: String, on: bool) -> Result<(), JsValue> {
     with_harness(|h| {

@@ -3,6 +3,13 @@ import './style.css'
 // import viteLogo from '/vite.svg'
 
 import init, * as wasm from '../backend/pkg';
+import { installDebugOverlay } from './debug-overlay';
+
+// Inert until Rust calls window.__rwgDebug. Test mode always overlays (canvas size stays fixed).
+const testMode = !!(window as any).__RWG_TEST__;
+installDebugOverlay((name, on) => (wasm as any).debug_set_toggle?.(name, on), {
+  docked: !testMode && new URLSearchParams(location.search).has('dock'),
+});
 
 // Meshing runs in a worker; the wasm side picks it up from window.__meshWorker.
 // Test mode meshes inline (deterministic frame counts for the pixel specs).

@@ -1,4 +1,4 @@
-//! wgpu renderer (WebGPU only). Port in progress: C6 = egui done.
+//! wgpu renderer (WebGPU only). Port in progress: C6 = DOM overlay replaced egui.
 
 mod gpuprobe;
 mod objects;
@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use web_sys::{HtmlCanvasElement, HtmlImageElement};
 
-use super::{FrameInput, RenderError, RenderStats, TextureId, UiFrame};
+use super::{FrameInput, RenderError, RenderStats, TextureId};
 use crate::world::{ChunkDrawData, ChunkPos};
 use voxel_core::gpu::{
     quad_indices, DrawEntry, DrawList, RangeAllocator, SlotAllocator, MAX_QUADS_PER_DRAW,
@@ -214,7 +214,6 @@ impl ChunkPipeline {
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
 pub struct Renderer {
-    egui_renderer: egui_wgpu::Renderer,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -348,16 +347,7 @@ impl Renderer {
             format,
             DEPTH_FORMAT,
         );
-        let egui_renderer = egui_wgpu::Renderer::new(
-            &device,
-            format,
-            egui_wgpu::RendererOptions {
-                dithering: false,
-                ..Default::default()
-            },
-        );
         Ok(Self {
-            egui_renderer,
             chunk_pipeline,
             objects,
             gpu_chunks: HashMap::new(),
@@ -633,7 +623,7 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, frame: &FrameInput, ui: Option<UiFrame>) {
+    pub fn render(&mut self, frame: &FrameInput) {
         let t0 = crate::utils::performance_now();
         use wgpu::CurrentSurfaceTexture as Cst;
         let tex = match self.surface.get_current_texture() {
@@ -718,55 +708,10 @@ impl Renderer {
         }
         self.probe.resolve(&mut enc);
         let t3 = crate::utils::performance_now();
-        let mut extra = Vec::new();
-        if let Some(ui) = &ui {
-            for (id, deltas) in &ui.textures_delta.set {
-                for delta in deltas {
-                    self.egui_renderer
-                        .update_texture(&self.device, &self.queue, *id, delta);
-                }
-            }
-            let screen = egui_wgpu::ScreenDescriptor {
-                size_in_pixels: [self.config.width, self.config.height],
-                pixels_per_point: 1.0,
-            };
-            extra = self.egui_renderer.update_buffers(
-                &self.device,
-                &self.queue,
-                &mut enc,
-                &ui.primitives,
-                &screen,
-            );
-            let mut pass = enc
-                .begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("egui"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &view,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    ..Default::default()
-                })
-                .forget_lifetime();
-            self.egui_renderer
-                .render(&mut pass, &ui.primitives, &screen);
-        }
-        let t4 = crate::utils::performance_now();
-        self.queue.submit(extra.into_iter().chain([enc.finish()]));
+        self.queue.submit([enc.finish()]);
         self.queue.present(tex);
-        self.probe.after_submit(&self.queue, t4);
-        if let Some(mut ui) = ui {
-            for id in &ui.textures_delta.free {
-                self.egui_renderer.free_texture(id);
-            }
-            // epaint's Drop debug-asserts the delta is empty; mark it handled.
-            ui.textures_delta.clear();
-        }
-        let t5 = crate::utils::performance_now();
+        let t4 = crate::utils::performance_now();
+        self.probe.after_submit(&self.queue, t3);
         self.times = RenderStats {
             draw_calls: 0,
             chunk_buffers: 0,
@@ -781,9 +726,8 @@ impl Renderer {
             acquire_ms: t1 - t0,
             prepare_ms: t2 - t1,
             pass_ms: t3 - t2,
-            egui_ms: t4 - t3,
-            submit_ms: t5 - t4,
-            marks: [t0, t1, t2, t3, t4, t5],
+            submit_ms: t4 - t3,
+            marks: [t0, t1, t2, t3, t4],
         };
     }
 

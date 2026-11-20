@@ -35,7 +35,7 @@ Times in ms, per frame.
 
 - CPU, from `performance.now()` inside wasm: `frame` (whole tick), `script` (input + world update
   + meshing, without uploads), `upload`, `ui`, `prepare` (draw list + per-frame buffers), `acquire`,
-  `pass` (main pass encode), `egui`, `submit`.
+  `pass` (main pass encode), `submit`. `ui` = Rust cost of updating the DOM overlay.
 - GPU: `gpu_pass` (timestamp queries around the main pass), `gpu_done` (submit -> work done,
   includes queue latency). One frame is in flight at a time (`test_gpu_idle` after each frame), so
   they are not polluted by a backlog. Not part of the CPU `frame` time.
@@ -78,7 +78,7 @@ recent Chrome; Firefox ignores the track arguments and shows no tracks).
 |---|---|
 | Frame | `frame` = whole tick |
 | World | `script` (input + update), `upload` (arena uploads), `ui` (debug UI build), `textures`, `world.update` (streaming + queueing mesh jobs), `mesh result` (worker message decode) |
-| Render | `acquire`, `prepare`, `pass` (main pass encode), `submit`. The gap between `pass` and `submit` is the egui pass. |
+| Render | `acquire`, `prepare`, `pass` (main pass encode), `submit`. |
 | Mesher (worker thread) | `mesh` = one meshing job |
 
 Code: `backend/src/utils/trace.rs` (`entry`, `Span`). Frame phases reuse the `performance.now()`

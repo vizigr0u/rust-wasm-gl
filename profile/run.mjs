@@ -112,7 +112,7 @@ async function runScenario(browser, sc, frames) {
   await page.addInitScript(() => (window.__RWG_TEST__ = true));
   await page.goto(url);
   await page.waitForFunction(() => window.__rwg?.test_start);
-  // egui off unless the scenario turns it on: isolates the world renderer.
+  // overlay off unless the scenario turns it on: isolates the world renderer.
   await page.evaluate(() => window.__rwg.test_start('default_spawn'));
   const res = await page.evaluate(pageRun, [{ ...sc, frames }, WARMUP_FRAMES, DT_MS]);
   // after the frames: the canvas only gets its real size on the first render

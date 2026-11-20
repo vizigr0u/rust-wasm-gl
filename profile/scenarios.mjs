@@ -65,10 +65,10 @@ export const SCENARIOS = [
   },
   {
     name: 'ui_near',
-    desc: 'near view with egui on: UI build + egui pass cost',
+    desc: 'near view with debug overlay on: info string build + JS push cost',
     frames: 240,
     pose: { fixed: NEAR },
     move: null,
-    toggles: { egui: true },
+    toggles: { overlay: true },
   },
 ];
