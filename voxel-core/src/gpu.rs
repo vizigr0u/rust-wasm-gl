@@ -122,15 +122,26 @@ impl SlotAllocator {
     }
 }
 
-/// One `draw(0..4, first..first+count)`, drawn with bind slot `group`.
+/// Longest run of quads in one draw; the static index buffer covers this many.
+pub const MAX_QUADS_PER_DRAW: u32 = 4096;
+
+/// Index buffer for `max_quads` quads: `4k + {0,1,2, 2,1,3}` (the strip `0,1,2,3` as triangles).
+pub fn quad_indices(max_quads: u32) -> Vec<u16> {
+    assert!(max_quads * 4 <= 1 << 16, "u16 index overflow");
+    (0..max_quads as u16)
+        .flat_map(|k| [0u16, 1, 2, 2, 1, 3].map(|i| 4 * k + i))
+        .collect()
+}
+
+/// One draw of quads `first..first+count`, with draw slot `slot` (`chunk_slot * 6 + side`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DrawEntry {
-    pub group: u32,
+    pub slot: u32,
     pub first: u32,
     pub count: u32,
 }
 
-/// Draw entries; adjacent ones in the same group merge into one.
+/// Draw entries; adjacent ones in the same slot merge into one, never above `MAX_QUADS_PER_DRAW`.
 #[derive(Debug, Default)]
 pub struct DrawList {
     pub entries: Vec<DrawEntry>,
@@ -144,15 +155,28 @@ impl DrawList {
         self.pushed = 0;
     }
 
-    pub fn push(&mut self, e: DrawEntry, merge: bool) {
+    pub fn push(&mut self, mut e: DrawEntry, merge: bool) {
         self.pushed += 1;
         if merge {
             if let Some(p) = self.entries.last_mut() {
-                if p.group == e.group && p.first + p.count == e.first {
-                    p.count += e.count;
-                    return;
+                if p.slot == e.slot && p.first + p.count == e.first {
+                    let take = e.count.min(MAX_QUADS_PER_DRAW - p.count);
+                    p.count += take;
+                    e.first += take;
+                    e.count -= take;
+                    if e.count == 0 {
+                        return;
+                    }
                 }
             }
+        }
+        while e.count > MAX_QUADS_PER_DRAW {
+            self.entries.push(DrawEntry {
+                count: MAX_QUADS_PER_DRAW,
+                ..e
+            });
+            e.first += MAX_QUADS_PER_DRAW;
+            e.count -= MAX_QUADS_PER_DRAW;
         }
         self.entries.push(e);
     }
@@ -266,11 +290,7 @@ mod tests {
     #[test]
     fn draw_list_merges_adjacent_same_group_only() {
         let mut l = DrawList::default();
-        let e = |group, first, count| DrawEntry {
-            group,
-            first,
-            count,
-        };
+        let e = |slot, first, count| DrawEntry { slot, first, count };
         l.push(e(0, 0, 4), true);
         l.push(e(0, 4, 2), true); // adjacent -> merged
         l.push(e(0, 10, 1), true); // gap
@@ -281,6 +301,32 @@ mod tests {
         l.push(e(0, 0, 4), false);
         l.push(e(0, 4, 2), false);
         assert_eq!(l.entries.len(), 2);
+    }
+
+    #[test]
+    fn draw_list_splits_long_runs() {
+        let m = MAX_QUADS_PER_DRAW;
+        let e = |first, count| DrawEntry {
+            slot: 3,
+            first,
+            count,
+        };
+        let mut l = DrawList::default();
+        l.push(e(0, m + 10), true);
+        assert_eq!(l.entries, vec![e(0, m), e(m, 10)]);
+        l.push(e(m + 10, m), true); // tops up the tail, rest spills
+        assert_eq!(l.entries, vec![e(0, m), e(m, m), e(2 * m, 10)]);
+        assert!(l.entries.iter().all(|d| d.count <= m));
+    }
+
+    #[test]
+    fn quad_indices_pattern() {
+        let i = quad_indices(2);
+        assert_eq!(i, vec![0, 1, 2, 2, 1, 3, 4, 5, 6, 6, 5, 7]);
+        assert_eq!(
+            quad_indices(MAX_QUADS_PER_DRAW).len() as u32,
+            6 * MAX_QUADS_PER_DRAW
+        );
     }
 
     #[test]

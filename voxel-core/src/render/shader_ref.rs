@@ -64,6 +64,43 @@ pub fn chunk_vert_ref(
     (p * size + position + chunk_offset, uvs * uv_scale, depth)
 }
 
+/// Quad word, corner of the base quad (strip order) and draw slot for a pulled vertex.
+/// Mirrors `vs_main` in `chunk.wgsl`: `vertex_index` is `base_vertex + index value`
+/// (`4 * quad + corner`), `instance_index` is the draw slot `chunk_slot * 6 + side`.
+pub fn chunk_vert_pulled(
+    vertex_index: u32,
+    instance_index: u32,
+    quads: &[i32],
+    chunks: &[IVec3],
+    player_chunk: IVec3,
+) -> (Vec3, Vec2, i32) {
+    let base = crate::world::make_base_quad_data();
+    let quad = (vertex_index >> 2) as usize;
+    let corner = (vertex_index & 3) as usize;
+    let chunk_slot = (instance_index / 6) as usize;
+    let side = (instance_index % 6) as i32;
+    chunk_vert_ref(
+        base[corner],
+        quads[quad],
+        side,
+        chunks[chunk_slot],
+        player_chunk,
+    )
+}
+
+/// Two triangles per quad, `4k+{0,1,2, 2,1,3}`: the strip `0,1,2,3` with the same winding.
+pub const QUAD_INDEX_PATTERN: [u16; 6] = [0, 1, 2, 2, 1, 3];
+
+/// WGSL text of the base quad corners, pasted into `chunk.wgsl`.
+pub fn base_quad_wgsl() -> String {
+    let c = crate::world::make_base_quad_data();
+    let v: Vec<String> = c
+        .iter()
+        .map(|v| format!("vec3<f32>({:?}, {:?}, {:?})", v.x, v.y, v.z))
+        .collect();
+    format!("const BASE_QUAD = array<vec3<f32>, 4>({});", v.join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,5 +270,60 @@ mod tests {
             assert_eq!(*s as usize, i);
             assert_eq!(SIDES[i], *s);
         }
+    }
+
+    #[test]
+    fn wgsl_base_quad_matches_rust() {
+        let src = include_str!("../../../backend/shaders/chunk.wgsl");
+        assert!(
+            src.contains(&base_quad_wgsl()),
+            "expected: {}",
+            base_quad_wgsl()
+        );
+    }
+
+    #[test]
+    fn pulled_equals_instanced_path() {
+        let base = make_base_quad_data();
+        let quads: Vec<i32> = (0..40u16)
+            .map(|i| {
+                pack_quad(
+                    U16Vec3::new(i % 16, (i * 7) % 16, (i * 3) % 16),
+                    (i % 60) as i32,
+                    1 + (i % 16) as u32,
+                    1 + ((i * 5) % 16) as u32,
+                )
+            })
+            .collect();
+        let chunks = [
+            IVec3::new(2, 0, -1),
+            IVec3::new(-40, 3, 100),
+            IVec3::new(0, -1, 5),
+        ];
+        let player = IVec3::new(1, 0, 1);
+        for slot in 0..(chunks.len() as u32 * 6) {
+            let (chunk, side) = ((slot / 6) as usize, (slot % 6) as i32);
+            for q in 0..quads.len() as u32 {
+                // vertex_index as the GPU forms it: base_vertex + index value
+                for (k, idx) in QUAD_INDEX_PATTERN.iter().enumerate() {
+                    let vi = 4 * q + *idx as u32;
+                    let got = chunk_vert_pulled(vi, slot, &quads, &chunks, player);
+                    let want = chunk_vert_ref(
+                        base[*idx as usize],
+                        quads[q as usize],
+                        side,
+                        chunks[chunk],
+                        player,
+                    );
+                    assert_eq!(got, want, "slot {slot} quad {q} k {k}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn index_pattern_matches_strip_triangles() {
+        // strip 0,1,2,3 -> tris (0,1,2) and (2,1,3)
+        assert_eq!(QUAD_INDEX_PATTERN, [0, 1, 2, 2, 1, 3]);
     }
 }

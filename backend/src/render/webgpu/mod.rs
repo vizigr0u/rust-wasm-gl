@@ -8,13 +8,15 @@ use std::collections::HashMap;
 use web_sys::{HtmlCanvasElement, HtmlImageElement};
 
 use super::{FrameInput, RenderError, RenderStats, TextureId, UiFrame};
-use crate::world::{make_base_quad_data, ChunkDrawData, ChunkPos};
-use voxel_core::gpu::{DrawEntry, DrawList, RangeAllocator, SlotAllocator};
+use crate::world::{ChunkDrawData, ChunkPos};
+use voxel_core::gpu::{
+    quad_indices, DrawEntry, DrawList, RangeAllocator, SlotAllocator, MAX_QUADS_PER_DRAW,
+};
 use voxel_core::render::{build_draw_list, cull_draws, pack_sides, SideRanges};
 
 /// Initial arena size in quads (4 B each = 8 MB).
 const ARENA_QUADS: u32 = 2 << 20;
-const ARENA_USAGE: wgpu::BufferUsages = wgpu::BufferUsages::VERTEX
+const ARENA_USAGE: wgpu::BufferUsages = wgpu::BufferUsages::STORAGE
     .union(wgpu::BufferUsages::COPY_DST)
     .union(wgpu::BufferUsages::COPY_SRC);
 
@@ -27,16 +29,16 @@ fn create_arena(device: &wgpu::Device, quads: u32) -> wgpu::Buffer {
     })
 }
 
-/// `min_uniform_buffer_offset_alignment` is at most 256 in WebGPU.
-const CHUNK_SLOT: u64 = 256;
+/// Bytes per chunk table entry: `{pos: vec3<i32>}` padded to 16.
+const CHUNK_ENTRY: u64 = 16;
 /// view + projection (128 B) + player chunk (`vec3<i32>`, padded to 16 B).
 const GLOBALS_SIZE: u64 = 144;
-/// Draw slots per chunk, one per side: `slot = chunk_slot * 6 + side`.
+/// Draw slots per chunk, one per side: `slot = chunk_slot * 6 + side`, passed as `first_instance`.
 const SIDES_PER_CHUNK: u32 = 6;
 
 /// One chunk's quads in the arena: all 6 sides contiguous.
 struct GpuChunk {
-    /// Static per-chunk slot; its 6 side slots hold the chunk position, written at upload.
+    /// Static per-chunk slot: its entry in the chunk table holds the position, written at upload.
     slot: u32,
     range: std::ops::Range<u32>,
     /// Absolute quad indices into the arena.
@@ -48,62 +50,75 @@ struct ChunkPipeline {
     globals_layout: wgpu::BindGroupLayout,
     chunk_layout: wgpu::BindGroupLayout,
     globals_buf: wgpu::Buffer,
-    base_quad: wgpu::Buffer,
-    /// Per-(chunk, side) data `{pos, side}`, one `CHUNK_SLOT` each. Written at upload, grown on demand.
+    /// Static `4k+{0,1,2,2,1,3}` indices for `MAX_QUADS_PER_DRAW` quads.
+    index_buf: wgpu::Buffer,
+    /// Per-chunk `{pos}` entries indexed by chunk slot. Written at upload, grown on demand.
     chunk_buf: wgpu::Buffer,
-    /// Capacity in draw slots (`CHUNK_SLOT` bytes each).
-    chunk_slots: u64,
+    /// Capacity in chunk entries.
+    chunk_cap: u64,
+    /// Arena + chunk table. Recreated whenever either buffer is.
     chunk_bind: wgpu::BindGroup,
     /// Needs the Blocks texture, so created once it is loaded.
     globals_bind: Option<wgpu::BindGroup>,
 }
 
-fn create_chunk_buf(
+fn create_chunk_buf(device: &wgpu::Device, entries: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("chunk table"),
+        size: entries * CHUNK_ENTRY,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+fn create_chunk_bind(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
-    slots: u64,
-) -> (wgpu::Buffer, wgpu::BindGroup) {
-    let buf = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("chunk offsets"),
-        size: slots * CHUNK_SLOT,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("chunk offsets"),
+    arena: &wgpu::Buffer,
+    chunk_buf: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("chunk data"),
         layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
-                buffer: &buf,
-                offset: 0,
-                size: wgpu::BufferSize::new(16),
-            }),
-        }],
-    });
-    (buf, bind)
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: arena.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: chunk_buf.as_entire_binding(),
+            },
+        ],
+    })
 }
 
 impl ChunkPipeline {
-    fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
+    fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        arena: &wgpu::Buffer,
+        format: wgpu::TextureFormat,
+    ) -> Self {
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("chunk.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../../../shaders/chunk.wgsl").into()),
         });
-        let uniform = |binding, visibility, dynamic, min| wgpu::BindGroupLayoutEntry {
+        let buffer = |binding, ty, min| wgpu::BindGroupLayoutEntry {
             binding,
-            visibility,
+            visibility: wgpu::ShaderStages::VERTEX,
             ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: dynamic,
+                ty,
+                has_dynamic_offset: false,
                 min_binding_size: wgpu::BufferSize::new(min),
             },
             count: None,
         };
+        let storage = wgpu::BufferBindingType::Storage { read_only: true };
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("chunk globals"),
             entries: &[
-                uniform(0, wgpu::ShaderStages::VERTEX, false, GLOBALS_SIZE),
+                buffer(0, wgpu::BufferBindingType::Uniform, GLOBALS_SIZE),
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -123,8 +138,8 @@ impl ChunkPipeline {
             ],
         });
         let chunk_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("chunk offset"),
-            entries: &[uniform(0, wgpu::ShaderStages::VERTEX, true, 16)],
+            label: Some("chunk data"),
+            entries: &[buffer(0, storage, 4), buffer(1, storage, CHUNK_ENTRY)],
         });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("chunk"),
@@ -138,18 +153,7 @@ impl ChunkPipeline {
                 module: &module,
                 entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
-                buffers: &[
-                    Some(wgpu::VertexBufferLayout {
-                        array_stride: 12,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![0 => Float32x3],
-                    }),
-                    Some(wgpu::VertexBufferLayout {
-                        array_stride: 4,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &wgpu::vertex_attr_array![1 => Sint32],
-                    }),
-                ],
+                buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &module,
@@ -158,7 +162,7 @@ impl ChunkPipeline {
                 targets: &[Some(format.into())],
             }),
             primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
                 cull_mode: Some(wgpu::Face::Back),
@@ -182,24 +186,25 @@ impl ChunkPipeline {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let base_quad = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("base quad"),
-            size: 48,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        let indices = quad_indices(MAX_QUADS_PER_DRAW);
+        let index_buf = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("quad indices"),
+            size: indices.len() as u64 * 2,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let quad: [[f32; 3]; 4] = make_base_quad_data().map(|v| v.to_array());
-        queue.write_buffer(&base_quad, 0, bytemuck::cast_slice(&quad));
-        let chunk_slots = 6 * 64;
-        let (chunk_buf, chunk_bind) = create_chunk_buf(device, &chunk_layout, chunk_slots);
+        queue.write_buffer(&index_buf, 0, bytemuck::cast_slice(&indices));
+        let chunk_cap = 64;
+        let chunk_buf = create_chunk_buf(device, chunk_cap);
+        let chunk_bind = create_chunk_bind(device, &chunk_layout, arena, &chunk_buf);
         Self {
             pipeline,
             globals_layout,
             chunk_layout,
             globals_buf,
-            base_quad,
+            index_buf,
             chunk_buf,
-            chunk_slots,
+            chunk_cap,
             chunk_bind,
             globals_bind: None,
         }
@@ -334,7 +339,8 @@ impl Renderer {
             ..Default::default()
         });
 
-        let chunk_pipeline = ChunkPipeline::new(&device, &queue, format);
+        let arena = create_arena(&device, ARENA_QUADS);
+        let chunk_pipeline = ChunkPipeline::new(&device, &queue, &arena, format);
         let objects = objects::ObjectPipelines::new(
             &device,
             &chunk_pipeline.globals_layout,
@@ -355,7 +361,7 @@ impl Renderer {
             objects,
             gpu_chunks: HashMap::new(),
             chunk_slots: SlotAllocator::new(),
-            arena: create_arena(&device, ARENA_QUADS),
+            arena,
             alloc: RangeAllocator::new(ARENA_QUADS),
             draw_list: DrawList::default(),
             uploaded_bytes: 0,
@@ -461,6 +467,9 @@ impl Renderer {
         enc.copy_buffer_to_buffer(&self.arena, 0, &buf, 0, old as u64 * 4);
         self.queue.submit([enc.finish()]);
         self.arena = buf;
+        let cp = &mut self.chunk_pipeline;
+        cp.chunk_bind =
+            create_chunk_bind(&self.device, &cp.chunk_layout, &self.arena, &cp.chunk_buf);
         self.alloc.grow(new);
         log::info!("quad arena grown: {old} -> {new} quads");
     }
@@ -491,7 +500,7 @@ impl Renderer {
         self.uploaded_bytes += all.len() as u64 * 4;
         let slot = self.chunk_slots.alloc();
         self.ensure_chunk_slots();
-        self.write_chunk_slots(slot, pos);
+        self.write_chunk_entry(slot, pos);
         self.gpu_chunks.insert(
             pos,
             GpuChunk {
@@ -509,43 +518,32 @@ impl Renderer {
         }
     }
 
-    /// Bytes of one chunk's 6 side slots: `{pos: vec3<i32>, side: i32}` padded to `CHUNK_SLOT`.
-    fn chunk_slot_bytes(pos: ChunkPos) -> Vec<u8> {
+    fn write_chunk_entry(&self, slot: u32, pos: ChunkPos) {
         let v = pos.as_vec();
-        let mut out = vec![0u8; (CHUNK_SLOT * SIDES_PER_CHUNK as u64) as usize];
-        for side in 0..SIDES_PER_CHUNK as usize {
-            let at = side * CHUNK_SLOT as usize;
-            let words = [v.x, v.y, v.z, side as i32];
-            out[at..at + 16].copy_from_slice(bytemuck::cast_slice(&words));
-        }
-        out
-    }
-
-    fn write_chunk_slots(&self, slot: u32, pos: ChunkPos) {
-        let at = slot as u64 * SIDES_PER_CHUNK as u64 * CHUNK_SLOT;
         self.queue.write_buffer(
             &self.chunk_pipeline.chunk_buf,
-            at,
-            &Self::chunk_slot_bytes(pos),
+            slot as u64 * CHUNK_ENTRY,
+            bytemuck::cast_slice(&[v.x, v.y, v.z, 0]),
         );
     }
 
-    /// Grow the slot buffer to cover every allocated chunk slot; rewrites all live chunks.
+    /// Grow the chunk table to cover every allocated chunk slot; rewrites all live chunks.
     fn ensure_chunk_slots(&mut self) {
-        let needed = self.chunk_slots.capacity() as u64 * SIDES_PER_CHUNK as u64;
+        let needed = self.chunk_slots.capacity() as u64;
         let cp = &mut self.chunk_pipeline;
-        if needed <= cp.chunk_slots {
+        if needed <= cp.chunk_cap {
             return;
         }
-        cp.chunk_slots = needed.next_power_of_two();
-        (cp.chunk_buf, cp.chunk_bind) =
-            create_chunk_buf(&self.device, &cp.chunk_layout, cp.chunk_slots);
+        cp.chunk_cap = needed.next_power_of_two();
+        cp.chunk_buf = create_chunk_buf(&self.device, cp.chunk_cap);
+        cp.chunk_bind =
+            create_chunk_bind(&self.device, &cp.chunk_layout, &self.arena, &cp.chunk_buf);
         for (pos, c) in &self.gpu_chunks {
-            self.write_chunk_slots(c.slot, *pos);
+            self.write_chunk_entry(c.slot, *pos);
         }
     }
 
-    /// Upload globals + per-chunk offsets and rebuild `draw_list`.
+    /// Upload globals and rebuild `draw_list`.
     fn prepare_chunks(&mut self, frame: &FrameInput) {
         let cp = &mut self.chunk_pipeline;
         if cp.globals_bind.is_none() {
@@ -622,7 +620,7 @@ impl Renderer {
             }
             self.draw_list.push(
                 DrawEntry {
-                    group: chunk_slot * SIDES_PER_CHUNK + d.side as u32,
+                    slot: chunk_slot * SIDES_PER_CHUNK + d.side as u32,
                     first: d.first,
                     count: d.count,
                 },
@@ -697,16 +695,12 @@ impl Renderer {
                 pass.set_bind_group(0, globals, &[]);
                 if !self.draw_list.entries.is_empty() {
                     pass.set_pipeline(&cp.pipeline);
-                    pass.set_vertex_buffer(0, cp.base_quad.slice(..));
-                    pass.set_vertex_buffer(1, self.arena.slice(..));
-                    let mut bound = None;
+                    pass.set_bind_group(1, &cp.chunk_bind, &[]);
+                    pass.set_index_buffer(cp.index_buf.slice(..), wgpu::IndexFormat::Uint16);
+                    // Draw id = first_instance (one instance); quads are pulled from the arena
+                    // at `base_vertex / 4 + index / 4`.
                     for e in &self.draw_list.entries {
-                        // Rebind only when the (chunk, side) slot changes.
-                        if bound != Some(e.group) {
-                            pass.set_bind_group(1, &cp.chunk_bind, &[e.group * CHUNK_SLOT as u32]);
-                            bound = Some(e.group);
-                        }
-                        pass.draw(0..4, e.first..e.first + e.count);
+                        pass.draw_indexed(0..6 * e.count, 4 * e.first as i32, e.slot..e.slot + 1);
                     }
                 }
                 self.objects.draw(
@@ -844,7 +838,8 @@ impl Renderer {
                 }
             }
             let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
-            let chunk = ChunkPipeline::new(&device, &queue, format);
+            let arena = create_arena(&device, 1024);
+            let chunk = ChunkPipeline::new(&device, &queue, &arena, format);
             let _objects =
                 objects::ObjectPipelines::new(&device, &chunk.globals_layout, format, DEPTH_FORMAT);
             if let Some(e) = scope.pop().await {

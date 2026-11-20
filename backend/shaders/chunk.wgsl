@@ -1,7 +1,9 @@
 // Greedy quads. CPU reference: voxel-core/src/render/shader_ref.rs.
 // Quad word: x[0..4) y[4..8) z[8..12) layer[12..18) w-1[18..22) h-1[22..26)
 // The quad spans w along its `a` axis and h along `b`; UVs repeat over 0..w, 0..h.
-// The side comes from the draw's uniform (not the word).
+// The side comes from the draw slot (instance_index = chunk_slot * 6 + side), not the word.
+// Vertex pulling: no vertex buffers. vertex_index = base_vertex (4 * first quad) + index value
+// (4k + corner), so quad = vertex_index >> 2, corner = vertex_index & 3.
 
 struct Globals {
     view: mat4x4<f32>,
@@ -10,16 +12,19 @@ struct Globals {
     player_chunk: vec3<i32>,
 }
 
-struct ChunkUniform {
-    // chunk position in chunk units (dynamic offset per (chunk, side), written once at upload)
+struct ChunkEntry {
+    // chunk position in chunk units, indexed by chunk slot, written once at upload
     pos: vec3<i32>,
-    side: i32,
 }
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var blocks: texture_2d_array<f32>;
 @group(0) @binding(2) var blocks_sampler: sampler;
-@group(1) @binding(0) var<uniform> chunk: ChunkUniform;
+@group(1) @binding(0) var<storage, read> quads: array<i32>;
+@group(1) @binding(1) var<storage, read> chunks: array<ChunkEntry>;
+
+// Corners of the base quad in strip order (make_base_quad_data in voxel-core).
+const BASE_QUAD = array<vec3<f32>, 4>(vec3<f32>(0.0, 0.0, 1.0), vec3<f32>(0.0, 0.0, 0.0), vec3<f32>(1.0, 0.0, 1.0), vec3<f32>(1.0, 0.0, 0.0));
 
 const SideUp: i32 = 0;
 const SideDown: i32 = 1;
@@ -35,11 +40,14 @@ struct VertexOut {
 }
 
 @vertex
-fn vs_main(@location(0) base_pos: vec3<f32>, @location(1) data: i32) -> VertexOut {
+fn vs_main(@builtin(vertex_index) vertex_index: u32, @builtin(instance_index) slot: u32) -> VertexOut {
+    let data = quads[vertex_index >> 2u];
+    let base_pos = BASE_QUAD[vertex_index & 3u];
+    let chunk_pos = chunks[slot / 6u].pos;
     let x = data & 15;
     let y = (data >> 4u) & 15;
     let z = (data >> 8u) & 15;
-    let face = chunk.side;
+    let face = i32(slot % 6u);
     let layer = (data >> 12u) & 63;
     let a = f32(((data >> 18u) & 15) + 1);
     let b = f32(((data >> 22u) & 15) + 1);
@@ -85,7 +93,7 @@ fn vs_main(@location(0) base_pos: vec3<f32>, @location(1) data: i32) -> VertexOu
         default: {}
     }
 
-    let chunk_offset = vec3<f32>((chunk.pos - globals.player_chunk) * 16);
+    let chunk_offset = vec3<f32>((chunk_pos - globals.player_chunk) * 16);
 
     var out: VertexOut;
     out.clip_position = globals.projection * globals.view * vec4<f32>(mesh_pos * size + position + chunk_offset, 1.0);
