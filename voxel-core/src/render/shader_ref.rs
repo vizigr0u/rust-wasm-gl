@@ -327,3 +327,31 @@ mod tests {
         assert_eq!(QUAD_INDEX_PATTERN, [0, 1, 2, 2, 1, 3]);
     }
 }
+
+#[cfg(test)]
+mod winding_tests {
+    use super::*;
+    use crate::render::SIDES;
+    use crate::world::{make_base_quad_data, pack_quad, BlockSideTexture, SIDE_NORMS};
+    use glam::U16Vec3;
+
+    /// CCW front face: triangle `0,1,2` of the strip must have its normal along the side normal.
+    #[test]
+    fn triangles_wind_ccw_toward_side_normal() {
+        let base = make_base_quad_data();
+        let w = pack_quad(U16Vec3::ZERO, BlockSideTexture::GrassTop as i32, 3, 2);
+        for side in SIDES {
+            let p: Vec<Vec3> = base
+                .iter()
+                .map(|b| chunk_vert_ref(*b, w, side as i32, IVec3::ZERO, IVec3::ZERO).0)
+                .collect();
+            for (a, b, c) in [(0, 1, 2), (2, 1, 3)] {
+                let n = (p[b] - p[a]).cross(p[c] - p[a]);
+                assert!(
+                    n.dot(SIDE_NORMS[side as usize]) > 0.0,
+                    "{side:?} tri {a}{b}{c} normal {n:?}"
+                );
+            }
+        }
+    }
+}

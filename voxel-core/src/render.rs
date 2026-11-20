@@ -35,15 +35,17 @@ pub fn pack_sides(data: &ChunkDrawData) -> (Vec<i32>, SideRanges) {
 // The orbit camera is a debug view: holes seen from far away show what the
 // player's own view culls. Do not "fix" (bugs.md #19) until a player-attached
 // camera exists; then this debug camera can keep showing the culling.
+// +axis faces have their plane at v+1 (can reach p*16 when c = p-1) so `p >= c`;
+// -axis faces have their plane at v (max p*16-1 when c = p-1, behind the eye) so `p <= c`.
 pub fn is_visible(player_chunk: ChunkPos, chunk: ChunkPos, side: Side) -> bool {
     let (p, c) = (player_chunk.as_vec(), chunk.as_vec());
     match side {
         Side::Front => p.z >= c.z,
-        Side::Back => p.z - 1 <= c.z,
-        Side::Left => p.x - 1 <= c.x,
+        Side::Back => p.z <= c.z,
+        Side::Left => p.x <= c.x,
         Side::Right => p.x >= c.x,
         Side::Top => p.y >= c.y,
-        Side::Bottom => p.y - 1 <= c.y,
+        Side::Bottom => p.y <= c.y,
     }
 }
 
@@ -160,7 +162,7 @@ mod tests {
         let chunks = [ivec3(1, 0, 0), ivec3(-1, 0, 0)].map(|v| (v.into(), r));
         let list = build_draw_list(chunks.into_iter(), ivec3(0, 0, 0).into());
         assert!(list.windows(2).all(|w| key(w[0].chunk) <= key(w[1].chunk)));
-        // player at 0: chunk x=1 hides Right (0>=1 false), chunk x=-1 hides Left (-1<=-1 true)
+        // player at 0: chunk x=1 hides Right (0>=1 false), chunk x=-1 hides Left (0<=-1 false)
         assert!(!list
             .iter()
             .any(|d| d.chunk.as_vec().x == 1 && matches!(d.side, Side::Right)));
@@ -208,6 +210,51 @@ mod tests {
             rows.push(format!("{side:?}: {row}"));
         }
         insta::assert_yaml_snapshot!(rows);
+    }
+
+    #[test]
+    fn side_cull_is_mirror_symmetric() {
+        let pairs = [
+            (Side::Right, Side::Left, 0),
+            (Side::Top, Side::Bottom, 1),
+            (Side::Front, Side::Back, 2),
+        ];
+        for (pos, neg, axis) in pairs {
+            for d in -3..=3 {
+                let (mut a, mut b) = (ivec3(0, 0, 0), ivec3(0, 0, 0));
+                a[axis] = d;
+                b[axis] = -d;
+                let o: ChunkPos = ivec3(0, 0, 0).into();
+                assert_eq!(
+                    is_visible(o, a.into(), pos),
+                    is_visible(o, b.into(), neg),
+                    "{pos:?} axis {axis} d {d}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn no_back_faces_drawn_behind_player() {
+        let r = [(0, 1); 6];
+        let player: ChunkPos = ivec3(0, 0, 0).into();
+        let mut chunks = Vec::new();
+        for x in -2..=2 {
+            for y in -2..=2 {
+                for z in -2..=2 {
+                    chunks.push((ivec3(x, y, z).into(), r));
+                }
+            }
+        }
+        for d in build_draw_list(chunks.into_iter(), player) {
+            let c = d.chunk.as_vec();
+            match d.side {
+                Side::Bottom => assert!(c.y >= 0),
+                Side::Back => assert!(c.z >= 0),
+                Side::Left => assert!(c.x >= 0),
+                _ => {}
+            }
+        }
     }
 
     #[test]
