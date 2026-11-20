@@ -27,8 +27,12 @@ test('default_spawn', async ({ page }) => {
 for (const [name, offset] of SINGLE_BLOCK_CAMERAS) {
   test(`single_block ${name}`, async ({ page }) => {
     await startScene(page, 'single_block');
+    // Bottom faces only draw when the player chunk is not above the block's chunk
+    // (side culling uses the player chunk, see render::is_visible): drop the player 16 down.
+    const below = name === 'bottom';
+    if (below) await page.evaluate(() => (window as any).__rwg.test_move_player([0, -16, 0]));
     await settle(page);
-    await setCamera(page, [0.5, -15.5, 0.5], offset);
+    await setCamera(page, [0.5, below ? 0.5 : -15.5, 0.5], offset);
     await expect(page).toHaveScreenshot(`single_block_${name}.png`, SHOT);
   });
 }

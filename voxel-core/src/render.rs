@@ -103,13 +103,20 @@ fn key(p: ChunkPos) -> (i32, i32, i32) {
     (v.x, v.y, v.z)
 }
 
-/// Visible draws, sorted by `ChunkPos` (then `Side`) so output is deterministic.
+fn dist2(p: ChunkPos, player: ChunkPos) -> i64 {
+    let d = p.as_vec() - player.as_vec();
+    let d = d.as_i64vec3();
+    d.x * d.x + d.y * d.y + d.z * d.z
+}
+
+/// Visible draws, front to back (squared chunk distance to the player, then
+/// `ChunkPos` key as tie-break, then `Side`) so output is deterministic.
 pub fn build_draw_list(
     chunks: impl Iterator<Item = (ChunkPos, SideRanges)>,
     player_chunk: ChunkPos,
 ) -> Vec<ChunkDraw> {
     let mut chunks: Vec<_> = chunks.collect();
-    chunks.sort_by_key(|(p, _)| key(*p));
+    chunks.sort_by_key(|(p, _)| (dist2(*p, player_chunk), key(*p)));
     let mut out = Vec::new();
     for (chunk, ranges) in chunks {
         let offset = chunk_offset(chunk, player_chunk);
@@ -161,7 +168,10 @@ mod tests {
         let r = [(0, 1); 6];
         let chunks = [ivec3(1, 0, 0), ivec3(-1, 0, 0)].map(|v| (v.into(), r));
         let list = build_draw_list(chunks.into_iter(), ivec3(0, 0, 0).into());
-        assert!(list.windows(2).all(|w| key(w[0].chunk) <= key(w[1].chunk)));
+        let pc: ChunkPos = ivec3(0, 0, 0).into();
+        assert!(list.windows(2).all(|w| {
+            (dist2(w[0].chunk, pc), key(w[0].chunk)) <= (dist2(w[1].chunk, pc), key(w[1].chunk))
+        }));
         // player at 0: chunk x=1 hides Right (0>=1 false), chunk x=-1 hides Left (0<=-1 false)
         assert!(!list
             .iter()

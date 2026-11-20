@@ -2,15 +2,15 @@
 source: voxel-core/src/render.rs
 expression: out
 ---
-- "IVec3(-1, 0, 0) Top off=Vec3(-16.0, 0.0, 0.0) first=0 count=2"
-- "IVec3(-1, 0, 0) Front off=Vec3(-16.0, 0.0, 0.0) first=2 count=3"
-- "IVec3(-1, 0, 0) Back off=Vec3(-16.0, 0.0, 0.0) first=5 count=1"
-- "IVec3(-1, 0, 0) Right off=Vec3(-16.0, 0.0, 0.0) first=6 count=4"
 - "IVec3(0, 0, 0) Top off=Vec3(0.0, 0.0, 0.0) first=0 count=2"
 - "IVec3(0, 0, 0) Front off=Vec3(0.0, 0.0, 0.0) first=2 count=3"
 - "IVec3(0, 0, 0) Back off=Vec3(0.0, 0.0, 0.0) first=5 count=1"
 - "IVec3(0, 0, 0) Right off=Vec3(0.0, 0.0, 0.0) first=6 count=4"
 - "IVec3(0, 0, 0) Left off=Vec3(0.0, 0.0, 0.0) first=10 count=1"
+- "IVec3(-1, 0, 0) Top off=Vec3(-16.0, 0.0, 0.0) first=0 count=2"
+- "IVec3(-1, 0, 0) Front off=Vec3(-16.0, 0.0, 0.0) first=2 count=3"
+- "IVec3(-1, 0, 0) Back off=Vec3(-16.0, 0.0, 0.0) first=5 count=1"
+- "IVec3(-1, 0, 0) Right off=Vec3(-16.0, 0.0, 0.0) first=6 count=4"
 - "IVec3(1, 0, 0) Top off=Vec3(16.0, 0.0, 0.0) first=0 count=2"
 - "IVec3(1, 0, 0) Front off=Vec3(16.0, 0.0, 0.0) first=2 count=3"
 - "IVec3(1, 0, 0) Back off=Vec3(16.0, 0.0, 0.0) first=5 count=1"
