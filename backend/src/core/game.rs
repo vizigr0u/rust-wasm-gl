@@ -76,7 +76,7 @@ impl Default for SceneConfig {
     }
 }
 
-/// Pause-menu and F3 debug switches.
+/// Pause-menu and F4 debug switches.
 #[derive(Debug, Clone, Copy)]
 struct DebugToggles {
     /// Render from the player's view instead of the orbit camera.
@@ -390,7 +390,7 @@ impl Game {
                 }
                 match event.code().as_str() {
                     "Escape" => self.is_paused = !self.is_paused,
-                    "F3" => {
+                    "F4" => {
                         self.toggles.player_cam_view = !self.toggles.player_cam_view;
                         event.prevent_default();
                     }
@@ -477,7 +477,7 @@ impl Game {
 
     fn build_ui(&mut self, gfx: &mut Gfx, stats: RenderStats) -> UiFrame {
         let gpu_info = format!(
-            "GPU: {} chunks, {} draw calls ({} before merge)\nView: {} (F3)  Frustum: {}/{} chunks, {} quads drawn [culling {}]\narena: {}/{} quads ({:.1}/{:.1} MB), largest free {}\nupload: {:.1} KB/frame, {} queued",
+            "GPU: {} chunks, {} draw calls ({} before merge)\nView: {} (F4)  Frustum: {}/{} chunks, {} quads drawn [culling {}]\narena: {}/{} quads ({:.1}/{:.1} MB), largest free {}\nupload: {:.1} KB/frame, {} queued",
             stats.chunk_buffers,
             stats.draw_calls,
             stats.draw_entries_raw,
@@ -502,7 +502,7 @@ impl Game {
                         ui.checkbox(&mut self.toggles.frustum_culling, "Frustum culling");
                         ui.checkbox(&mut self.toggles.show_frustum, "Show frustum lines");
                         ui.checkbox(&mut self.toggles.show_culled_boxes, "Show culled boxes");
-                        ui.checkbox(&mut self.toggles.player_cam_view, "Player camera view (F3)");
+                        ui.checkbox(&mut self.toggles.player_cam_view, "Player camera view (F4)");
                     });
                 }
                 if self.gui_state.show_info {
