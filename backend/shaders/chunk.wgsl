@@ -6,11 +6,13 @@
 struct Globals {
     view: mat4x4<f32>,
     projection: mat4x4<f32>,
+    // chunk the camera origin is in; chunk offsets are computed relative to it in integers
+    player_chunk: vec3<i32>,
 }
 
 struct ChunkUniform {
-    // chunk origin relative to the player chunk (dynamic offset per chunk side range)
-    offset: vec3<f32>,
+    // chunk position in chunk units (dynamic offset per (chunk, side), written once at upload)
+    pos: vec3<i32>,
     side: i32,
 }
 
@@ -83,8 +85,10 @@ fn vs_main(@location(0) base_pos: vec3<f32>, @location(1) data: i32) -> VertexOu
         default: {}
     }
 
+    let chunk_offset = vec3<f32>((chunk.pos - globals.player_chunk) * 16);
+
     var out: VertexOut;
-    out.clip_position = globals.projection * globals.view * vec4<f32>(mesh_pos * size + position + chunk.offset, 1.0);
+    out.clip_position = globals.projection * globals.view * vec4<f32>(mesh_pos * size + position + chunk_offset, 1.0);
     out.texcoord = uvs * uv_scale;
     out.layer = layer;
     return out;

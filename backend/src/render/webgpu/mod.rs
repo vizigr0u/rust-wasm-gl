@@ -9,7 +9,7 @@ use web_sys::{HtmlCanvasElement, HtmlImageElement};
 
 use super::{FrameInput, RenderError, RenderStats, TextureId, UiFrame};
 use crate::world::{make_base_quad_data, ChunkDrawData, ChunkPos};
-use voxel_core::gpu::{DrawEntry, DrawList, RangeAllocator};
+use voxel_core::gpu::{DrawEntry, DrawList, RangeAllocator, SlotAllocator};
 use voxel_core::render::{build_draw_list, cull_draws, pack_sides, SideRanges};
 
 /// Initial arena size in quads (4 B each = 8 MB).
@@ -29,10 +29,15 @@ fn create_arena(device: &wgpu::Device, quads: u32) -> wgpu::Buffer {
 
 /// `min_uniform_buffer_offset_alignment` is at most 256 in WebGPU.
 const CHUNK_SLOT: u64 = 256;
-const GLOBALS_SIZE: u64 = 128;
+/// view + projection (128 B) + player chunk (`vec3<i32>`, padded to 16 B).
+const GLOBALS_SIZE: u64 = 144;
+/// Draw slots per chunk, one per side: `slot = chunk_slot * 6 + side`.
+const SIDES_PER_CHUNK: u32 = 6;
 
 /// One chunk's quads in the arena: all 6 sides contiguous.
 struct GpuChunk {
+    /// Static per-chunk slot; its 6 side slots hold the chunk position, written at upload.
+    slot: u32,
     range: std::ops::Range<u32>,
     /// Absolute quad indices into the arena.
     side_ranges: SideRanges,
@@ -44,8 +49,9 @@ struct ChunkPipeline {
     chunk_layout: wgpu::BindGroupLayout,
     globals_buf: wgpu::Buffer,
     base_quad: wgpu::Buffer,
-    /// Per-frame chunk offsets, one `CHUNK_SLOT` per drawn chunk. Grown on demand.
+    /// Per-(chunk, side) data `{pos, side}`, one `CHUNK_SLOT` each. Written at upload, grown on demand.
     chunk_buf: wgpu::Buffer,
+    /// Capacity in draw slots (`CHUNK_SLOT` bytes each).
     chunk_slots: u64,
     chunk_bind: wgpu::BindGroup,
     /// Needs the Blocks texture, so created once it is loaded.
@@ -184,7 +190,7 @@ impl ChunkPipeline {
         });
         let quad: [[f32; 3]; 4] = make_base_quad_data().map(|v| v.to_array());
         queue.write_buffer(&base_quad, 0, bytemuck::cast_slice(&quad));
-        let chunk_slots = 256;
+        let chunk_slots = 6 * 64;
         let (chunk_buf, chunk_bind) = create_chunk_buf(device, &chunk_layout, chunk_slots);
         Self {
             pipeline,
@@ -216,6 +222,7 @@ pub struct Renderer {
     chunk_pipeline: ChunkPipeline,
     objects: objects::ObjectPipelines,
     gpu_chunks: HashMap<ChunkPos, GpuChunk>,
+    chunk_slots: SlotAllocator,
     arena: wgpu::Buffer,
     alloc: RangeAllocator,
     draw_list: DrawList,
@@ -347,6 +354,7 @@ impl Renderer {
             chunk_pipeline,
             objects,
             gpu_chunks: HashMap::new(),
+            chunk_slots: SlotAllocator::new(),
             arena: create_arena(&device, ARENA_QUADS),
             alloc: RangeAllocator::new(ARENA_QUADS),
             draw_list: DrawList::default(),
@@ -481,12 +489,59 @@ impl Renderer {
             bytemuck::cast_slice(&all),
         );
         self.uploaded_bytes += all.len() as u64 * 4;
-        self.gpu_chunks.insert(pos, GpuChunk { range, side_ranges });
+        let slot = self.chunk_slots.alloc();
+        self.ensure_chunk_slots();
+        self.write_chunk_slots(slot, pos);
+        self.gpu_chunks.insert(
+            pos,
+            GpuChunk {
+                slot,
+                range,
+                side_ranges,
+            },
+        );
     }
 
     pub fn remove_chunk(&mut self, pos: ChunkPos) {
         if let Some(c) = self.gpu_chunks.remove(&pos) {
             self.alloc.free(c.range);
+            self.chunk_slots.free(c.slot);
+        }
+    }
+
+    /// Bytes of one chunk's 6 side slots: `{pos: vec3<i32>, side: i32}` padded to `CHUNK_SLOT`.
+    fn chunk_slot_bytes(pos: ChunkPos) -> Vec<u8> {
+        let v = pos.as_vec();
+        let mut out = vec![0u8; (CHUNK_SLOT * SIDES_PER_CHUNK as u64) as usize];
+        for side in 0..SIDES_PER_CHUNK as usize {
+            let at = side * CHUNK_SLOT as usize;
+            let words = [v.x, v.y, v.z, side as i32];
+            out[at..at + 16].copy_from_slice(bytemuck::cast_slice(&words));
+        }
+        out
+    }
+
+    fn write_chunk_slots(&self, slot: u32, pos: ChunkPos) {
+        let at = slot as u64 * SIDES_PER_CHUNK as u64 * CHUNK_SLOT;
+        self.queue.write_buffer(
+            &self.chunk_pipeline.chunk_buf,
+            at,
+            &Self::chunk_slot_bytes(pos),
+        );
+    }
+
+    /// Grow the slot buffer to cover every allocated chunk slot; rewrites all live chunks.
+    fn ensure_chunk_slots(&mut self) {
+        let needed = self.chunk_slots.capacity() as u64 * SIDES_PER_CHUNK as u64;
+        let cp = &mut self.chunk_pipeline;
+        if needed <= cp.chunk_slots {
+            return;
+        }
+        cp.chunk_slots = needed.next_power_of_two();
+        (cp.chunk_buf, cp.chunk_bind) =
+            create_chunk_buf(&self.device, &cp.chunk_layout, cp.chunk_slots);
+        for (pos, c) in &self.gpu_chunks {
+            self.write_chunk_slots(c.slot, *pos);
         }
     }
 
@@ -517,11 +572,15 @@ impl Renderer {
                 ],
             }));
         }
-        let mut globals = [0f32; 32];
-        globals[..16].copy_from_slice(&frame.view.to_cols_array());
-        globals[16..].copy_from_slice(&frame.projection.to_cols_array());
-        self.queue
-            .write_buffer(&cp.globals_buf, 0, bytemuck::cast_slice(&globals));
+        let mut globals = [0u8; GLOBALS_SIZE as usize];
+        let mats: Vec<f32> = [frame.view, frame.projection]
+            .iter()
+            .flat_map(|m| m.to_cols_array())
+            .collect();
+        globals[..128].copy_from_slice(bytemuck::cast_slice(&mats));
+        let pc = frame.player_chunk.as_vec();
+        globals[128..140].copy_from_slice(bytemuck::cast_slice(&[pc.x, pc.y, pc.z]));
+        self.queue.write_buffer(&cp.globals_buf, 0, &globals);
 
         // Floating origin: each chunk's offset from the player's chunk (exact in f32).
         let draws = build_draw_list(
@@ -553,38 +612,22 @@ impl Renderer {
             culled.len() as u32,
             draws.iter().map(|d| d.count).sum(),
         );
-        let mut slot_data: Vec<u8> = Vec::new();
         self.draw_list.clear();
-        let mut last = None;
-        let mut slot = 0u32;
+        let mut last_chunk = None;
+        let mut chunk_slot = 0u32;
         for d in draws {
-            // One uniform slot per (chunk, side): the side is not in the quad word.
-            if last != Some((d.chunk, d.side as u32)) {
-                last = Some((d.chunk, d.side as u32));
-                slot = (slot_data.len() as u64 / CHUNK_SLOT) as u32;
-                let start = slot_data.len();
-                slot_data.resize(start + CHUNK_SLOT as usize, 0);
-                slot_data[start..start + 12]
-                    .copy_from_slice(bytemuck::cast_slice(&d.offset.to_array()));
-                slot_data[start + 12..start + 16].copy_from_slice(&(d.side as i32).to_le_bytes());
+            if last_chunk != Some(d.chunk) {
+                last_chunk = Some(d.chunk);
+                chunk_slot = self.gpu_chunks[&d.chunk].slot;
             }
             self.draw_list.push(
                 DrawEntry {
-                    group: slot,
+                    group: chunk_slot * SIDES_PER_CHUNK + d.side as u32,
                     first: d.first,
                     count: d.count,
                 },
                 true,
             );
-        }
-        let needed = slot_data.len() as u64 / CHUNK_SLOT;
-        if needed > cp.chunk_slots {
-            cp.chunk_slots = needed.next_power_of_two();
-            (cp.chunk_buf, cp.chunk_bind) =
-                create_chunk_buf(&self.device, &cp.chunk_layout, cp.chunk_slots);
-        }
-        if !slot_data.is_empty() {
-            self.queue.write_buffer(&cp.chunk_buf, 0, &slot_data);
         }
     }
 

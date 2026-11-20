@@ -4,9 +4,9 @@ Measure the renderer under fixed scenarios, save a **baseline**, change somethin
 and get a noise-aware verdict per metric.
 
 ```bash
-pnpm profile -- --baseline --label before          # -> profile/baselines/before.json (commit it)
+node profile/run.mjs --baseline --label before          # -> profile/baselines/before.json (commit it)
 # ...hack on the renderer...
-pnpm profile -- --label after                      # -> profile/results/after.json (gitignored)
+node profile/run.mjs --label after                      # -> profile/results/after.json (gitignored)
 pnpm profile:compare profile/baselines/before.json profile/results/after.json
 pnpm profile:compare profile/results/after.json    # summary of one run
 ```

@@ -1,16 +1,17 @@
 //! CPU reference of `backend/shaders/chunk.wgsl`: the contract for the WGSL port.
 //! Output is pre view/projection (world-relative position).
-use glam::{Vec2, Vec3};
+use glam::{IVec3, Vec2, Vec3};
 
 /// `mesh_pos`: base quad corner (slot 0), `data`: greedy quad word (instance, see `pack_quad`),
-/// `side`: `Side as i32` from the draw's range entry, `chunk_offset`: chunk origin relative to
-/// the player chunk. Returns (position, uv, texture layer).
+/// `side`: `Side as i32` from the draw's slot, `chunk_pos` / `player_chunk`: the shader computes the
+/// chunk origin relative to the player chunk in integers (exact in f32). Returns (position, uv, texture layer).
 /// The quad spans `w` along its `a` axis and `h` along `b`; UVs repeat over `0..w`, `0..h`.
 pub fn chunk_vert_ref(
     mesh_pos: Vec3,
     data: i32,
     side: i32,
-    chunk_offset: Vec3,
+    chunk_pos: IVec3,
+    player_chunk: IVec3,
 ) -> (Vec3, Vec2, i32) {
     let x = data & 15;
     let y = (data >> 4) & 15;
@@ -59,6 +60,7 @@ pub fn chunk_vert_ref(
         }
         _ => {}
     }
+    let chunk_offset = ((chunk_pos - player_chunk) * 16).as_vec3();
     (p * size + position + chunk_offset, uvs * uv_scale, depth)
 }
 
@@ -82,7 +84,8 @@ mod tests {
         for side in SIDES {
             for (off, w, h) in [(0u16, 1, 1), (15, 1, 1), (0, 16, 3), (2, 5, 16)] {
                 for (i, v) in base.iter().enumerate() {
-                    let (p, uv, l) = chunk_vert_ref(*v, word(off, w, h), side as i32, Vec3::ZERO);
+                    let (p, uv, l) =
+                        chunk_vert_ref(*v, word(off, w, h), side as i32, IVec3::ZERO, IVec3::ZERO);
                     rows.push(format!(
                         "{side:?} off={off} {w}x{h} c{i}: pos=({:.5},{:.5},{:.5}) uv=({:.5},{:.5}) layer={l}",
                         p.x, p.y, p.z, uv.x, uv.y
@@ -102,7 +105,16 @@ mod tests {
             for off in [0u16, 15] {
                 let mut got: Vec<_> = base
                     .iter()
-                    .map(|b| key(chunk_vert_ref(*b, word(off, 1, 1), side as i32, Vec3::ZERO).0))
+                    .map(|b| {
+                        key(chunk_vert_ref(
+                            *b,
+                            word(off, 1, 1),
+                            side as i32,
+                            IVec3::ZERO,
+                            IVec3::ZERO,
+                        )
+                        .0)
+                    })
                     .collect();
                 let mut want: Vec<_> = side_quad_strip(side)
                     .iter()
@@ -124,7 +136,7 @@ mod tests {
             let big = word(1, w, h);
             let verts: Vec<_> = base
                 .iter()
-                .map(|b| chunk_vert_ref(*b, big, side as i32, Vec3::ZERO))
+                .map(|b| chunk_vert_ref(*b, big, side as i32, IVec3::ZERO, IVec3::ZERO))
                 .collect();
             let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
             for (p, _, _) in &verts {
@@ -143,7 +155,8 @@ mod tests {
                     1,
                 );
                 for b in &base {
-                    let (p, uv, _) = chunk_vert_ref(*b, unit, side as i32, Vec3::ZERO);
+                    let (p, uv, _) =
+                        chunk_vert_ref(*b, unit, side as i32, IVec3::ZERO, IVec3::ZERO);
                     cell_lo = cell_lo.min(p);
                     cell_hi = cell_hi.max(p);
                     assert!(uv.x == 0.0 || uv.x == 1.0);
@@ -169,12 +182,37 @@ mod tests {
             for (w, h) in [(1, 1), (7, 4)] {
                 let v: Vec<Vec3> = base
                     .iter()
-                    .map(|b| chunk_vert_ref(*b, word(0, w, h), side as i32, Vec3::ZERO).0)
+                    .map(|b| {
+                        chunk_vert_ref(*b, word(0, w, h), side as i32, IVec3::ZERO, IVec3::ZERO).0
+                    })
                     .collect();
                 let n = SIDE_NORMS[side as usize];
                 // strip tris: (v0,v1,v2) and (v2,v1,v3)
                 for (a, b, c) in [(v[0], v[1], v[2]), (v[2], v[1], v[3])] {
                     assert!((b - a).cross(c - a).dot(n) > 0.0, "{side:?} winding");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn integer_offset_equals_cpu_chunk_offset() {
+        use crate::render::chunk_offset;
+        let base = make_base_quad_data();
+        let word = word(3, 2, 2);
+        for (c, p) in [
+            ((2, 0, -1), (1, 0, 1)),
+            ((-40, 3, 100), (-41, -2, 99)),
+            ((0, 0, 0), (0, 0, 0)),
+        ] {
+            let (c, p) = (IVec3::from(c), IVec3::from(p));
+            let off = chunk_offset(c.into(), p.into());
+            for side in SIDES {
+                for b in &base {
+                    let new = chunk_vert_ref(*b, word, side as i32, c, p);
+                    let old = chunk_vert_ref(*b, word, side as i32, IVec3::ZERO, IVec3::ZERO);
+                    assert_eq!(new.0, old.0 + off);
+                    assert_eq!((new.1, new.2), (old.1, old.2));
                 }
             }
         }

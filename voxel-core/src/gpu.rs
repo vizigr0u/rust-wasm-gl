@@ -83,6 +83,45 @@ impl RangeAllocator {
     }
 }
 
+/// Hands out small stable `u32` slots, lowest free first. Grows on demand; freed slots are reused.
+#[derive(Debug, Default, Clone)]
+pub struct SlotAllocator {
+    /// Free slots, kept sorted descending so `pop` gives the lowest.
+    free: Vec<u32>,
+    /// One past the highest slot ever handed out.
+    next: u32,
+}
+
+impl SlotAllocator {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn alloc(&mut self) -> u32 {
+        if let Some(s) = self.free.pop() {
+            return s;
+        }
+        self.next += 1;
+        self.next - 1
+    }
+
+    pub fn free(&mut self, slot: u32) {
+        debug_assert!(slot < self.next, "slot never allocated");
+        debug_assert!(!self.free.contains(&slot), "double free");
+        let i = self.free.partition_point(|&f| f > slot);
+        self.free.insert(i, slot);
+    }
+
+    /// Slots `0..capacity()` have been handed out at some point (buffers must cover them).
+    pub fn capacity(&self) -> u32 {
+        self.next
+    }
+
+    pub fn in_use(&self) -> u32 {
+        self.next - self.free.len() as u32
+    }
+}
+
 /// One `draw(0..4, first..first+count)`, drawn with bind slot `group`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DrawEntry {
@@ -242,6 +281,37 @@ mod tests {
         l.push(e(0, 0, 4), false);
         l.push(e(0, 4, 2), false);
         assert_eq!(l.entries.len(), 2);
+    }
+
+    #[test]
+    fn slots_alloc_free_reuse() {
+        let mut a = SlotAllocator::new();
+        assert_eq!((a.alloc(), a.alloc(), a.alloc()), (0, 1, 2));
+        assert_eq!((a.capacity(), a.in_use()), (3, 3));
+        a.free(1);
+        a.free(0);
+        assert_eq!(a.in_use(), 1);
+        assert_eq!(a.alloc(), 0, "lowest free first");
+        assert_eq!(a.alloc(), 1);
+        assert_eq!(a.alloc(), 3, "grows when none free");
+        assert_eq!(a.capacity(), 4);
+    }
+
+    #[test]
+    fn slots_never_duplicate() {
+        let mut a = SlotAllocator::new();
+        let mut live = std::collections::HashSet::new();
+        for i in 0..500u32 {
+            if i % 3 == 2 {
+                let s = *live.iter().min().unwrap();
+                live.remove(&s);
+                a.free(s);
+            } else {
+                assert!(live.insert(a.alloc()), "duplicate slot");
+            }
+            assert_eq!(a.in_use() as usize, live.len());
+        }
+        assert!(live.iter().all(|&s| s < a.capacity()));
     }
 
     #[test]
